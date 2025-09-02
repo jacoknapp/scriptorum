@@ -1,16 +1,18 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"html/template"
 	"net/http"
 	"strings"
 
-	"gitea.knapp/jacoknapp/scriptoruminternal/providers"
+	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 	"github.com/go-chi/chi/v5"
 )
 
 func (s *Server) mountSearch(r chi.Router) {
-	u := &searchUI{tpl: template.Must(template.ParseFS(tplFS, "web/templates/*.html"))}
+	funcMap := template.FuncMap{"toJSON": func(v any) string { b, _ := json.Marshal(v); return string(b) }}
+	u := &searchUI{tpl: template.Must(template.New("tpl").Funcs(funcMap).ParseFS(tplFS, "web/templates/*.html"))}
 	r.Get("/ui/search", u.handleSearch(s))
 	r.Get("/ui/presence", u.handlePresence(s))
 }

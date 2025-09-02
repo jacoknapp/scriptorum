@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"gitea.knapp/jacoknapp/scriptoruminternal/providers"
+	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -54,8 +54,9 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		cur.Readarr.Audiobooks.APIKey = r.FormValue("ra_audio_key")
 		_ = s.settings.Update(&cur)
 		stepFlags["admin"] = len(cur.Admins.Emails) > 0
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true})
+		// HTMX: trigger a refresh of gating and reload the current step; no content body
+		w.Header().Set("HX-Trigger", "setup-saved")
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 
@@ -63,15 +64,15 @@ func (u *setupUI) handleTestOAuth(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if !s.settings.Get().OAuth.Enabled {
 			stepFlags["oauth"] = true
-			writeProbe(w, true, "disabled")
+			w.Header().Set("HX-Trigger", "setup-saved")
+			writeProbeHTML(w, true, "disabled")
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
-		defer cancel()
 		err := s.initOIDC()
 		ok := err == nil
 		stepFlags["oauth"] = ok
-		writeProbe(w, ok, errString(err))
+		w.Header().Set("HX-Trigger", "setup-saved")
+		writeProbeHTML(w, ok, errString(err))
 	}
 }
 
@@ -79,12 +80,13 @@ func (u *setupUI) handleTestABS(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := s.settings.Get().Audiobookshelf
 		abs := providers.NewABS(cfg.BaseURL, cfg.Token, cfg.SearchEndpoint)
-		ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
+		ctx2, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 		defer cancel()
-		err := abs.Ping(ctx)
+		err := abs.Ping(ctx2)
 		ok := err == nil
 		stepFlags["abs"] = ok
-		writeProbe(w, ok, errString(err))
+		w.Header().Set("HX-Trigger", "setup-saved")
+		writeProbeHTML(w, ok, errString(err))
 	}
 }
 
@@ -109,13 +111,25 @@ func (u *setupUI) handleTestReadarr(s *Server) http.HandlerFunc {
 		} else {
 			stepFlags["raudio"] = ok
 		}
-		writeProbe(w, ok, errString(err))
+		w.Header().Set("HX-Trigger", "setup-saved")
+		writeProbeHTML(w, ok, errString(err))
 	}
 }
 
-func writeProbe(w http.ResponseWriter, ok bool, errMsg string) {
+func writeProbeJSON(w http.ResponseWriter, ok bool, errMsg string) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"ok": ok, "error": errMsg})
+}
+func writeProbeHTML(w http.ResponseWriter, ok bool, errMsg string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if ok {
+		w.Write([]byte(`<span class="text-green-700">OK</span>`))
+		return
+	}
+	if errMsg == "" {
+		errMsg = "failed"
+	}
+	w.Write([]byte(`<span class="text-red-700">Error: ` + template.HTMLEscapeString(errMsg) + `</span>`))
 }
 func errString(err error) string {
 	if err == nil {
@@ -137,7 +151,7 @@ func (u *setupUI) handleSetupFinish(s *Server) http.HandlerFunc {
 		}
 		cur.Setup.Completed = true
 		_ = s.settings.Update(&cur)
-		http.Redirect(w, r, "/", http.StatusFound)
+		http.Redirect(w, r, "/login", http.StatusFound)
 	}
 }
 
@@ -157,7 +171,7 @@ func (u *setupUI) handleCanAdvance(s *Server) http.HandlerFunc {
 		case "5":
 			ok = true
 		}
-		writeProbe(w, ok, "")
+		writeProbeJSON(w, ok, "")
 	}
 }
 

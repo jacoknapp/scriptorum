@@ -8,9 +8,6 @@ import (
 	"testing"
 )
 
-type rtFunc func(*http.Request) (*http.Response, error)
-func (f rtFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
-
 func TestAmazonPublicGetByASIN(t *testing.T) {
 	html := `
 	<html><head><meta property="og:title" content="Test Book"/><meta property="og:image" content="http://img"/></head>
@@ -21,13 +18,21 @@ func TestAmazonPublicGetByASIN(t *testing.T) {
 
 	a := NewAmazonPublic("www.amazon.com")
 	a.client.Transport = rtFunc(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{ StatusCode: 200, Body: ioutil.NopCloser(strings.NewReader(html)), Header: make(http.Header)}, nil
+		return &http.Response{StatusCode: 200, Body: ioutil.NopCloser(strings.NewReader(html)), Header: make(http.Header)}, nil
 	})
 	b, err := a.GetByASIN(context.Background(), "B012345678")
-	if err != nil { t.Fatalf("err: %v", err) }
-	if b.Title != "Test Book" { t.Fatalf("title: %s", b.Title) }
-	if b.ISBN13 != "9781234567897" { t.Fatalf("isbn13: %s", b.ISBN13) }
-	if len(b.Authors) != 1 || b.Authors[0] != "Jane Doe" { t.Fatalf("authors: %+v", b.Authors) }
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if b.Title != "Test Book" {
+		t.Fatalf("title: %s", b.Title)
+	}
+	if b.ISBN13 != "9781234567897" {
+		t.Fatalf("isbn13: %s", b.ISBN13)
+	}
+	if len(b.Authors) != 1 || b.Authors[0] != "Jane Doe" {
+		t.Fatalf("authors: %+v", b.Authors)
+	}
 }
 
 func TestAmazonPublicSearchBooks(t *testing.T) {
@@ -38,10 +43,16 @@ func TestAmazonPublicSearchBooks(t *testing.T) {
 	</body></html>`
 	a := NewAmazonPublic("www.amazon.com")
 	a.client.Transport = rtFunc(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{ StatusCode: 200, Body: ioutil.NopCloser(strings.NewReader(html)), Header: make(http.Header)}, nil
+		return &http.Response{StatusCode: 200, Body: ioutil.NopCloser(strings.NewReader(html)), Header: make(http.Header)}, nil
 	})
 	items, err := a.SearchBooks(context.Background(), "keyword", 10)
-	if err != nil { t.Fatalf("err: %v", err) }
-	if len(items) != 2 { t.Fatalf("want 2 got %d", len(items)) }
-	if items[0].ASIN == "" || items[0].Title == "" { t.Fatalf("missing fields") }
+	if err != nil {
+		t.Fatalf("err: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("want 2 got %d", len(items))
+	}
+	if items[0].ASIN == "" || items[0].Title == "" {
+		t.Fatalf("missing fields")
+	}
 }

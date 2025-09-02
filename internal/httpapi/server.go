@@ -9,9 +9,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"gitea.knapp/jacoknapp/scriptoruminternal/config"
-	"gitea.knapp/jacoknapp/scriptoruminternal/db"
-	"gitea.knapp/jacoknapp/scriptoruminternal/settings"
+	"gitea.knapp/jacoknapp/scriptorum/internal/config"
+	"gitea.knapp/jacoknapp/scriptorum/internal/db"
+	"gitea.knapp/jacoknapp/scriptorum/internal/settings"
 )
 
 //go:embed web/static/*
@@ -41,6 +41,7 @@ func NewServer(cfg *config.Config, database *db.DB, cfgPath string) *Server {
 func (s *Server) Router() http.Handler {
 	r := s.chi
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
+	r.Use(s.withUser)
 
 	s.mountAuth(r)
 	s.mountSetup(r)

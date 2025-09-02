@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"gitea.knapp/jacoknapp/scriptoruminternal/db"
-	"gitea.knapp/jacoknapp/scriptoruminternal/providers"
+	"gitea.knapp/jacoknapp/scriptorum/internal/db"
+	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 	"github.com/go-chi/chi/v5"
 )
 

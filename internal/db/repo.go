@@ -38,7 +38,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		strings.ToLower(r.RequesterEmail), r.Title, string(authorsJSON),
 		r.ISBN10, r.ISBN13, r.Format, r.Status, r.StatusReason,
 	)
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 	id, _ := res.LastInsertId()
 	return id, nil
 }
@@ -54,7 +56,12 @@ WHERE id=?`,
 	return err
 }
 
-func bytesOrNil(b []byte) any { if len(b)==0 { return nil }; return string(b) }
+func bytesOrNil(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+	return string(b)
+}
 
 func (d *DB) ApproveRequest(ctx context.Context, id int64, actor string) error {
 	now := time.Now().UTC()
@@ -74,8 +81,19 @@ FROM requests WHERE id=?`, id)
 	var rr Request
 	var created, updated, approved sql.NullString
 	var authorsStr sql.NullString
-	if err := row.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &rr.ApproverEmail, &approved, &rr.ReadarrReq, &rr.ReadarrResp); err != nil {
+	var approver sql.NullString
+	var readarrReqStr, readarrRespStr sql.NullString
+	if err := row.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &approver, &approved, &readarrReqStr, &readarrRespStr); err != nil {
 		return nil, err
+	}
+	if approver.Valid {
+		rr.ApproverEmail = approver.String
+	}
+	if readarrReqStr.Valid {
+		rr.ReadarrReq = json.RawMessage([]byte(readarrReqStr.String))
+	}
+	if readarrRespStr.Valid {
+		rr.ReadarrResp = json.RawMessage([]byte(readarrRespStr.String))
 	}
 	rr.CreatedAt, _ = time.Parse(time.RFC3339Nano, created.String)
 	rr.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated.String)
@@ -90,7 +108,9 @@ FROM requests WHERE id=?`, id)
 }
 
 func (d *DB) ListRequests(ctx context.Context, mine string, limit int) ([]Request, error) {
-	if limit <= 0 { limit = 200 }
+	if limit <= 0 {
+		limit = 200
+	}
 	var rows *sql.Rows
 	var err error
 	if mine != "" {
@@ -105,7 +125,9 @@ SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn
 FROM requests
 ORDER BY id DESC LIMIT ?`, limit)
 	}
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	defer rows.Close()
 
 	var out []Request
@@ -113,8 +135,19 @@ ORDER BY id DESC LIMIT ?`, limit)
 		var rr Request
 		var created, updated, approved sql.NullString
 		var authorsStr sql.NullString
-		if err := rows.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &rr.ApproverEmail, &approved, &rr.ReadarrReq, &rr.ReadarrResp); err != nil {
+		var approver sql.NullString
+		var readarrReqStr, readarrRespStr sql.NullString
+		if err := rows.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &approver, &approved, &readarrReqStr, &readarrRespStr); err != nil {
 			return nil, err
+		}
+		if approver.Valid {
+			rr.ApproverEmail = approver.String
+		}
+		if readarrReqStr.Valid {
+			rr.ReadarrReq = json.RawMessage([]byte(readarrReqStr.String))
+		}
+		if readarrRespStr.Valid {
+			rr.ReadarrResp = json.RawMessage([]byte(readarrRespStr.String))
 		}
 		rr.CreatedAt, _ = time.Parse(time.RFC3339Nano, created.String)
 		rr.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated.String)

@@ -3,7 +3,7 @@ package httpapi
 import (
 	"testing"
 
-	"gitea.knapp/jacoknapp/scriptoruminternal/providers"
+	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 )
 
 func TestDedupeKey(t *testing.T) {

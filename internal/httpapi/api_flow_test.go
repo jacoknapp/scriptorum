@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"gitea.knapp/jacoknapp/scriptoruminternal/bootstrap"
-	"gitea.knapp/jacoknapp/scriptoruminternal/config"
+	"gitea.knapp/jacoknapp/scriptorum/internal/bootstrap"
+	"gitea.knapp/jacoknapp/scriptorum/internal/config"
 )
 
 func newServerForTest(t *testing.T) *Server {
@@ -24,6 +24,7 @@ func newServerForTest(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
+	t.Cleanup(func() { _ = database.Close() })
 	cfg.Admins.Emails = []string{"admin@example.com"}
 	cfg.Setup.Completed = true
 	_ = config.Save(cfgPath, cfg)

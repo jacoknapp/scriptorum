@@ -1,0 +1,26 @@
+# Build outputs
+/bin/
+
+# Local runtime data
+/data/
+*.db
+*.sqlite*
+
+# Logs & coverage
+*.log
+*.out
+coverage.*
+
+# OS/Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Env
+.env
+.env.*
+!.env.example

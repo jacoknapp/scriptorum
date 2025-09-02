@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"gitea.knapp/jacoknapp/scriptoruminternal/config"
-	"gitea.knapp/jacoknapp/scriptoruminternal/db"
+	"gitea.knapp/jacoknapp/scriptorum/internal/config"
+	"gitea.knapp/jacoknapp/scriptorum/internal/db"
 )
 
 func EnsureFirstRun(ctx context.Context, cfgPath, dbPath string) (*config.Config, *db.DB, error) {

@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"gitea.knapp/jacoknapp/scriptoruminternal/bootstrap"
-	"gitea.knapp/jacoknapp/scriptoruminternal/httpapi"
+	"gitea.knapp/jacoknapp/scriptorum/internal/bootstrap"
+	"gitea.knapp/jacoknapp/scriptorum/internal/httpapi"
 )
 
 func main() {
