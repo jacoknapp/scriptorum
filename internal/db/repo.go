@@ -171,3 +171,53 @@ VALUES (?, ?, ?, ?, ?)`,
 		now.Format(time.RFC3339Nano), strings.ToLower(actor), event, reqID, details,
 	)
 }
+
+// Users
+type User struct {
+	ID       int64
+	Username string
+	Hash     string
+	IsAdmin  bool
+	Created  time.Time
+}
+
+func (d *DB) CreateUser(ctx context.Context, username, passwordHash string, isAdmin bool) (int64, error) {
+	now := time.Now().UTC()
+	res, err := d.sql.ExecContext(ctx, `
+INSERT INTO users (created_at, username, password_hash, is_admin)
+VALUES (?, ?, ?, ?)`, now.Format(time.RFC3339Nano), strings.ToLower(username), passwordHash, boolToInt(isAdmin))
+	if err != nil {
+		return 0, err
+	}
+	id, _ := res.LastInsertId()
+	return id, nil
+}
+
+func (d *DB) GetUserByUsername(ctx context.Context, username string) (*User, error) {
+	row := d.sql.QueryRowContext(ctx, `SELECT id, created_at, username, password_hash, is_admin FROM users WHERE username=?`, strings.ToLower(username))
+	var u User
+	var created string
+	var isAdminInt int
+	if err := row.Scan(&u.ID, &created, &u.Username, &u.Hash, &isAdminInt); err != nil {
+		return nil, err
+	}
+	u.IsAdmin = isAdminInt == 1
+	u.Created, _ = time.Parse(time.RFC3339Nano, created)
+	return &u, nil
+}
+
+func (d *DB) CountAdmins(ctx context.Context) (int, error) {
+	row := d.sql.QueryRowContext(ctx, `SELECT COUNT(1) FROM users WHERE is_admin=1`)
+	var n int
+	if err := row.Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}

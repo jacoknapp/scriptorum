@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
+	"io/fs"
 	"net/http"
 	"strings"
 
@@ -47,7 +49,9 @@ func (s *Server) Router() http.Handler {
 	s.mountSetup(r)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); w.Write([]byte("ok")) })
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(staticFS))))
+	// Serve embedded static files under /static from the web/static folder
+	sub, _ := fs.Sub(staticFS, "web/static")
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(sub))))
 
 	r.Group(func(rt chi.Router) {
 		rt.Use(s.setupGate)
@@ -79,16 +83,20 @@ func (s *Server) needsSetup() bool {
 	if cur == nil {
 		return true
 	}
-	if len(cur.Admins.Emails) == 0 {
-		return true
+	// If setup was marked completed, don't force the wizard again.
+	if cur.Setup.Completed {
+		return false
+	}
+	// Require at least one admin path: local admin user in DB or configured admin email(s)
+	if n, err := s.db.CountAdmins(context.Background()); err != nil || n == 0 {
+		if len(cur.Admins.Emails) == 0 {
+			return true
+		}
 	}
 	if cur.OAuth.Enabled && (cur.OAuth.Issuer == "" || cur.OAuth.ClientID == "" || cur.OAuth.ClientSecret == "" || cur.OAuth.RedirectURL == "") {
 		return true
 	}
 	if cur.Readarr.Ebooks.BaseURL == "" || cur.Readarr.Audiobooks.BaseURL == "" {
-		return true
-	}
-	if !cur.Setup.Completed {
 		return true
 	}
 	return false

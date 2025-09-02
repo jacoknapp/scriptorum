@@ -2,6 +2,8 @@ package httpapi
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"html/template"
 	"net/http"
@@ -36,9 +38,28 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		cur := *s.settings.Get()
-		admin := strings.TrimSpace(r.FormValue("admin_email"))
-		if admin != "" && !containsInsensitive(cur.Admins.Emails, admin) {
-			cur.Admins.Emails = append(cur.Admins.Emails, admin)
+		// Ensure we have a config salt for password hashing
+		if strings.TrimSpace(cur.Auth.Salt) == "" {
+			cur.Auth.Salt = genSalt()
+		}
+		// Admin email for OIDC admin mapping
+		adminEmail := strings.TrimSpace(r.FormValue("admin_email"))
+		if adminEmail != "" && !containsInsensitive(cur.Admins.Emails, adminEmail) {
+			cur.Admins.Emails = append(cur.Admins.Emails, adminEmail)
+		}
+		// Local admin user (username/password) creation
+		adminUser := strings.TrimSpace(r.FormValue("admin_username"))
+		adminPass := r.FormValue("admin_password")
+		// If no explicit username but email provided, use email as username for local account
+		if adminUser == "" && adminEmail != "" {
+			adminUser = adminEmail
+		}
+		if adminUser != "" && adminPass != "" {
+			// Hash with config salt and store
+			hash, err := s.hashPassword(adminPass, cur.Auth.Salt)
+			if err == nil {
+				_, _ = s.db.CreateUser(r.Context(), adminUser, hash, true)
+			}
 		}
 		cur.OAuth.Enabled = r.FormValue("oauth_enabled") == "on"
 		cur.OAuth.Issuer = r.FormValue("oauth_issuer")
@@ -46,14 +67,19 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		cur.OAuth.ClientSecret = r.FormValue("oauth_client_secret")
 		cur.OAuth.RedirectURL = r.FormValue("oauth_redirect")
 		cur.Audiobookshelf.Enabled = r.FormValue("abs_enabled") == "on"
-		cur.Audiobookshelf.BaseURL = r.FormValue("abs_base")
+		cur.Audiobookshelf.BaseURL = strings.TrimSpace(r.FormValue("abs_base"))
 		cur.Audiobookshelf.Token = r.FormValue("abs_token")
 		cur.Readarr.Ebooks.BaseURL = r.FormValue("ra_ebooks_base")
 		cur.Readarr.Ebooks.APIKey = r.FormValue("ra_ebooks_key")
 		cur.Readarr.Audiobooks.BaseURL = r.FormValue("ra_audio_base")
 		cur.Readarr.Audiobooks.APIKey = r.FormValue("ra_audio_key")
 		_ = s.settings.Update(&cur)
-		stepFlags["admin"] = len(cur.Admins.Emails) > 0
+		// Admin step satisfied if either OIDC admin email configured or a local admin user exists
+		if n, err := s.db.CountAdmins(r.Context()); err == nil && n > 0 {
+			stepFlags["admin"] = true
+		} else {
+			stepFlags["admin"] = len(cur.Admins.Emails) > 0
+		}
 		// HTMX: trigger a refresh of gating and reload the current step; no content body
 		w.Header().Set("HX-Trigger", "setup-saved")
 		w.WriteHeader(http.StatusNoContent)
@@ -79,6 +105,12 @@ func (u *setupUI) handleTestOAuth(s *Server) http.HandlerFunc {
 func (u *setupUI) handleTestABS(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := s.settings.Get().Audiobookshelf
+		if !cfg.Enabled {
+			stepFlags["abs"] = true
+			w.Header().Set("HX-Trigger", "setup-saved")
+			writeProbeHTML(w, true, "disabled")
+			return
+		}
 		abs := providers.NewABS(cfg.BaseURL, cfg.Token, cfg.SearchEndpoint)
 		ctx2, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 		defer cancel()
@@ -141,9 +173,12 @@ func errString(err error) string {
 func (u *setupUI) handleSetupFinish(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cur := *s.settings.Get()
-		if len(cur.Admins.Emails) == 0 {
-			http.Error(w, "admin required", 400)
-			return
+		// Require at least one admin: local or OIDC email mapping
+		if n, err := s.db.CountAdmins(r.Context()); err != nil || n == 0 {
+			if len(cur.Admins.Emails) == 0 {
+				http.Error(w, "admin required", 400)
+				return
+			}
 		}
 		if cur.OAuth.Enabled && (cur.OAuth.Issuer == "" || cur.OAuth.ClientID == "" || cur.OAuth.ClientSecret == "" || cur.OAuth.RedirectURL == "") {
 			http.Error(w, "oauth incomplete", 400)
@@ -153,6 +188,16 @@ func (u *setupUI) handleSetupFinish(s *Server) http.HandlerFunc {
 		_ = s.settings.Update(&cur)
 		http.Redirect(w, r, "/login", http.StatusFound)
 	}
+}
+
+// genSalt returns a URL-safe random string suitable as a password pepper/salt
+func genSalt() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		// fallback to timestamp-ish bytes if RNG fails (unlikely)
+		return base64.RawURLEncoding.EncodeToString([]byte(time.Now().Format(time.RFC3339Nano)))
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
 }
 
 func (u *setupUI) handleCanAdvance(s *Server) http.HandlerFunc {

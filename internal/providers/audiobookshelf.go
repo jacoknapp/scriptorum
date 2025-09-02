@@ -19,7 +19,8 @@ type ABS struct {
 }
 
 func NewABS(base, token, searchEndpoint string) *ABS {
-	return &ABS{base: strings.TrimRight(base, "/"), token: token, searchEndpoint: defaultIfEmpty(searchEndpoint, "/api/search?query={{urlquery .Term}}"), cl: &http.Client{Timeout: 8 * time.Second}}
+	nb := normalizeBase(base)
+	return &ABS{base: strings.TrimRight(nb, "/"), token: token, searchEndpoint: defaultIfEmpty(searchEndpoint, "/api/search?query={{urlquery .Term}}"), cl: &http.Client{Timeout: 8 * time.Second}}
 }
 
 func defaultIfEmpty(v, d string) string {
@@ -30,7 +31,11 @@ func defaultIfEmpty(v, d string) string {
 }
 
 func (a *ABS) Ping(ctx context.Context) error {
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, a.base+"/api/about", nil)
+	if strings.TrimSpace(a.base) == "" {
+		return errStatus("audiobookshelf base URL is empty; set the Base URL (e.g., http://host:port)")
+	}
+	// Use /api/authorize with POST as per ABS docs; requires Bearer token
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, a.base+"/api/authorize", nil)
 	a.addAuth(req)
 	resp, err := a.cl.Do(req)
 	if err != nil {
@@ -73,12 +78,11 @@ func (a *ABS) addAuth(req *http.Request) {
 	if tok == "" {
 		return
 	}
-	// If caller supplies a bearer token, use Authorization; otherwise use X-Api-Key for API keys
-	if strings.HasPrefix(strings.ToLower(tok), "bearer ") {
-		req.Header.Set("Authorization", tok)
-		return
+	// ABS expects Authorization: Bearer <token>
+	if !strings.HasPrefix(strings.ToLower(tok), "bearer ") {
+		tok = "Bearer " + tok
 	}
-	req.Header.Set("X-Api-Key", tok)
+	req.Header.Set("Authorization", tok)
 }
 
 func (a *ABS) renderSearchURL(term string) string {
@@ -99,4 +103,16 @@ func (a *ABS) renderSearchURL(term string) string {
 		ep = "/" + ep
 	}
 	return a.base + ep
+}
+
+func normalizeBase(b string) string {
+	s := strings.TrimSpace(b)
+	if s == "" {
+		return ""
+	}
+	if strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://") {
+		return s
+	}
+	// Assume http if scheme missing
+	return "http://" + s
 }

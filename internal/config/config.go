@@ -2,32 +2,47 @@ package config
 
 import (
 	"os"
+
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	HTTP struct{ Listen string `yaml:"listen"` } `yaml:"http"`
-	DB   struct{ Path string `yaml:"path"` } `yaml:"db"`
-	Setup struct{ Completed bool `yaml:"completed"` } `yaml:"setup"`
+	HTTP struct {
+		Listen string `yaml:"listen"`
+	} `yaml:"http"`
+	DB struct {
+		Path string `yaml:"path"`
+	} `yaml:"db"`
+	Setup struct {
+		Completed bool `yaml:"completed"`
+	} `yaml:"setup"`
 
-	Admins struct{ Emails []string `yaml:"emails"` } `yaml:"admins"`
+	Auth struct {
+		Salt string `yaml:"salt"`
+	} `yaml:"auth"`
+
+	Admins struct {
+		Emails []string `yaml:"emails"`
+	} `yaml:"admins"`
 
 	OAuth struct {
-		Enabled       bool     `yaml:"enabled"`
-		Issuer        string   `yaml:"issuer"`
-		ClientID      string   `yaml:"client_id"`
-		ClientSecret  string   `yaml:"client_secret"`
-		RedirectURL   string   `yaml:"redirect_url"`
-		Scopes        []string `yaml:"scopes"`
-		AllowDomains  []string `yaml:"allow_email_domains"`
-		AllowEmails   []string `yaml:"allow_emails"`
-		CookieName    string   `yaml:"cookie_name"`
-		CookieDomain  string   `yaml:"cookie_domain"`
-		CookieSecure  bool     `yaml:"cookie_secure"`
-		CookieSecret  string   `yaml:"cookie_secret"`
+		Enabled      bool     `yaml:"enabled"`
+		Issuer       string   `yaml:"issuer"`
+		ClientID     string   `yaml:"client_id"`
+		ClientSecret string   `yaml:"client_secret"`
+		RedirectURL  string   `yaml:"redirect_url"`
+		Scopes       []string `yaml:"scopes"`
+		AllowDomains []string `yaml:"allow_email_domains"`
+		AllowEmails  []string `yaml:"allow_emails"`
+		CookieName   string   `yaml:"cookie_name"`
+		CookieDomain string   `yaml:"cookie_domain"`
+		CookieSecure bool     `yaml:"cookie_secure"`
+		CookieSecret string   `yaml:"cookie_secret"`
 	} `yaml:"oauth"`
 
-	AmazonPublic struct { Enabled bool `yaml:"enabled"` } `yaml:"amazon_public"`
+	AmazonPublic struct {
+		Enabled bool `yaml:"enabled"`
+	} `yaml:"amazon_public"`
 
 	Audiobookshelf struct {
 		Enabled        bool   `yaml:"enabled"`
@@ -66,13 +81,21 @@ type ReadarrInstance struct {
 }
 
 func Load(path string) (*Config, error) {
-	b, err := os.ReadFile(path); if err != nil { return nil, err }
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
 	var cfg Config
-	if err := yaml.Unmarshal(b, &cfg); err != nil { return nil, err }
+	if err := yaml.Unmarshal(b, &cfg); err != nil {
+		return nil, err
+	}
 	return &cfg, nil
 }
 
 func Save(path string, cfg *Config) error {
-	b, err := yaml.Marshal(cfg); if err != nil { return err }
+	b, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
 	return os.WriteFile(path, b, 0o644)
 }
