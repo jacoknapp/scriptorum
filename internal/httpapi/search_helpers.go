@@ -3,7 +3,7 @@ package httpapi
 import (
 	"strings"
 
-	"github.com/jacoknapp/scriptorum/internal/providers"
+	"gitea.knapp/jacoknapp/scriptoruminternal/providers"
 )
 
 func dedupeKey(b providers.BookItem) string {

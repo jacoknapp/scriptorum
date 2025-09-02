@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jacoknapp/scriptorum/internal/bootstrap"
-	"github.com/jacoknapp/scriptorum/internal/config"
+	"gitea.knapp/jacoknapp/scriptoruminternal/bootstrap"
+	"gitea.knapp/jacoknapp/scriptoruminternal/config"
 )
 
 func newServerForTest(t *testing.T) *Server {

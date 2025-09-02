@@ -9,9 +9,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"github.com/jacoknapp/scriptorum/internal/config"
-	"github.com/jacoknapp/scriptorum/internal/db"
-	"github.com/jacoknapp/scriptorum/internal/settings"
+	"gitea.knapp/jacoknapp/scriptoruminternal/config"
+	"gitea.knapp/jacoknapp/scriptoruminternal/db"
+	"gitea.knapp/jacoknapp/scriptoruminternal/settings"
 )
 
 //go:embed web/static/*

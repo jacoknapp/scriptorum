@@ -4,7 +4,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/jacoknapp/scriptorum/internal/config"
+	"gitea.knapp/jacoknapp/scriptoruminternal/config"
 	"gopkg.in/yaml.v3"
 )
 

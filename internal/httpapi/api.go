@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
+	"gitea.knapp/jacoknapp/scriptoruminternal/db"
+	"gitea.knapp/jacoknapp/scriptoruminternal/providers"
 	"github.com/go-chi/chi/v5"
-	"github.com/jacoknapp/scriptorum/internal/db"
-	"github.com/jacoknapp/scriptorum/internal/providers"
 )
 
 type RequestPayload struct {

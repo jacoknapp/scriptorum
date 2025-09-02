@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"gitea.knapp/jacoknapp/scriptoruminternal/providers"
 	"github.com/go-chi/chi/v5"
-	"github.com/jacoknapp/scriptorum/internal/providers"
 )
 
 var stepFlags = map[string]bool{"admin": false, "oauth": false, "abs": false, "rebooks": false, "raudio": false}

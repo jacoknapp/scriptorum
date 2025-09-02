@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	"gitea.knapp/jacoknapp/scriptoruminternal/providers"
 	"github.com/go-chi/chi/v5"
-	"github.com/jacoknapp/scriptorum/internal/providers"
 )
 
 func (s *Server) mountSearch(r chi.Router) {
