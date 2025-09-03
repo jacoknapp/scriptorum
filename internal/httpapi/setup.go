@@ -18,14 +18,18 @@ var stepFlags = map[string]bool{"admin": false, "oauth": false, "abs": false, "r
 
 func (s *Server) mountSetup(r chi.Router) {
 	u := &setupUI{tpl: template.Must(template.ParseFS(setupFS, "web/setup/*.html"))}
-	r.Get("/setup", u.handleSetupHome(s))
-	r.Post("/setup/save", u.handleSetupSave(s))
-	r.Post("/setup/finish", u.handleSetupFinish(s))
-	r.Get("/setup/can-advance/{n}", u.handleCanAdvance(s))
-	r.Get("/setup/test/oauth", u.handleTestOAuth(s))
-	r.Get("/setup/test/abs", u.handleTestABS(s))
-	r.Get("/setup/test/readarr", u.handleTestReadarr(s))
-	r.Get("/setup/step/{n}", u.handleStep(s))
+	// Mount under /setup and apply the setupGate so the wizard is only accessible when needed
+	r.Route("/setup", func(rr chi.Router) {
+		rr.Use(s.setupGate)
+		rr.Get("/", u.handleSetupHome(s))
+		rr.Post("/save", u.handleSetupSave(s))
+		rr.Post("/finish", u.handleSetupFinish(s))
+		rr.Get("/can-advance/{n}", u.handleCanAdvance(s))
+		rr.Get("/test/oauth", u.handleTestOAuth(s))
+		rr.Get("/test/abs", u.handleTestABS(s))
+		rr.Get("/test/readarr", u.handleTestReadarr(s))
+		rr.Get("/step/{n}", u.handleStep(s))
+	})
 }
 
 type setupUI struct{ tpl *template.Template }
@@ -133,7 +137,7 @@ func (u *setupUI) handleTestReadarr(s *Server) http.HandlerFunc {
 			c := s.settings.Get().Readarr.Audiobooks
 			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint}
 		}
-		ra := providers.NewReadarr(inst)
+		ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 		ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
 		defer cancel()
 		err := ra.PingLookup(ctx)

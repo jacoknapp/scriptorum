@@ -1,1 +1,47 @@
-<table class="min-w-full text-sm"><thead class="bg-slate-50"><tr><th class="text-left px-4 py-2">Title</th><th class="text-left px-4 py-2">Requester</th><th class="text-left px-4 py-2">Format</th><th class="text-left px-4 py-2">Status</th><th class="text-right px-4 py-2">Actions</th></tr></thead><tbody class="divide-y">{{ range .Items }}<tr><td class="px-4 py-2"><div class="font-medium">{{ .Title }}</div><div class="text-slate-500">{{ index .Authors 0 }}</div></td><td class="px-4 py-2">{{ .RequesterEmail }}</td><td class="px-4 py-2">{{ .Format }}</td><td class="px-4 py-2">{{ .Status }}</td><td class="px-4 py-2 text-right"><form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="closest tr" hx-swap="none"><button class="px-3 py-1 rounded bg-royal-600 text-white">Approve</button></form></td></tr>{{ else }}<tr><td colspan="5" class="px-4 py-6 text-slate-500">No requests yet.</td></tr>{{ end }}</tbody></table>
+{{ define "requests_table" }}
+<table class="min-w-full text-sm">
+	<thead class="bg-slate-50">
+		<tr>
+			<th class="text-left px-4 py-2">Title</th>
+			<th class="text-left px-4 py-2">Requester</th>
+			<th class="text-left px-4 py-2">Format</th>
+			<th class="text-left px-4 py-2">Status</th>
+			<th class="text-right px-4 py-2">Actions</th>
+		</tr>
+	</thead>
+	<tbody class="divide-y">
+		{{ if .FallbackAll }}
+		<tr>
+			<td colspan="5" class="px-4 py-2 text-xs text-slate-500">Showing all requests (you have none yet).</td>
+		</tr>
+		{{ end }}
+		{{ range .Items }}
+		<tr>
+			<td class="px-4 py-2">
+				<div class="font-medium">{{ .Title }}</div>
+				<div class="text-slate-500">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
+			</td>
+			<td class="px-4 py-2">{{ .RequesterEmail }}</td>
+			<td class="px-4 py-2">{{ .Format }}</td>
+			<td class="px-4 py-2">{{ .Status }}</td>
+			<td class="px-4 py-2 text-right">
+				{{ if $.IsAdmin }}
+				<form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="closest tr" hx-swap="none" style="display: inline;">
+					<button class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-700">Approve</button>
+				</form>
+				<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest tr" hx-swap="none" style="display: inline; margin-left: 8px;">
+					<button class="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700">Decline</button>
+				</form>
+				{{ else }}
+				<span class="text-slate-400">-</span>
+				{{ end }}
+			</td>
+		</tr>
+		{{ else }}
+		<tr>
+			<td colspan="5" class="px-4 py-6 text-slate-500">No requests yet.</td>
+		</tr>
+		{{ end }}
+	</tbody>
+</table>
+{{ end }}

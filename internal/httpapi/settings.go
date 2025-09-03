@@ -50,3 +50,11 @@ func (s *Server) userName(r *http.Request) string {
 	}
 	return u.Name
 }
+
+func (s *Server) userEmail(r *http.Request) string {
+	u, _ := r.Context().Value(ctxUser).(*session)
+	if u == nil {
+		return ""
+	}
+	return strings.ToLower(u.Email)
+}

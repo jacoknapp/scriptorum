@@ -1,1 +1,173 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scriptorum</title><script src="https://unpkg.com/htmx.org@1.9.12"></script><script src="https://cdn.tailwindcss.com"></script><script>tailwind.config={theme:{extend:{colors:{royal:{50:'#f6f3ff',100:'#ede9fe',200:'#ddd6fe',300:'#c4b5fd',400:'#a78bfa',500:'#8b5cf6',600:'#7c3aed',700:'#6d28d9',800:'#5b21b6',900:'#4c1d95'},surface:{50:'#f8f7fb',100:'#f2f0f7'}},boxShadow:{card:'0 8px 24px rgba(93,63,211,.12)',glow:'0 0 0 4px rgba(124,58,237,.15)'},borderRadius:{xl2:'1.25rem'}}}}</script><link rel="icon" href="/static/icon.svg" type="image/svg+xml"><link rel="manifest" href="/static/site.webmanifest"><meta name="theme-color" content="#7c3aed"></head><body class="min-h-screen bg-surface-50 text-slate-900"><header class="relative text-white"><div class="absolute inset-0 bg-gradient-to-r from-royal-700 via-royal-600 to-royal-500"></div><div class="relative max-w-6xl mx-auto px-4 py-4 flex items-center justify-between"><div class="flex items-center gap-3"><img src="/static/icon.svg" class="w-9 h-9 rounded-xl2 bg-white/10 ring-1 ring-white/15 shadow-card" alt="Scriptorum Icon"/><div class="font-semibold tracking-wide">Scriptorum</div></div><nav class="flex items-center gap-3 text-sm"><a href="/" class="hover:underline/50">Home</a><a href="/dashboard" class="hover:underline/50">Dashboard</a><a href="/settings" class="hover:underline/50">Settings</a><a href="/login" class="px-3 py-1.5 rounded-lg bg-white text-royal-700 hover:bg-royal-50">Login</a></nav></div></header><main class="max-w-6xl mx-auto px-4 py-8">{{ template "content" . }}</main><footer class="max-w-6xl mx-auto px-4 py-10 text-sm text-slate-500">Overseerr-style UI • Royal theme</footer></body></html>
+{{ define "header" }}
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width,initial-scale=1">
+		<title>Scriptorum</title>
+		<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<script>
+		// Refresh requests table if present when request events occur
+		document.addEventListener('htmx:afterOnLoad', function(evt){
+			try {
+				var trig = evt.detail && evt.detail.xhr && evt.detail.xhr.getResponseHeader('HX-Trigger');
+				if (!trig) return;
+				var data = JSON.parse(trig);
+				if (data['request:created'] || data['request:updated']) {
+					var tbl = document.querySelector('#req-table');
+					if (tbl) {
+						htmx.ajax('GET', '/ui/requests/table', { target: '#req-table', swap: 'innerHTML' });
+					}
+					// If a request was updated, try to find and update matching search result buttons
+					if (data['request:updated']) {
+						try {
+							var upd = data['request:updated'];
+							// find all result forms in current page
+							document.querySelectorAll('form[data-isbn13], form[data-isbn10], form[data-asin], form[data-title]').forEach(function(f){
+								var fIsbn13 = (f.dataset.isbn13||'').trim();
+								var fIsbn10 = (f.dataset.isbn10||'').trim();
+								var fAsin = (f.dataset.asin||'').trim();
+								var fTitle = (f.dataset.title||'').trim();
+								var fmt = (f.dataset.format||'').trim();
+								var match = false;
+								if (upd.isbn13 && upd.isbn13 === fIsbn13) match = true;
+								if (upd.isbn10 && upd.isbn10 === fIsbn10) match = true;
+								if (upd.asin && upd.asin === fAsin) match = true;
+								if (!match && upd.title && fTitle && upd.title.trim() === fTitle) match = true;
+								if (match) {
+									// find request buttons inside this form and turn them into Requested state
+									var btns = f.querySelectorAll('button');
+									btns.forEach(function(b){
+										b.textContent = 'Requested ✓';
+										b.classList.remove('bg-royal-600','bg-royal-500');
+										b.classList.add('bg-emerald-600');
+										b.classList.remove('hover:bg-royal-700','hover:bg-royal-600');
+										b.disabled = true;
+									});
+								}
+							});
+						} catch(e) {}
+					}
+					// Toast for feedback
+					if (data['request:created']) {
+						var toast = document.getElementById('toast');
+						if (!toast) {
+							toast = document.createElement('div');
+							toast.id = 'toast';
+							toast.style.cssText = 'position:fixed;top:16px;right:16px;z-index:1000;max-width:320px;';
+							document.body.appendChild(toast);
+						}
+						var note = document.createElement('div');
+						note.className = 'mb-2 px-3 py-2 rounded-lg shadow-card text-sm bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200';
+						note.innerHTML = 'Request submitted. <a href="/requests" class="underline">Open Requests</a>';
+						toast.appendChild(note);
+						setTimeout(function(){ note.style.opacity = '0'; note.style.transition = 'opacity .4s'; setTimeout(function(){ note.remove(); }, 400); }, 2500);
+					}
+				}
+			} catch(e) {}
+		});
+
+		// JS fallback if HTMX failed to load
+		function scriptorumShowToast(msg, cls){
+			var toast = document.getElementById('toast');
+			if (!toast) { toast = document.createElement('div'); toast.id = 'toast'; toast.style.cssText = 'position:fixed;top:16px;right:16px;z-index:1000;max-width:320px;'; document.body.appendChild(toast); }
+			var note = document.createElement('div');
+			note.className = 'mb-2 px-3 py-2 rounded-lg shadow-card text-sm ' + (cls||'bg-emerald-50 text-emerald-800 ring-1 ring-emerald-200');
+			note.textContent = msg;
+			toast.appendChild(note);
+			setTimeout(function(){ note.style.opacity = '0'; note.style.transition = 'opacity .4s'; setTimeout(function(){ note.remove(); }, 400); }, 2500);
+		}
+		window.scriptorumRequestFallback = async function(btn, format){
+			try{
+				var li = btn.closest('li');
+				var form = btn.closest('form');
+				if (!form) { scriptorumShowToast('No form found for request', 'bg-rose-50 text-rose-800 ring-1 ring-rose-200'); return; }
+				var ind = li && li.querySelector('.req-ind'); if (ind) ind.style.display = 'inline';
+				btn.classList.add('opacity-60','pointer-events-none');
+				var fd = new FormData(form);
+				var ds = form.dataset || {};
+				var authors = fd.getAll('authors');
+				if ((!authors || authors.length === 0) && ds.author) { authors = [ds.author]; }
+				var payload = {
+					title: (fd.get('title')||ds.title||'').toString(),
+					authors: authors,
+					isbn10: (fd.get('isbn10')||ds.isbn10||'').toString(),
+					isbn13: (fd.get('isbn13')||ds.isbn13||'').toString(),
+					asin: (fd.get('asin')||ds.asin||'').toString(),
+					format: (format||'ebook')
+				};
+				var resp = await fetch('/api/v1/requests', { method: 'POST', body: JSON.stringify(payload), headers: { 'HX-Request':'true', 'Content-Type':'application/json' }, credentials: 'same-origin' });
+				if (ind) ind.style.display = 'none';
+				if (resp.ok) {
+					btn.textContent = 'Requested ✓';
+					btn.classList.add('bg-emerald-600');
+					btn.classList.remove('hover:bg-royal-700','hover:bg-royal-600');
+					scriptorumShowToast('Request submitted. Open Requests to view.');
+					var tbl = document.querySelector('#req-table');
+					if (tbl) {
+						try { const html = await fetch('/ui/requests/table', { credentials: 'same-origin' }).then(r=>r.text()); tbl.innerHTML = html; } catch {}
+					}
+				} else if (resp.status === 302 || resp.redirected) {
+					scriptorumShowToast('Not signed in. Please log in.', 'bg-amber-50 text-amber-800 ring-1 ring-amber-200');
+					btn.classList.remove('opacity-60','pointer-events-none');
+				} else {
+					var txt = await resp.text();
+					scriptorumShowToast('Error: ' + (txt||resp.status), 'bg-rose-50 text-rose-800 ring-1 ring-rose-200');
+					btn.classList.remove('opacity-60','pointer-events-none');
+				}
+			}catch(err){
+				scriptorumShowToast('Network error submitting request', 'bg-rose-50 text-rose-800 ring-1 ring-rose-200');
+				btn.classList.remove('opacity-60','pointer-events-none');
+			}
+		}
+		</script>
+		<script>
+			tailwind.config = {
+				theme: {
+					extend: {
+						colors: {
+							royal: {50:'#f6f3ff',100:'#ede9fe',200:'#ddd6fe',300:'#c4b5fd',400:'#a78bfa',500:'#8b5cf6',600:'#7c3aed',700:'#6d28d9',800:'#5b21b6',900:'#4c1d95'},
+							surface: {50:'#f8f7fb',100:'#f2f0f7'}
+						},
+						boxShadow: {
+							card:'0 8px 24px rgba(93,63,211,.12)',
+							glow:'0 0 0 4px rgba(124,58,237,.15)'
+						},
+						borderRadius: { xl2:'1.25rem' }
+					}
+				}
+			}
+		</script>
+		<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+		<link rel="manifest" href="/static/site.webmanifest">
+		<meta name="theme-color" content="#7c3aed">
+	</head>
+	<body class="min-h-screen bg-surface-50 text-slate-900">
+		<header class="relative text-white">
+			<div class="absolute inset-0 bg-gradient-to-r from-royal-700 via-royal-600 to-royal-500"></div>
+			<div class="relative max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+				<div class="flex items-center gap-3">
+					<img src="/static/icon.svg" class="w-9 h-9 rounded-xl2 bg-white/10 ring-1 ring-white/15 shadow-card" alt="Scriptorum Icon"/>
+					<div class="font-semibold tracking-wide">Scriptorum</div>
+				</div>
+				<nav class="flex items-center gap-3 text-sm">
+					<a href="/search" class="hover:underline/50">Search</a>
+					<a href="/requests" class="hover:underline/50">Requests</a>
+					<a href="/users" class="hover:underline/50">Users</a>
+					<a href="/settings" class="hover:underline/50">Settings</a>
+					<a href="/logout" class="px-3 py-1.5 rounded-lg bg-white text-royal-700 hover:bg-royal-50">Logout</a>
+				</nav>
+			</div>
+		</header>
+		<main class="max-w-6xl mx-auto px-4 py-8">
+{{ end }}
+
+{{ define "footer" }}
+		</main>
+		<footer class="max-w-6xl mx-auto px-4 py-10 text-sm text-slate-500">
+			Overseerr-style UI • Royal theme
+		</footer>
+	</body>
+	</html>
+{{ end }}

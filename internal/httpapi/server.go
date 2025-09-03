@@ -66,7 +66,15 @@ func (s *Server) Router() http.Handler {
 
 func (s *Server) setupGate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/setup") || r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/static/") || strings.HasPrefix(r.URL.Path, "/oauth") || strings.HasPrefix(r.URL.Path, "/login") || strings.HasPrefix(r.URL.Path, "/logout") {
+		if strings.HasPrefix(r.URL.Path, "/setup") {
+			if !s.needsSetup() {
+				http.Redirect(w, r, "/", http.StatusFound)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/static/") || strings.HasPrefix(r.URL.Path, "/oauth") || strings.HasPrefix(r.URL.Path, "/login") || strings.HasPrefix(r.URL.Path, "/logout") {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -94,9 +102,6 @@ func (s *Server) needsSetup() bool {
 		}
 	}
 	if cur.OAuth.Enabled && (cur.OAuth.Issuer == "" || cur.OAuth.ClientID == "" || cur.OAuth.ClientSecret == "" || cur.OAuth.RedirectURL == "") {
-		return true
-	}
-	if cur.Readarr.Ebooks.BaseURL == "" || cur.Readarr.Audiobooks.BaseURL == "" {
 		return true
 	}
 	return false

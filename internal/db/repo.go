@@ -163,6 +163,11 @@ ORDER BY id DESC LIMIT ?`, limit)
 	return out, nil
 }
 
+func (d *DB) DeleteRequest(ctx context.Context, id int64) error {
+	_, err := d.sql.ExecContext(ctx, `DELETE FROM requests WHERE id=?`, id)
+	return err
+}
+
 func (d *DB) AddAudit(ctx context.Context, actor, event string, reqID int64, details string) error {
 	now := time.Now().UTC()
 	return d.Exec(ctx, `
@@ -213,6 +218,37 @@ func (d *DB) CountAdmins(ctx context.Context) (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+func (d *DB) ListUsers(ctx context.Context) ([]User, error) {
+	rows, err := d.sql.QueryContext(ctx, `SELECT id, created_at, username, password_hash, is_admin FROM users ORDER BY id DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []User
+	for rows.Next() {
+		var u User
+		var created string
+		var isAdminInt int
+		if err := rows.Scan(&u.ID, &created, &u.Username, &u.Hash, &isAdminInt); err != nil {
+			return nil, err
+		}
+		u.Created, _ = time.Parse(time.RFC3339Nano, created)
+		u.IsAdmin = isAdminInt == 1
+		out = append(out, u)
+	}
+	return out, nil
+}
+
+func (d *DB) DeleteUser(ctx context.Context, id int64) error {
+	_, err := d.sql.ExecContext(ctx, `DELETE FROM users WHERE id=?`, id)
+	return err
+}
+
+func (d *DB) SetUserAdmin(ctx context.Context, id int64, isAdmin bool) error {
+	_, err := d.sql.ExecContext(ctx, `UPDATE users SET is_admin=? WHERE id=?`, boolToInt(isAdmin), id)
+	return err
 }
 
 func boolToInt(b bool) int {

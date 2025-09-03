@@ -1,1 +1,60 @@
-<div class="bg-white rounded-xl2 shadow-card ring-1 ring-slate-900/5"><div class="p-4 border-b"><h2 class="font-semibold">Results for “{{ .Query }}”</h2></div><ul class="divide-y">{{ range .Items }}<li class="p-4 flex gap-4 items-center"><img src="{{ .CoverMedium }}" class="w-16 h-24 object-cover rounded-lg border bg-slate-100" onerror="this.style.display='none'"><div class="flex-1 min-w-0"><div class="font-medium truncate">{{ .Title }}</div><div class="text-sm text-slate-600 truncate">{{ index .Authors 0 }}</div><div class="text-xs text-slate-500">{{ if .ISBN13 }}ISBN-13: {{ .ISBN13 }}{{ end }}{{ if and .ISBN13 .ISBN10 }}, {{ end }}{{ if .ISBN10 }}ISBN-10: {{ .ISBN10 }}{{ end }}{{ if .ASIN }}{{ if or .ISBN13 .ISBN10 }}, {{ end }}ASIN: {{ .ASIN }}{{ end }}</div><div class="text-xs mt-2" hx-get="/ui/presence?q={{ .Title }} {{ index .Authors 0 }}" hx-trigger="load" hx-target="this" hx-swap="outerHTML"><span class="px-2 py-0.5 rounded bg-slate-100 text-slate-600">Checking…</span></div></div><form hx-post="/api/v1/requests" hx-target="closest li" hx-swap="afterend" hx-headers='{"Content-Type":"application/json"}' class="flex gap-2" onsubmit="return false"><script>function _reqPayload(btn, title, authors, isbn10, isbn13, asin){return JSON.stringify({ title, authors, isbn10, isbn13, asin, format: btn.value });}</script><button name="format" value="ebook" onclick="this.closest('form').setAttribute('hx-vals','js:_reqPayload(this, \"{{ .Title }}\", {{ toJSON .Authors }}, \"{{ .ISBN10 }}\", \"{{ .ISBN13 }}\", \"{{ .ASIN }}\")')" class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700">Request eBook</button><button name="format" value="audiobook" onclick="this.closest('form').setAttribute('hx-vals','js:_reqPayload(this, \"{{ .Title }}\", {{ toJSON .Authors }}, \"{{ .ISBN10 }}\", \"{{ .ISBN13 }}\", \"{{ .ASIN }}\")')" class="px-3 py-2 rounded-lg bg-royal-500 text-white hover:bg-royal-600">Request Audiobook</button></form></li>{{ else }}<li class="p-6 text-slate-500">No results.</li>{{ end }}</ul></div>
+<div class="bg-white rounded-xl2 shadow-card ring-1 ring-slate-900/5">
+	<div class="p-4 border-b">
+		<h2 class="font-semibold">Results for “{{ .Query }}”</h2>
+	</div>
+	<ul class="divide-y">
+		{{ range .Items }}
+		<li class="p-4 flex gap-4 items-center">
+			<img src="{{ .CoverMedium }}"
+					 class="w-16 h-24 object-cover rounded-lg border bg-slate-100"
+					 onerror="this.style.display='none'">
+
+			<div class="flex-1 min-w-0">
+				<div class="font-medium truncate">{{ .Title }}</div>
+				<div class="text-sm text-slate-600 truncate">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
+				<div class="text-xs text-slate-500">
+					{{ if .ISBN13 }}ISBN-13: {{ .ISBN13 }}{{ end }}
+					{{ if and .ISBN13 .ISBN10 }}, {{ end }}
+					{{ if .ISBN10 }}ISBN-10: {{ .ISBN10 }}{{ end }}
+					{{ if .ASIN }}{{ if or .ISBN13 .ISBN10 }}, {{ end }}ASIN: {{ .ASIN }}{{ end }}
+				</div>
+				<div class="text-xs mt-2"
+						 hx-get="/ui/presence?q={{ urlquery .Title }}{{ if gt (len .Authors) 0 }}%20{{ urlquery (index .Authors 0) }}{{ end }}"
+						 hx-trigger="load"
+						 hx-target="this">
+					<span class="text-slate-400">Checking presence…</span>
+				</div>
+			</div>
+
+			<form method="post" action="/api/v1/requests" class="flex gap-2 items-center"
+					data-title="{{ .Title }}"
+					data-isbn10="{{ .ISBN10 }}"
+					data-isbn13="{{ .ISBN13 }}"
+					data-asin="{{ .ASIN }}"
+					data-author="{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}">
+				<input type="hidden" name="title" value="{{ .Title }}">
+				{{ range .Authors }}
+				<input type="hidden" name="authors" value="{{ . }}">
+				{{ end }}
+				<input type="hidden" name="isbn10" value="{{ .ISBN10 }}">
+				<input type="hidden" name="isbn13" value="{{ .ISBN13 }}">
+				<input type="hidden" name="asin" value="{{ .ASIN }}">
+
+				<button type="button" name="format" value="ebook"
+						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700 w-36"
+						onclick="scriptorumRequestFallback(this,'ebook')">
+						Request eBook
+					</button>
+				<button type="button" name="format" value="audiobook"
+						class="px-3 py-2 rounded-lg bg-royal-500 text-white hover:bg-royal-600 w-44"
+						onclick="scriptorumRequestFallback(this,'audiobook')">
+						Request Audiobook
+					</button>
+			</form>
+			<div class="req-ind htmx-indicator text-xs text-slate-500">Submitting…</div>
+		</li>
+		{{ else }}
+		<li class="p-6 text-slate-500">No results.</li>
+		{{ end }}
+	</ul>
+</div>

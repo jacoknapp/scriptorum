@@ -1,0 +1,55 @@
+{{ template "header" . }}
+<div class="bg-white rounded-xl2 shadow-card p-6">
+	<div class="flex items-center justify-between">
+		<h1 class="text-xl font-semibold">Users</h1>
+		<a href="/search" class="text-royal-700 hover:underline">Back</a>
+	</div>
+
+	<table class="w-full mt-4 text-sm">
+		<thead>
+			<tr>
+				<th class="text-left p-2">ID</th>
+				<th class="text-left p-2">Username</th>
+				<th class="text-left p-2">Admin</th>
+				<th class="text-left p-2"></th>
+			</tr>
+		</thead>
+		<tbody>
+			{{ range .Users }}
+			<tr class="border-t">
+				<td class="p-2">{{ .ID }}</td>
+				<td class="p-2">{{ .Username }}</td>
+				<td class="p-2">{{ if .IsAdmin }}yes{{ else }}no{{ end }}</td>
+				<td class="p-2">
+					<a class="text-royal-700 hover:underline" href="/users/delete?id={{ .ID }}">Delete</a>
+					·
+					<a class="text-royal-700 hover:underline" href="/users/toggle?id={{ .ID }}">Toggle Admin</a>
+				</td>
+			</tr>
+			{{ else }}
+			<tr>
+				<td colspan="4" class="p-4 text-slate-500">No users</td>
+			</tr>
+			{{ end }}
+		</tbody>
+	</table>
+
+	<hr class="my-4">
+
+	<form method="post" action="/users" class="grid gap-3 max-w-md">
+		<label class="grid gap-1">
+			<span>Username</span>
+			<input name="username" required class="border rounded px-3 py-2">
+		</label>
+		<label class="grid gap-1">
+			<span>Password</span>
+			<input type="password" name="password" required class="border rounded px-3 py-2">
+		</label>
+		<label class="inline-flex items-center gap-2">
+			<input type="checkbox" name="is_admin">
+			<span>Admin</span>
+		</label>
+		<button class="px-4 py-2 rounded bg-royal-600 text-white">Add User</button>
+	</form>
+</div>
+{{ template "footer" . }}

@@ -14,7 +14,7 @@ func TestOpenLibrarySearch(t *testing.T) {
 		body := `{"docs":[{"title":"Project Hail Mary","author_name":["Andy Weir"],"isbn":["1529157466"],"isbn13":["9781529157468"],"cover_i":12345}]}`
 		return &http.Response{StatusCode: 200, Body: ioutil.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})
-	items, err := ol.Search(context.Background(), "project hail mary")
+	items, err := ol.Search(context.Background(), "project hail mary", 10, 1)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}

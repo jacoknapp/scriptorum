@@ -160,12 +160,12 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	email := strings.ToLower(claims.Email)
 	sess := &session{Email: email, Name: claims.Name, Admin: s.isAdminEmail(email), Exp: time.Now().Add(24 * time.Hour).Unix()}
 	s.setSession(w, sess)
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, "/search", http.StatusFound)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: s.oidc.cookieName, Value: "", Path: "/", MaxAge: -1})
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
 func (s *Server) isAdminEmail(e string) bool {
@@ -195,13 +195,13 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid credentials", 401)
 		return
 	}
-	if err := s.comparePassword(u.Hash, password, s.cfg.Auth.Salt); err != nil {
+	if err := s.comparePassword(u.Hash, password, s.settings.Get().Auth.Salt); err != nil {
 		http.Error(w, "invalid credentials", 401)
 		return
 	}
 	sess := &session{Email: u.Username, Name: u.Username, Admin: u.IsAdmin, Exp: time.Now().Add(24 * time.Hour).Unix()}
 	s.setSession(w, sess)
-	http.Redirect(w, r, "/", http.StatusFound)
+	http.Redirect(w, r, "/search", http.StatusFound)
 }
 
 func (s *Server) hashPassword(password, salt string) (string, error) {

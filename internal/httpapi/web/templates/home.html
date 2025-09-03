@@ -1,1 +1,42 @@
-{{ define "content" }}<div class="bg-white rounded-xl2 shadow-card p-6"><h1 class="text-xl font-semibold mb-3">Search books</h1><form hx-get="/ui/search" hx-target="#results" class="flex gap-2"><input name="q" class="flex-1 border rounded px-3 py-2" placeholder="Title / Author / ISBN / ASIN / paste Amazon URL" required><button class="px-4 py-2 rounded bg-royal-600 text-white">Search</button></form></div><div id="results" class="mt-4"></div>{{ end }}{{ template "base" . }}
+{{ template "header" . }}
+<div class="bg-white rounded-xl2 shadow-card p-6">
+	<h1 class="text-xl font-semibold mb-3">Search books</h1>
+	<form id="searchForm" hx-get="/ui/search" hx-target="#results" hx-swap="innerHTML" class="flex gap-2">
+		<input name="q" class="flex-1 border rounded px-3 py-2" placeholder="Title / Author / ISBN / ASIN / paste Amazon URL" required>
+		<input type="hidden" name="page" value="1">
+		<input type="hidden" name="limit" value="20">
+		<button class="px-4 py-2 rounded bg-royal-600 text-white">Search</button>
+	</form>
+	</div>
+<div id="results" class="mt-4"
+		 hx-get="/ui/search"
+		 hx-trigger="revealed, intersect once from:top delay:100ms"
+		 hx-vals='js:(function(){
+			 const f=document.getElementById("searchForm");
+			 if(!f) return {};
+			 const data=new FormData(f);
+			 const pageInput=f.querySelector("input[name=page]");
+			 pageInput.value = String((parseInt(pageInput.value||"1")||1));
+			 return Object.fromEntries(data.entries());
+		 })()'
+		 hx-swap="innerHTML">
+	<!-- results will render here -->
+</div>
+<div id="more"
+		 hx-get="/ui/search"
+		 hx-trigger="revealed"
+		 hx-target="#results"
+		 hx-swap="beforeend"
+		 hx-vals='js:(function(){
+			 const f=document.getElementById("searchForm");
+			 if(!f) return {};
+			 const data=new FormData(f);
+			 const page=parseInt(data.get("page")||"1");
+			 data.set("page", String(page+1));
+			 const obj=Object.fromEntries(data.entries());
+			 // persist increment back to form for next page
+			 f.querySelector("input[name=page]").value=String(page+1);
+			 return obj;
+		 })()'>
+</div>
+{{ template "footer" . }}

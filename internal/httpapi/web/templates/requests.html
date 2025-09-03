@@ -1,0 +1,17 @@
+{{ template "header" . }}
+<div class="grid gap-4">
+	<div class="flex items-center justify-between">
+		<h1 class="text-xl font-semibold">Requests</h1>
+		<a href="/search" class="text-royal-700 hover:underline">Back</a>
+	</div>
+	<div id="req-table"
+		 class="bg-white rounded-xl2 shadow-card p-2"
+		 hx-get="/ui/requests/table"
+		 hx-trigger="load, request:created from:body, request:updated from:body"
+		 hx-swap="innerHTML">
+		<div class="p-4 text-slate-500">Loading…</div>
+		{{/* Initial server render as a fallback; will be replaced by HTMX */}}
+		{{ template "requests_table" . }}
+	</div>
+</div>
+{{ template "footer" . }}

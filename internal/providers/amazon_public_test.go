@@ -45,7 +45,7 @@ func TestAmazonPublicSearchBooks(t *testing.T) {
 	a.client.Transport = rtFunc(func(r *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 200, Body: ioutil.NopCloser(strings.NewReader(html)), Header: make(http.Header)}, nil
 	})
-	items, err := a.SearchBooks(context.Background(), "keyword", 10)
+	items, err := a.SearchBooks(context.Background(), "keyword", 1, 10)
 	if err != nil {
 		t.Fatalf("err: %v", err)
 	}
