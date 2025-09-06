@@ -122,8 +122,18 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 					} else if b.AuthorTitle != "" {
 						author = map[string]any{"name": parseAuthorNameFromTitle(b.AuthorTitle)}
 					}
-					// Send empty editions so the add step pins to this foreignEditionId only
-					cand := map[string]any{"title": b.Title, "titleSlug": b.TitleSlug, "author": author, "editions": []any{}, "foreignBookId": b.ForeignBookId, "foreignEditionId": b.ForeignEditionId}
+					// Build canonical Readarr Book schema candidate. Include a single monitored edition to pin to this foreignEditionId.
+					cand := map[string]any{
+						"title":            b.Title,
+						"titleSlug":        b.TitleSlug,
+						"author":           author,
+						"editions":         []any{map[string]any{"foreignEditionId": b.ForeignEditionId, "monitored": true}},
+						"foreignBookId":    b.ForeignBookId,
+						"foreignEditionId": b.ForeignEditionId,
+						// provider will backfill these defaults if missing
+						"monitored":         true,
+						"metadataProfileId": 1,
+					}
 					cjson, _ := json.Marshal(cand)
 					dispAuthor := ""
 					if author != nil {
@@ -166,8 +176,17 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 					} else if b.AuthorTitle != "" {
 						author = map[string]any{"name": parseAuthorNameFromTitle(b.AuthorTitle)}
 					}
-					// Send empty editions so the add step pins to this foreignEditionId only
-					cand := map[string]any{"title": b.Title, "titleSlug": b.TitleSlug, "author": author, "editions": []any{}, "foreignBookId": b.ForeignBookId, "foreignEditionId": b.ForeignEditionId}
+					// Build canonical Readarr Book schema candidate for audiobooks
+					cand := map[string]any{
+						"title":             b.Title,
+						"titleSlug":         b.TitleSlug,
+						"author":            author,
+						"editions":          []any{map[string]any{"foreignEditionId": b.ForeignEditionId, "monitored": true}},
+						"foreignBookId":     b.ForeignBookId,
+						"foreignEditionId":  b.ForeignEditionId,
+						"monitored":         true,
+						"metadataProfileId": 1,
+					}
 					cjson, _ := json.Marshal(cand)
 					dispAuthor := ""
 					if author != nil {

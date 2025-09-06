@@ -155,12 +155,16 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 						author = map[string]any{"name": parseAuthorNameFromTitle(pick.AuthorTitle)}
 					}
 					cand := map[string]any{
-						"title":            pick.Title,
-						"titleSlug":        pick.TitleSlug,
-						"author":           author,
-						"editions":         []any{},
+						"title":     pick.Title,
+						"titleSlug": pick.TitleSlug,
+						"author":    author,
+						// include one monitored edition to pin selection
+						"editions":         []any{map[string]any{"foreignEditionId": pick.ForeignEditionId, "monitored": true}},
 						"foreignBookId":    pick.ForeignBookId,
 						"foreignEditionId": pick.ForeignEditionId,
+						// provider will backfill remaining defaults if missing
+						"monitored":         true,
+						"metadataProfileId": 1,
 					}
 					if b, err := json.Marshal(cand); err == nil {
 						req.ReadarrReq = json.RawMessage(b)
