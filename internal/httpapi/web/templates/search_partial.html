@@ -18,6 +18,9 @@
 					{{ if .ISBN10 }}ISBN-10: {{ .ISBN10 }}{{ end }}
 					{{ if .ASIN }}{{ if or .ISBN13 .ISBN10 }}, {{ end }}ASIN: {{ .ASIN }}{{ end }}
 				</div>
+				{{ if .Provider }}
+				<div class="text-[11px] text-slate-400 mt-1">Source: {{ .Provider }}</div>
+				{{ end }}
 				<div class="text-xs mt-2"
 						 hx-get="/ui/presence?q={{ urlquery .Title }}{{ if gt (len .Authors) 0 }}%20{{ urlquery (index .Authors 0) }}{{ end }}"
 						 hx-trigger="load"
@@ -39,6 +42,12 @@
 				<input type="hidden" name="isbn10" value="{{ .ISBN10 }}">
 				<input type="hidden" name="isbn13" value="{{ .ISBN13 }}">
 				<input type="hidden" name="asin" value="{{ .ASIN }}">
+				{{ if .Provider }}
+				<input type="hidden" name="provider" value="{{ .Provider }}">
+				<input type="hidden" name="provider_payload" value='{{ .ProviderPayload }}'>
+				<input type="hidden" name="provider_payload_ebook" value='{{ .ProviderEbookPayload }}'>
+				<input type="hidden" name="provider_payload_audiobook" value='{{ .ProviderAudiobookPayload }}'>
+				{{ end }}
 
 				<button type="button" name="format" value="ebook"
 						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700 w-36"

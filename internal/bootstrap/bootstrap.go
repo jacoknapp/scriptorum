@@ -91,6 +91,8 @@ func defaultAddTemplate() string {
   "tags": {{ toJSON .Opts.Tags }},
   "title": {{ toJSON (index .Candidate "title") }},
   "titleSlug": {{ toJSON (index .Candidate "titleSlug") }},
+	"foreignBookId": {{ toJSON (index .Candidate "foreignBookId") }},
+	"foreignEditionId": {{ toJSON (index .Candidate "foreignEditionId") }},
   "author": {{ toJSON (index .Candidate "author") }},
   "editions": {{ toJSON (index .Candidate "editions") }}
 }`

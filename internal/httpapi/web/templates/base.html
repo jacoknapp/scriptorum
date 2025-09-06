@@ -95,8 +95,17 @@
 					isbn10: (fd.get('isbn10')||ds.isbn10||'').toString(),
 					isbn13: (fd.get('isbn13')||ds.isbn13||'').toString(),
 					asin: (fd.get('asin')||ds.asin||'').toString(),
-					format: (format||'ebook')
+					format: (format||'ebook'),
+					provider: (fd.get('provider')||ds.provider||'').toString()
 				};
+				var ppe = (fd.get('provider_payload_ebook')||ds.provider_payload_ebook||'').toString();
+				var ppa = (fd.get('provider_payload_audiobook')||ds.provider_payload_audiobook||'').toString();
+				var pp = (fd.get('provider_payload')||ds.provider_payload||'').toString();
+				if (payload.provider) {
+					if ((format||'ebook') === 'ebook' && ppe) { payload.provider_payload = ppe; }
+					else if ((format||'ebook') === 'audiobook' && ppa) { payload.provider_payload = ppa; }
+					else if (pp) { payload.provider_payload = pp; }
+				}
 				var resp = await fetch('/api/v1/requests', { method: 'POST', body: JSON.stringify(payload), headers: { 'HX-Request':'true', 'Content-Type':'application/json' }, credentials: 'same-origin' });
 				if (ind) ind.style.display = 'none';
 				if (resp.ok) {

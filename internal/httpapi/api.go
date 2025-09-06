@@ -15,12 +15,14 @@ import (
 )
 
 type RequestPayload struct {
-	Title   string   `json:"title"`
-	Authors []string `json:"authors"`
-	ISBN10  string   `json:"isbn10"`
-	ISBN13  string   `json:"isbn13"`
-	ASIN    string   `json:"asin"`
-	Format  string   `json:"format"` // ebook | audiobook
+	Title           string   `json:"title"`
+	Authors         []string `json:"authors"`
+	ISBN10          string   `json:"isbn10"`
+	ISBN13          string   `json:"isbn13"`
+	ASIN            string   `json:"asin"`
+	Format          string   `json:"format"` // ebook | audiobook
+	Provider        string   `json:"provider"`
+	ProviderPayload string   `json:"provider_payload"`
 }
 
 func (s *Server) mountAPI(r chi.Router) {
@@ -28,6 +30,7 @@ func (s *Server) mountAPI(r chi.Router) {
 		rr.Post("/", s.requireLogin(s.apiCreateRequest))
 		rr.Get("/", s.requireLogin(s.apiListRequests))
 		rr.Post("/{id}/approve", s.requireAdmin(s.apiApproveRequest))
+		rr.Post("/{id}/hydrate", s.requireAdmin(s.apiHydrateRequest))
 		rr.Post("/{id}/decline", s.requireAdmin(s.apiDeclineRequest))
 	})
 }
@@ -51,6 +54,8 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 			p.ISBN13 = strings.TrimSpace(r.FormValue("isbn13"))
 			p.ASIN = strings.TrimSpace(r.FormValue("asin"))
 			p.Format = strings.TrimSpace(r.FormValue("format"))
+			p.Provider = strings.TrimSpace(r.FormValue("provider"))
+			p.ProviderPayload = strings.TrimSpace(r.FormValue("provider_payload"))
 		}
 	} else {
 		// Fallback: parse form-encoded body
@@ -65,6 +70,8 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 		p.ISBN13 = strings.TrimSpace(r.FormValue("isbn13"))
 		p.ASIN = strings.TrimSpace(r.FormValue("asin"))
 		p.Format = strings.TrimSpace(r.FormValue("format"))
+		p.Provider = strings.TrimSpace(r.FormValue("provider"))
+		p.ProviderPayload = strings.TrimSpace(r.FormValue("provider_payload"))
 	}
 	if p.Title == "" && p.ISBN13 == "" && p.ISBN10 == "" && p.ASIN == "" {
 		http.Error(w, "title or identifier required", 400)
@@ -80,6 +87,87 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 		RequesterEmail: strings.ToLower(u.Email),
 		Title:          p.Title, Authors: p.Authors, ISBN10: p.ISBN10, ISBN13: p.ISBN13,
 		Format: format, Status: "pending",
+	}
+	// Stash provider payload on request so approval can use it.
+	// If missing, try to attach by looking it up from Readarr now.
+	if strings.TrimSpace(p.ProviderPayload) != "" {
+		req.ReadarrReq = json.RawMessage([]byte(p.ProviderPayload))
+	} else {
+		// Attempt server-side attach for convenience/fallback
+		// Pick instance based on format
+		var inst providers.ReadarrInstance
+		if format == "audiobook" {
+			c := s.settings.Get().Readarr.Audiobooks
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags}
+		} else {
+			c := s.settings.Get().Readarr.Ebooks
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags}
+		}
+		if strings.TrimSpace(inst.BaseURL) != "" && strings.TrimSpace(inst.APIKey) != "" {
+			ra := providers.NewReadarrWithDB(inst, s.db.SQL())
+			term := firstNonEmpty(p.ASIN, p.ISBN13, p.ISBN10)
+			if term == "" {
+				term = strings.TrimSpace(p.Title)
+				if len(p.Authors) > 0 && strings.TrimSpace(p.Authors[0]) != "" {
+					term = term + " " + strings.TrimSpace(p.Authors[0])
+				}
+			}
+			if term != "" {
+				ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+				defer cancel()
+				if list, err := ra.LookupByTerm(ctx, term); err == nil && len(list) > 0 {
+					pick := list[0]
+					for _, b := range list {
+						titleOK := strings.EqualFold(strings.TrimSpace(b.Title), strings.TrimSpace(p.Title)) && strings.TrimSpace(b.Title) != ""
+						authorOK := false
+						if len(p.Authors) > 0 {
+							want := strings.TrimSpace(p.Authors[0])
+							if b.Author != nil {
+								if n, _ := b.Author["name"].(string); n != "" && strings.EqualFold(strings.TrimSpace(n), want) {
+									authorOK = true
+								}
+							} else if len(b.Authors) > 0 {
+								if n, _ := b.Authors[0]["name"].(string); n != "" && strings.EqualFold(strings.TrimSpace(n), want) {
+									authorOK = true
+								}
+							} else if b.AuthorTitle != "" {
+								if strings.Contains(strings.ToLower(b.AuthorTitle), strings.ToLower(strings.ReplaceAll(want, " ", ""))) {
+									authorOK = true
+								}
+							}
+						}
+						if titleOK && authorOK {
+							pick = b
+							break
+						}
+					}
+					var author map[string]any
+					if pick.Author != nil {
+						author = pick.Author
+					}
+					if author == nil && len(pick.Authors) > 0 {
+						author = pick.Authors[0]
+					}
+					if author == nil && pick.AuthorId > 0 {
+						author = map[string]any{"id": pick.AuthorId}
+					}
+					if author == nil && pick.AuthorTitle != "" {
+						author = map[string]any{"name": parseAuthorNameFromTitle(pick.AuthorTitle)}
+					}
+					cand := map[string]any{
+						"title":            pick.Title,
+						"titleSlug":        pick.TitleSlug,
+						"author":           author,
+						"editions":         []any{},
+						"foreignBookId":    pick.ForeignBookId,
+						"foreignEditionId": pick.ForeignEditionId,
+					}
+					if b, err := json.Marshal(cand); err == nil {
+						req.ReadarrReq = json.RawMessage(b)
+					}
+				}
+			}
+		}
 	}
 	id, err := s.db.CreateRequest(r.Context(), req)
 	if err != nil {
@@ -148,74 +236,15 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 	defer cancel()
 
-	// Auto-enrich via Amazon public if identifiers are missing but an ASIN can be derived.
-	asin := providers.ExtractASINFromInput(firstNonEmpty("", req.Title)) // title may contain pasted URL
-	if (strings.TrimSpace(req.ISBN13) == "" && strings.TrimSpace(req.ISBN10) == "") && asin != "" {
-		ap := providers.NewAmazonPublic("www.amazon.com")
-		if pb, err := ap.GetByASIN(ctx, asin); err == nil && pb != nil {
-			if req.ISBN13 == "" {
-				req.ISBN13 = pb.ISBN13
-			}
-			if req.ISBN10 == "" {
-				req.ISBN10 = pb.ISBN10
-			}
-			if req.Title == "" {
-				req.Title = pb.Title
-			}
-		}
-	}
-
-	term := firstNonEmpty(req.ISBN13, req.ISBN10, req.Title)
-	res, err := ra.LookupByTerm(ctx, term)
-	if err != nil {
-		http.Error(w, "readarr lookup: "+err.Error(), 502)
+	// Require an exact selection payload saved at request-time; don't perform lookups here
+	if len(req.ReadarrReq) == 0 {
+		http.Error(w, "request has no stored selection payload; please re-request from search", http.StatusBadRequest)
 		return
 	}
-	// Debug: log lookup results
-	fmt.Printf("DEBUG: Readarr lookup for term '%s' returned %d results\n", term, len(res))
-	for i, b := range res {
-		fmt.Printf("DEBUG: Result %d: title='%s', authorId=%d, authorTitle='%s', author=%v, authors=%v\n", i, b.Title, b.AuthorId, b.AuthorTitle, b.Author, b.Authors)
-	}
-	cand, ok := ra.SelectCandidate(res, req.ISBN13, req.ISBN10, asin)
-	if !ok {
-		if len(res) > 0 {
-			validCount := 0
-			for _, b := range res {
-				if b.Author != nil {
-					if _, hasID := b.Author["id"]; hasID {
-						validCount++
-					}
-				} else if b.AuthorId > 0 {
-					validCount++
-				} else if b.AuthorTitle != "" {
-					validCount++
-				}
-			}
-			if validCount > 0 {
-				// Pick the first valid one
-				for _, b := range res {
-					if b.Author != nil {
-						if _, hasID := b.Author["id"]; hasID {
-							cand = map[string]any{"title": b.Title, "titleSlug": b.TitleSlug, "author": b.Author, "editions": b.Editions}
-							break
-						}
-					} else if b.AuthorId > 0 {
-						cand = map[string]any{"title": b.Title, "titleSlug": b.TitleSlug, "author": map[string]any{"id": b.AuthorId}, "editions": b.Editions}
-						break
-					} else if b.AuthorTitle != "" {
-						name := parseAuthorNameFromTitle(b.AuthorTitle)
-						cand = map[string]any{"title": b.Title, "titleSlug": b.TitleSlug, "author": map[string]any{"name": name}, "editions": b.Editions}
-						break
-					}
-				}
-			} else {
-				http.Error(w, fmt.Sprintf("no valid candidate found: %d results, all missing author id", len(res)), 404)
-				return
-			}
-		} else {
-			http.Error(w, "no candidates found in Readarr lookup", 404)
-			return
-		}
+	var cand map[string]any
+	if err := json.Unmarshal(req.ReadarrReq, &cand); err != nil || cand == nil {
+		http.Error(w, "invalid stored selection payload", http.StatusBadRequest)
+		return
 	}
 
 	// Ensure candidate has an author id. If missing, try to resolve by name and create if necessary.
@@ -250,15 +279,33 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	payload, respBody, err := ra.AddBook(ctx, cand, providers.AddOpts{
-		QualityProfileID: inst.DefaultQualityProfileID,
-		RootFolderPath:   inst.DefaultRootFolderPath,
-		SearchForMissing: true,
-		Tags:             inst.DefaultTags,
-	})
+	// If the stored payload looks like a full Readarr Book schema, send it as-is
+	// during approval to honor the provided structure from the client.
+	var payload []byte
+	var respBody []byte
+	if len(req.ReadarrReq) > 0 {
+		var raw map[string]any
+		if json.Unmarshal(req.ReadarrReq, &raw) == nil {
+			// Heuristic: treat as full schema if it contains any of these indicators.
+			if _, ok := raw["authorTitle"]; ok || raw["author"] != nil || raw["editions"] != nil || raw["addOptions"] != nil {
+				payload, respBody, err = ra.AddBookRaw(ctx, req.ReadarrReq)
+			}
+		}
+	}
+	// Fallback to templated add if raw wasn't used
+	if payload == nil && err == nil {
+		payload, respBody, err = ra.AddBook(ctx, cand, providers.AddOpts{
+			QualityProfileID: inst.DefaultQualityProfileID,
+			RootFolderPath:   inst.DefaultRootFolderPath,
+			SearchForMissing: true,
+			Tags:             inst.DefaultTags,
+		})
+	}
 	if err != nil {
 		_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", payload, respBody)
-		http.Error(w, "readarr add: "+err.Error(), 502)
+		// Debug: surface payload and Readarr response in server logs for troubleshooting
+		fmt.Printf("DEBUG: Readarr add error: %v\n---payload---\n%s\n---response---\n%s\n", err, string(payload), string(respBody))
+		http.Error(w, "readarr add: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
@@ -269,7 +316,7 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 		"id":     id,
 		"isbn13": req.ISBN13,
 		"isbn10": req.ISBN10,
-		"asin":   asin,
+		"asin":   "",
 		"title":  req.Title,
 		"format": req.Format,
 	}}
@@ -301,6 +348,118 @@ func (s *Server) apiDeclineRequest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "deleted"}, 200)
 }
 
+// apiHydrateRequest tries to populate the stored selection payload for a request by
+// performing a Readarr lookup using the request's identifiers or title/author.
+// This is useful for older requests created before selection payloads were stored.
+func (s *Server) apiHydrateRequest(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+
+	req, err := s.db.GetRequest(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+	// If already has payload, nothing to do
+	if len(req.ReadarrReq) > 0 {
+		w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
+		writeJSON(w, map[string]any{"status": "ok", "message": "already attached"}, 200)
+		return
+	}
+
+	// Pick instance based on format
+	var inst providers.ReadarrInstance
+	if strings.ToLower(req.Format) == "audiobook" {
+		c := s.settings.Get().Readarr.Audiobooks
+		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags}
+	} else {
+		c := s.settings.Get().Readarr.Ebooks
+		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags}
+	}
+	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+		http.Error(w, "readarr not configured", http.StatusBadRequest)
+		return
+	}
+
+	ra := providers.NewReadarrWithDB(inst, s.db.SQL())
+
+	// Build lookup term preference: ISBN13 > ISBN10 > Title [Author]
+	term := firstNonEmpty(req.ISBN13, req.ISBN10)
+	if term == "" {
+		term = strings.TrimSpace(req.Title)
+		if len(req.Authors) > 0 && strings.TrimSpace(req.Authors[0]) != "" {
+			term = term + " " + strings.TrimSpace(req.Authors[0])
+		}
+	}
+	if term == "" {
+		http.Error(w, "no identifiers or title to search", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	list, err := ra.LookupByTerm(ctx, term)
+	if err != nil || len(list) == 0 {
+		http.Error(w, "no matches from Readarr", http.StatusBadRequest)
+		return
+	}
+	// Choose best match: prefer title match and author match, else first
+	pick := list[0]
+	for _, b := range list {
+		titleOK := strings.EqualFold(strings.TrimSpace(b.Title), strings.TrimSpace(req.Title)) && strings.TrimSpace(b.Title) != ""
+		authorOK := false
+		if len(req.Authors) > 0 {
+			want := strings.TrimSpace(req.Authors[0])
+			if b.Author != nil {
+				if n, _ := b.Author["name"].(string); n != "" && strings.EqualFold(strings.TrimSpace(n), want) {
+					authorOK = true
+				}
+			} else if len(b.Authors) > 0 {
+				if n, _ := b.Authors[0]["name"].(string); n != "" && strings.EqualFold(strings.TrimSpace(n), want) {
+					authorOK = true
+				}
+			} else if b.AuthorTitle != "" {
+				if strings.Contains(strings.ToLower(b.AuthorTitle), strings.ToLower(strings.ReplaceAll(want, " ", ""))) {
+					authorOK = true
+				}
+			}
+		}
+		if titleOK && authorOK {
+			pick = b
+			break
+		}
+	}
+
+	// Build candidate payload similar to search.go
+	var author map[string]any
+	if pick.Author != nil {
+		author = pick.Author
+	} else if len(pick.Authors) > 0 {
+		author = pick.Authors[0]
+	} else if pick.AuthorId > 0 {
+		author = map[string]any{"id": pick.AuthorId}
+	} else if pick.AuthorTitle != "" {
+		author = map[string]any{"name": parseAuthorNameFromTitle(pick.AuthorTitle)}
+	}
+	cand := map[string]any{
+		"title":            pick.Title,
+		"titleSlug":        pick.TitleSlug,
+		"author":           author,
+		"editions":         []any{},
+		"foreignBookId":    pick.ForeignBookId,
+		"foreignEditionId": pick.ForeignEditionId,
+	}
+	cjson, _ := json.Marshal(cand)
+
+	// Save to DB
+	if err := s.db.UpdateRequestStatus(r.Context(), id, req.Status, "hydrated", s.userEmail(r), cjson, nil); err != nil {
+		http.Error(w, "db: "+err.Error(), 500)
+		return
+	}
+	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
+	writeJSON(w, map[string]any{"status": "ok"}, 200)
+}
+
 func firstNonEmpty(vs ...string) string {
 	for _, v := range vs {
 		if strings.TrimSpace(v) != "" {
@@ -317,7 +476,30 @@ func parseAuthorNameFromTitle(title string) string {
 		// Assume "lastname, firstname ..."
 		last := strings.Trim(parts[0], ",")
 		first := parts[1]
-		return strings.Title(strings.ToLower(first + " " + last))
+		return toTitleCase(first + " " + last)
 	}
-	return strings.Title(strings.ToLower(strings.TrimSpace(title)))
+	return toTitleCase(strings.TrimSpace(title))
+}
+
+func toTitleCase(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	if s == "" {
+		return s
+	}
+	var out []rune
+	capNext := true
+	for _, r := range s {
+		if capNext && r >= 'a' && r <= 'z' {
+			out = append(out, r-('a'-'A'))
+			capNext = false
+			continue
+		}
+		out = append(out, r)
+		if r == ' ' || r == '-' || r == '\'' {
+			capNext = true
+		} else {
+			capNext = false
+		}
+	}
+	return string(out)
 }

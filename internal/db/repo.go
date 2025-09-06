@@ -32,11 +32,12 @@ func (d *DB) CreateRequest(ctx context.Context, r *Request) (int64, error) {
 	authorsJSON, _ := json.Marshal(r.Authors)
 	res, err := d.sql.ExecContext(ctx, `
 INSERT INTO requests
-(created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+(created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, readarr_request, readarr_response)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
 		strings.ToLower(r.RequesterEmail), r.Title, string(authorsJSON),
 		r.ISBN10, r.ISBN13, r.Format, r.Status, r.StatusReason,
+		bytesOrNil(r.ReadarrReq), bytesOrNil(r.ReadarrResp),
 	)
 	if err != nil {
 		return 0, err

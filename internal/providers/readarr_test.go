@@ -29,7 +29,7 @@ func TestSelectCandidateIdentifierPriority(t *testing.T) {
 
 func TestReadarrAddBookRoundTrip(t *testing.T) {
 	lookupJSON := `[{"title":"Book","titleSlug":"book","author":{"id":1},"identifiers":[{"identifierType":"ISBN13","value":"9781111111111"}],"editions":[]}]`
-	ra := NewReadarr(ReadarrInstance{BaseURL: "http://mock", APIKey: "k", AddPayloadTemplate: `{"title":{{ toJSON (index .Candidate "title") }}}`})
+	ra := NewReadarr(ReadarrInstance{BaseURL: "http://mock", APIKey: "k", AddPayloadTemplate: `{"title":{{ toJSON (index .Candidate "title") }},"editions":{{ toJSON (index .Candidate "editions") }}}`})
 	ra.cl.Transport = rtFunc(func(r *http.Request) (*http.Response, error) {
 		if strings.Contains(r.URL.Path, "/lookup") {
 			return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(lookupJSON)), Header: make(http.Header)}, nil
