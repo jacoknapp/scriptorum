@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"html/template"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -20,6 +21,8 @@ func (s *Server) mountSearch(r chi.Router) {
 	}
 	u := &searchUI{tpl: template.Must(template.New("tpl").Funcs(funcMap).ParseFS(tplFS, "web/templates/*.html"))}
 	r.Get("/ui/search", u.handleSearch(s))
+	// Readarr cover proxy (fetch fresh each call). Search UI will link images here
+	r.Get("/ui/readarr-cover", s.serveReadarrCover())
 	r.Get("/ui/presence", u.handlePresence(s))
 }
 
@@ -61,11 +64,11 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			if i, ok := idx[k]; ok {
 				// attach payload
 				if ebook {
-					if items[i].ProviderEbookPayload == "" {
+					if payload != "" {
 						items[i].ProviderEbookPayload = payload
 					}
 				} else {
-					if items[i].ProviderAudiobookPayload == "" {
+					if payload != "" {
 						items[i].ProviderAudiobookPayload = payload
 					}
 				}
@@ -73,13 +76,10 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 				if items[i].Provider == "" {
 					items[i].Provider = si.Provider
 				}
-				// fill cover if missing
-				if items[i].BookItem.CoverMedium == "" && si.BookItem.CoverMedium != "" {
-					items[i].BookItem.CoverMedium = si.BookItem.CoverMedium
-				}
-				if items[i].BookItem.CoverSmall == "" && si.BookItem.CoverSmall != "" {
-					items[i].BookItem.CoverSmall = si.BookItem.CoverSmall
-				}
+				// Prefer cover from provider payload when available. Use helper
+				// to decide whether to overwrite.
+				items[i].BookItem.CoverMedium = mergeCover(items[i].BookItem.CoverMedium, si.BookItem.CoverMedium)
+				items[i].BookItem.CoverSmall = mergeCover(items[i].BookItem.CoverSmall, si.BookItem.CoverSmall)
 				return
 			}
 			if ebook {
@@ -142,15 +142,32 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 							dispAuthor = n
 						}
 					}
-					// Derive cover URL if available
-					cover := util.FirstNonEmpty(b.CoverUrl, b.RemotePoster, b.RemoteCover)
+					// Derive cover URL if available. Prefer remote/absolute URLs so
+					// the browser can reliably fetch images. If Readarr returned a
+					// proxy-relative path (e.g. /MediaCover/...), convert it to an
+					// absolute URL using the instance BaseURL.
+					cover := util.FirstNonEmpty(b.RemoteCover, b.RemotePoster, b.CoverUrl)
 					if cover == "" && len(b.Images) > 0 {
 						for _, im := range b.Images {
 							if strings.EqualFold(im.CoverType, "cover") || strings.EqualFold(im.CoverType, "poster") {
-								cover = util.FirstNonEmpty(im.Url, im.RemoteUrl)
+								// prefer remoteUrl when available
+								cover = util.FirstNonEmpty(im.RemoteUrl, im.Url)
 								if cover != "" {
 									break
 								}
+							}
+						}
+					}
+					// If the cover is a proxy-relative path, make it absolute
+					if strings.HasPrefix(cover, "/") && strings.TrimSpace(instE.BaseURL) != "" {
+						cover = strings.TrimRight(instE.BaseURL, "/") + cover
+					}
+					// If this cover comes from the configured Readarr instance, route
+					// it through our local proxy so we can cache/stabilize the image URL.
+					if cover != "" && strings.HasPrefix(strings.TrimSpace(instE.BaseURL), "http") {
+						if u, err := url.Parse(cover); err == nil {
+							if strings.EqualFold(u.Host, urlHost(instE.BaseURL)) {
+								cover = "/ui/readarr-cover?u=" + url.QueryEscape(cover)
 							}
 						}
 					}
@@ -195,17 +212,25 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 							dispAuthor = n
 						}
 					}
-					// Derive cover URL if available
-					cover := util.FirstNonEmpty(b.CoverUrl, b.RemotePoster, b.RemoteCover)
+					// Derive cover URL if available. Prefer remote/absolute URLs so
+					// the browser can reliably fetch images. If Readarr returned a
+					// proxy-relative path (e.g. /MediaCover/...), convert it to an
+					// absolute URL using the instance BaseURL.
+					cover := util.FirstNonEmpty(b.RemoteCover, b.RemotePoster, b.CoverUrl)
 					if cover == "" && len(b.Images) > 0 {
 						for _, im := range b.Images {
 							if strings.EqualFold(im.CoverType, "cover") || strings.EqualFold(im.CoverType, "poster") {
-								cover = util.FirstNonEmpty(im.Url, im.RemoteUrl)
+								// prefer remoteUrl when available
+								cover = util.FirstNonEmpty(im.RemoteUrl, im.Url)
 								if cover != "" {
 									break
 								}
 							}
 						}
+					}
+					// If the cover is a proxy-relative path, make it absolute
+					if strings.HasPrefix(cover, "/") && strings.TrimSpace(instA.BaseURL) != "" {
+						cover = strings.TrimRight(instA.BaseURL, "/") + cover
 					}
 					upsert(SearchItem{BookItem: providers.BookItem{Title: b.Title, Authors: []string{dispAuthor}, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-audiobook"}, false, string(cjson))
 				}
@@ -240,8 +265,70 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 
 		data := map[string]any{"Query": q, "Items": items}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		// Ensure provider_payload is populated by merging ebook/audiobook renditions
+		for i := range items {
+			if items[i].ProviderPayload == "" {
+				items[i].ProviderPayload = mergeProviderPayloads(items[i].ProviderEbookPayload, items[i].ProviderAudiobookPayload)
+			}
+		}
 		_ = u.tpl.ExecuteTemplate(w, "search_partial.html", data)
 	}
+}
+
+// serveReadarrCover returns a handler that fetches a remote image and streams
+// it directly to the client on every request (no on-disk caching). Query
+// param: u=<image-absolute-url>
+func (s *Server) serveReadarrCover() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		remote := strings.TrimSpace(r.URL.Query().Get("u"))
+		if remote == "" {
+			http.Error(w, "missing url", http.StatusBadRequest)
+			return
+		}
+		// validate URL
+		ru, err := url.Parse(remote)
+		if err != nil || !(ru.Scheme == "http" || ru.Scheme == "https") {
+			http.Error(w, "invalid url", http.StatusBadRequest)
+			return
+		}
+		// fetch remote fresh on every call
+		resp, err := http.Get(remote)
+		if err != nil {
+			http.Error(w, "fetch error", http.StatusBadGateway)
+			return
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			http.Error(w, "remote not ok", http.StatusBadGateway)
+			return
+		}
+		// copy some headers and force no-cache so browser will fetch fresh
+		if ct := resp.Header.Get("Content-Type"); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
+		if cl := resp.Header.Get("Content-Length"); cl != "" {
+			w.Header().Set("Content-Length", cl)
+		}
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("Pragma", "no-cache")
+		// stream body
+		_, _ = io.Copy(w, resp.Body)
+	}
+}
+
+// urlHost extracts host from a base URL string, tolerant of trailing slashes.
+func urlHost(base string) string {
+	if base == "" {
+		return ""
+	}
+	if u, err := url.Parse(strings.TrimSpace(base)); err == nil {
+		return u.Host
+	}
+	// fallback: strip schema
+	base = strings.TrimPrefix(base, "https://")
+	base = strings.TrimPrefix(base, "http://")
+	base = strings.TrimRight(base, "/")
+	return base
 }
 
 func (u *searchUI) handlePresence(s *Server) http.HandlerFunc {
