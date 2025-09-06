@@ -422,10 +422,11 @@ func (r *Readarr) AddBook(ctx context.Context, candidate Candidate, opts AddOpts
 	}
 	// Include apikey in query to be resilient to proxies that strip X-Api-Key
 	u := r.inst.BaseURL + r.inst.AddEndpoint
+	// Ensure includeAllAuthorBooks=false so Readarr doesn't return unrelated author books
 	if strings.Contains(u, "?") {
-		u += "&apikey=" + url.QueryEscape(r.inst.APIKey)
+		u += "&includeAllAuthorBooks=false&apikey=" + url.QueryEscape(r.inst.APIKey)
 	} else {
-		u += "?apikey=" + url.QueryEscape(r.inst.APIKey)
+		u += "?includeAllAuthorBooks=false&apikey=" + url.QueryEscape(r.inst.APIKey)
 	}
 	req, _ := http.NewRequestWithContext(ctx, r.inst.AddMethod, u, bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
@@ -490,6 +491,159 @@ func (r *Readarr) AddBookRaw(ctx context.Context, raw json.RawMessage) ([]byte, 
 		return payload, respBody, fmt.Errorf("add book (raw) failed (HTTP %s) to %s: %s", resp.Status, safeURL, bodyStr)
 	}
 	return payload, respBody, nil
+}
+
+// GetBookByAddPayload performs a GET request to the AddEndpoint using the same
+// payload that would be sent for creation. Some Readarr setups respond with the
+// existing book when the payload matches an already-added entity. Returns the
+// Readarr book id when found and the raw response body.
+func (r *Readarr) GetBookByAddPayload(ctx context.Context, payload []byte) (int, []byte, error) {
+	u := r.inst.BaseURL + r.inst.AddEndpoint
+	// Ensure includeAllAuthorBooks=false so Readarr doesn't return unrelated author books
+	if strings.Contains(u, "?") {
+		u += "&includeAllAuthorBooks=false&apikey=" + url.QueryEscape(r.inst.APIKey)
+	} else {
+		u += "?includeAllAuthorBooks=false&apikey=" + url.QueryEscape(r.inst.APIKey)
+	}
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, bytes.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Api-Key", r.inst.APIKey)
+	req.Header.Set("User-Agent", "Scriptorum/1.0")
+	req.Header.Set("Accept", "application/json")
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		safeURL := redactAPIKey(u)
+		bodyStr := string(body)
+		if len(bodyStr) > 200 {
+			bodyStr = bodyStr[:200] + "..."
+		}
+		// If debug enabled, print the full body for diagnostics
+		fmt.Printf("DEBUG: GetBookByAddPayload HTTP %s body: %s\n", resp.Status, string(body))
+		return 0, body, fmt.Errorf("lookup existing book failed (HTTP %s) from %s: %s", resp.Status, safeURL, bodyStr)
+	}
+	// Try object first
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err == nil && len(obj) > 0 {
+		if idv, ok := obj["id"]; ok {
+			switch v := idv.(type) {
+			case float64:
+				return int(v), body, nil
+			case int:
+				return v, body, nil
+			case int64:
+				return int(v), body, nil
+			}
+		}
+	}
+
+	// Fallback: array of objects. Prefer the element that matches the original payload's
+	// foreignBookId or foreignEditionId to avoid returning unrelated author books.
+	var arr []map[string]any
+	if err := json.Unmarshal(body, &arr); err == nil && len(arr) > 0 {
+		// Attempt to parse the original payload for foreign ids to match against
+		var pmap map[string]any
+		_ = json.Unmarshal(payload, &pmap)
+		fb := strings.TrimSpace(fmt.Sprint(pmap["foreignBookId"]))
+		fe := strings.TrimSpace(fmt.Sprint(pmap["foreignEditionId"]))
+
+		// helper to extract id from an element
+		getID := func(m map[string]any) (int, bool) {
+			if idv, ok := m["id"]; ok {
+				switch v := idv.(type) {
+				case float64:
+					return int(v), true
+				case int:
+					return v, true
+				case int64:
+					return int(v), true
+				case string:
+					if i, e := strconv.Atoi(strings.TrimSpace(v)); e == nil {
+						return i, true
+					}
+				}
+			}
+			return 0, false
+		}
+
+		// Try to find a matching element by foreignBookId or foreignEditionId
+		for _, it := range arr {
+			if fb != "" {
+				if v := strings.TrimSpace(fmt.Sprint(it["foreignBookId"])); v != "" && v == fb {
+					if id, ok := getID(it); ok {
+						return id, body, nil
+					}
+				}
+			}
+			if fe != "" {
+				if v := strings.TrimSpace(fmt.Sprint(it["foreignEditionId"])); v != "" && v == fe {
+					if id, ok := getID(it); ok {
+						return id, body, nil
+					}
+				}
+			}
+		}
+
+		// If no match but only one result, accept it
+		if len(arr) == 1 {
+			if id, ok := getID(arr[0]); ok {
+				return id, body, nil
+			}
+		}
+
+		// As a last resort, pick the first element and log debug so operator can inspect
+		if id, ok := getID(arr[0]); ok {
+			fmt.Printf("DEBUG: GetBookByAddPayload: multiple books returned; no foreign id match, picking first id=%d\n", id)
+			return id, body, nil
+		}
+	}
+	// Debug: print returned body when no id parsed
+	fmt.Printf("DEBUG: GetBookByAddPayload: could not extract id from response body: %s\n", string(body))
+	return 0, body, fmt.Errorf("existing book id not found in response")
+}
+
+// MonitorBooks sends a PUT to /api/v1/book/monitor with the provided readarr ids
+// and monitored flag.
+func (r *Readarr) MonitorBooks(ctx context.Context, ids []int, monitored bool) ([]byte, error) {
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("no ids provided")
+	}
+	u := r.inst.BaseURL + "/api/v1/book/monitor"
+	if strings.Contains(u, "?") {
+		u += "&apikey=" + url.QueryEscape(r.inst.APIKey)
+	} else {
+		u += "?apikey=" + url.QueryEscape(r.inst.APIKey)
+	}
+	// build payload
+	payload := map[string]any{
+		"bookIds":   ids,
+		"monitored": monitored,
+	}
+	b, _ := json.Marshal(payload)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, u, bytes.NewReader(b))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Api-Key", r.inst.APIKey)
+	req.Header.Set("User-Agent", "Scriptorum/1.0")
+	req.Header.Set("Accept", "application/json")
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		safeURL := redactAPIKey(u)
+		bodyStr := string(body)
+		if len(bodyStr) > 200 {
+			bodyStr = bodyStr[:200] + "..."
+		}
+		return body, fmt.Errorf("monitor update failed (HTTP %s) to %s: %s", resp.Status, safeURL, bodyStr)
+	}
+	return body, nil
 }
 
 // ----- Lookup & matching (ISBN13 -> ISBN10 -> ASIN) -----

@@ -306,10 +306,51 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 			Tags:             inst.DefaultTags,
 		})
 	}
+	// Debug: always log sent payload and Readarr response if enabled
+	if s.settings.Get().Debug && payload != nil {
+		fmt.Printf("DEBUG: Readarr add sent payload:\n%s\n", string(payload))
+		if respBody != nil {
+			fmt.Printf("DEBUG: Readarr add returned body:\n%s\n", string(respBody))
+		}
+	}
 	if err != nil {
-		// If Readarr reports a duplicate edition (already added), treat as success/idempotent
+		// If Readarr reports a duplicate edition (already added), try to fetch the
+		// existing book and ensure it's monitored using /api/v1/book/monitor
 		emsg := strings.ToLower(err.Error())
 		if strings.Contains(emsg, "ix_editions_foreigneditionid") || strings.Contains(emsg, "duplicate key value") || strings.Contains(emsg, "already exists") {
+			// Attempt GET with the same payload to discover the existing book id
+			if payload != nil {
+				if bid, gotBody, gerr := ra.GetBookByAddPayload(ctx, payload); gerr == nil && bid > 0 {
+					if s.settings.Get().Debug {
+						fmt.Printf("DEBUG: Duplicate detected; GET existing book with same payload returned (id=%d):\n%s\n", bid, string(gotBody))
+					}
+					if monBody, merr := ra.MonitorBooks(ctx, []int{bid}, true); merr == nil {
+						if s.settings.Get().Debug {
+							mb, _ := json.Marshal(map[string]any{"bookIds": []int{bid}, "monitored": true})
+							fmt.Printf("DEBUG: PUT /api/v1/book/monitor sent payload:\n%s\n", string(mb))
+							fmt.Printf("DEBUG: PUT /api/v1/book/monitor returned body:\n%s\n", string(monBody))
+						}
+						_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Email)
+						_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid), r.Context().Value(ctxUser).(*session).Email, payload, respBody)
+						trig := map[string]any{"request:updated": map[string]any{
+							"id":     id,
+							"isbn13": req.ISBN13,
+							"isbn10": req.ISBN10,
+							"asin":   "",
+							"title":  req.Title,
+							"format": req.Format,
+						}}
+						if b, mErr := json.Marshal(trig); mErr == nil {
+							w.Header().Set("HX-Trigger", string(b))
+						} else {
+							w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
+						}
+						writeJSON(w, map[string]string{"status": "queued"}, 200)
+						return
+					}
+				}
+			}
+			// Fallback: treat as already present without monitor update
 			_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Email)
 			_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", "already in Readarr (duplicate edition)", r.Context().Value(ctxUser).(*session).Email, payload, respBody)
 			trig := map[string]any{"request:updated": map[string]any{

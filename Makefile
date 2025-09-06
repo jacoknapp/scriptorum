@@ -1,17 +1,26 @@
 SHELL := /bin/bash
 
-APP=scriptorum
+APP := scriptorum
+
+# Detect Windows for .exe suffix
+ifeq ($(OS),Windows_NT)
+  EXE := .exe
+else
+  EXE :=
+endif
+
+OUT := bin/$(APP)$(EXE)
 
 .PHONY: build test run docker-build docker-run
 
 build:
-	go build -o bin/$(APP) ./cmd/scriptorum
+	go build -o $(OUT) ./cmd/scriptorum
 
 test:
 	go test ./...
 
 run: build
-	./bin/$(APP)
+	$(OUT)
 
 docker-build:
 	docker build -t $(APP):dev .

@@ -13,8 +13,9 @@ import (
 )
 
 func main() {
-	cfgPath := getenv("SCRIPTORUM_CONFIG_PATH", "/data/scriptorum.yaml")
-	dbPath := getenv("SCRIPTORUM_DB_PATH", "/data/scriptorum.db")
+	// Prefer repository-local data directory when running from the repo root
+	cfgPath := getenv("SCRIPTORUM_CONFIG_PATH", "data/scriptorum.yaml")
+	dbPath := getenv("SCRIPTORUM_DB_PATH", "data/scriptorum.db")
 
 	ctx := context.Background()
 	cfg, database, err := bootstrap.EnsureFirstRun(ctx, cfgPath, dbPath)
