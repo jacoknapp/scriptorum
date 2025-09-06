@@ -14,6 +14,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"gitea.knapp/jacoknapp/scriptorum/internal/util"
 )
 
 const apiVersionPrefix = "/api/v1"
@@ -58,6 +60,161 @@ type Readarr struct {
 	inst ReadarrInstance
 	cl   *http.Client
 	db   *sql.DB // Database connection for caching
+}
+
+// sanitizeAndEnrichPayload applies defaults, shapes editions, normalizes authorId, and enriches the nested author object.
+func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]any, opts AddOpts) map[string]any {
+	if pmap == nil {
+		return pmap
+	}
+	// Defaults
+	if pmap["qualityProfileId"] == nil || fmt.Sprint(pmap["qualityProfileId"]) == "" || fmt.Sprint(pmap["qualityProfileId"]) == "0" {
+		if opts.QualityProfileID != 0 {
+			pmap["qualityProfileId"] = opts.QualityProfileID
+		} else if qid := r.getValidQualityProfileID(ctx); qid != 0 {
+			pmap["qualityProfileId"] = qid
+		} else if r.inst.DefaultQualityProfileID != 0 {
+			pmap["qualityProfileId"] = r.inst.DefaultQualityProfileID
+		}
+	}
+	if pmap["metadataProfileId"] == nil || fmt.Sprint(pmap["metadataProfileId"]) == "" || fmt.Sprint(pmap["metadataProfileId"]) == "0" {
+		pmap["metadataProfileId"] = 1
+	}
+	if pmap["rootFolderPath"] == nil || fmt.Sprint(pmap["rootFolderPath"]) == "" {
+		rp := r.getValidRootFolderPath(ctx, opts.RootFolderPath)
+		if rp == "" {
+			rp = r.getValidRootFolderPath(ctx, "")
+		}
+		if rp == "" {
+			rp = r.inst.DefaultRootFolderPath
+		}
+		if rp != "" {
+			pmap["rootFolderPath"] = rp
+		}
+	}
+	if _, ok := pmap["monitored"]; !ok {
+		pmap["monitored"] = true
+	}
+	if _, ok := pmap["addOptions"]; !ok {
+		pmap["addOptions"] = map[string]any{"addType": "automatic", "monitor": "all", "monitored": true, "booksToMonitor": []any{}, "searchForMissingBooks": true, "searchForNewBook": true}
+	}
+	if pmap["tags"] == nil && len(r.inst.DefaultTags) > 0 {
+		pmap["tags"] = r.inst.DefaultTags
+	}
+
+	// Editions shape
+	if _, ok := pmap["editions"]; !ok || pmap["editions"] == nil {
+		pmap["editions"] = []any{}
+	}
+	if eds, ok := pmap["editions"].([]any); ok && len(eds) == 0 {
+		if fe := strings.TrimSpace(fmt.Sprint(pmap["foreignEditionId"])); fe != "" {
+			pmap["editions"] = []any{map[string]any{"foreignEditionId": fe, "monitored": true}}
+		}
+	}
+
+	// Nested author enrichment
+	if av, ok := pmap["author"]; ok {
+		if am, ok2 := av.(map[string]any); ok2 {
+			if am["rootFolderPath"] == nil || am["rootFolderPath"] == "" {
+				rp := r.getValidRootFolderPath(ctx, opts.RootFolderPath)
+				if rp == "" {
+					rp = r.getValidRootFolderPath(ctx, "")
+				}
+				if rp != "" {
+					am["rootFolderPath"] = rp
+				}
+			}
+			if am["foreignAuthorId"] == nil || am["foreignAuthorId"] == "" {
+				if nm, _ := am["name"].(string); nm != "" {
+					if fid := r.LookupForeignAuthorIDString(ctx, nm); fid != "" {
+						am["foreignAuthorId"] = fid
+					} else {
+						// try to import by cleaned name as fallback
+						if id, err := r.ImportAuthor(ctx, strings.ReplaceAll(strings.TrimSpace(nm), " ", "-")); err == nil && id != 0 {
+							am["foreignAuthorId"] = strings.ReplaceAll(strings.TrimSpace(nm), " ", "-")
+						}
+					}
+				} else if idv, ok := am["id"]; ok {
+					// No name; fetch details by id
+					var aid int
+					switch t := idv.(type) {
+					case float64:
+						aid = int(t)
+					case int:
+						aid = t
+					case string:
+						if i, e := strconv.Atoi(strings.TrimSpace(t)); e == nil {
+							aid = i
+						}
+					}
+					if aid > 0 {
+						if details, err := r.GetAuthorByID(ctx, aid); err == nil && details != nil {
+							if fid, _ := details["foreignAuthorId"].(string); strings.TrimSpace(fid) != "" {
+								am["foreignAuthorId"] = fid
+							}
+							if nm2, _ := details["name"].(string); nm2 != "" {
+								am["name"] = nm2
+							}
+						}
+					}
+				}
+			}
+			pmap["author"] = am
+		}
+	}
+
+	// Normalize authorId
+	if av, ok := pmap["authorId"]; ok {
+		remove := false
+		switch v := av.(type) {
+		case nil:
+			remove = true
+		case float64:
+			pmap["authorId"] = int(v)
+		case int:
+		case string:
+			s := strings.TrimSpace(v)
+			if s == "" || strings.EqualFold(s, "null") {
+				remove = true
+			} else if i, e := strconv.Atoi(s); e == nil {
+				pmap["authorId"] = i
+			} else {
+				remove = true
+			}
+		default:
+			remove = true
+		}
+		if remove {
+			delete(pmap, "authorId")
+		}
+	}
+
+	// Inject author from authorId if missing
+	if _, hasAuthor := pmap["author"]; !hasAuthor {
+		if aid, ok := pmap["authorId"].(int); ok && aid > 0 {
+			am := map[string]any{"id": aid}
+			if details, err := r.GetAuthorByID(ctx, aid); err == nil && details != nil {
+				if fid, _ := details["foreignAuthorId"].(string); strings.TrimSpace(fid) != "" {
+					am["foreignAuthorId"] = fid
+				}
+				if nm, _ := details["name"].(string); nm != "" {
+					am["name"] = nm
+				}
+			}
+			if qid := r.getValidQualityProfileID(ctx); qid != 0 {
+				am["qualityProfileId"] = qid
+			} else if r.inst.DefaultQualityProfileID != 0 {
+				am["qualityProfileId"] = r.inst.DefaultQualityProfileID
+			}
+			am["metadataProfileId"] = 1
+			if rp := r.getValidRootFolderPath(ctx, ""); rp != "" {
+				am["rootFolderPath"] = rp
+			}
+			pmap["author"] = am
+		}
+	}
+
+	return pmap
 }
 
 func NewReadarr(i ReadarrInstance) *Readarr {
@@ -255,179 +412,10 @@ func (r *Readarr) AddBook(ctx context.Context, candidate Candidate, opts AddOpts
 
 	payload := buf.Bytes()
 
-	// Parse and sanitize JSON payload: remove or coerce invalid authorId values
-	// to avoid Readarr rejecting the request (it expects an int or omission).
+	// Parse, sanitize, and enrich JSON payload consistently
 	var pmap map[string]any
 	if err := json.Unmarshal(payload, &pmap); err == nil {
-		// Ensure top-level defaults when missing
-		if pmap["qualityProfileId"] == nil || fmt.Sprint(pmap["qualityProfileId"]) == "" || fmt.Sprint(pmap["qualityProfileId"]) == "0" {
-			if opts.QualityProfileID != 0 {
-				pmap["qualityProfileId"] = opts.QualityProfileID
-			} else if qid := r.getValidQualityProfileID(context.Background()); qid != 0 {
-				pmap["qualityProfileId"] = qid
-			} else if r.inst.DefaultQualityProfileID != 0 {
-				pmap["qualityProfileId"] = r.inst.DefaultQualityProfileID
-			}
-		}
-		if pmap["metadataProfileId"] == nil || fmt.Sprint(pmap["metadataProfileId"]) == "" || fmt.Sprint(pmap["metadataProfileId"]) == "0" {
-			pmap["metadataProfileId"] = 1
-		}
-		if pmap["rootFolderPath"] == nil || fmt.Sprint(pmap["rootFolderPath"]) == "" {
-			rp := r.getValidRootFolderPath(context.Background(), opts.RootFolderPath)
-			if rp == "" {
-				rp = r.getValidRootFolderPath(context.Background(), "")
-			}
-			if rp == "" {
-				rp = r.inst.DefaultRootFolderPath
-			}
-			if rp != "" {
-				pmap["rootFolderPath"] = rp
-			}
-		}
-		if _, ok := pmap["monitored"]; !ok {
-			pmap["monitored"] = true
-		}
-		if _, ok := pmap["addOptions"]; !ok {
-			pmap["addOptions"] = map[string]any{"addType": "automatic", "monitor": "all", "monitored": true, "booksToMonitor": []any{}, "searchForMissingBooks": true, "searchForNewBook": true}
-		}
-		if pmap["tags"] == nil && len(r.inst.DefaultTags) > 0 {
-			pmap["tags"] = r.inst.DefaultTags
-		}
-		// Ensure editions shape
-		if _, ok := pmap["editions"]; !ok || pmap["editions"] == nil {
-			pmap["editions"] = []any{}
-		}
-		// If editions empty and we have foreignEditionId, pin a single monitored edition
-		if eds, ok := pmap["editions"].([]any); ok && len(eds) == 0 {
-			if fe := strings.TrimSpace(fmt.Sprint(pmap["foreignEditionId"])); fe != "" {
-				pmap["editions"] = []any{map[string]any{"foreignEditionId": fe, "monitored": true}}
-			}
-		}
-		// Enrich nested author: ensure rootFolderPath and foreignAuthorId when possible
-		if av, ok := pmap["author"]; ok {
-			if am, ok2 := av.(map[string]any); ok2 {
-				if am["rootFolderPath"] == nil || am["rootFolderPath"] == "" {
-					// prefer opts override, validate against server list
-					rp := r.getValidRootFolderPath(context.Background(), opts.RootFolderPath)
-					if rp == "" {
-						rp = r.getValidRootFolderPath(context.Background(), "")
-					}
-					if rp != "" {
-						am["rootFolderPath"] = rp
-					}
-				}
-				if am["foreignAuthorId"] == nil || am["foreignAuthorId"] == "" {
-					if nm, _ := am["name"].(string); nm != "" {
-						if fid := r.LookupForeignAuthorIDString(context.Background(), nm); fid != "" {
-							am["foreignAuthorId"] = fid
-						} else {
-							// try to import by cleaned name as fallback
-							if id, err := r.ImportAuthor(context.Background(), strings.ReplaceAll(strings.TrimSpace(nm), " ", "-")); err == nil && id != 0 {
-								am["foreignAuthorId"] = strings.ReplaceAll(strings.TrimSpace(nm), " ", "-")
-							}
-						}
-					} else if idv, ok := am["id"]; ok {
-						// No name provided; attempt to fetch author details by id
-						var aid int
-						switch t := idv.(type) {
-						case float64:
-							aid = int(t)
-						case int:
-							aid = t
-						case string:
-							if i, e := strconv.Atoi(strings.TrimSpace(t)); e == nil {
-								aid = i
-							}
-						}
-						if aid > 0 {
-							if details, err := r.GetAuthorByID(context.Background(), aid); err == nil && details != nil {
-								if fid, _ := details["foreignAuthorId"].(string); strings.TrimSpace(fid) != "" {
-									am["foreignAuthorId"] = fid
-								}
-								if nm2, _ := details["name"].(string); nm2 != "" {
-									am["name"] = nm2
-								}
-							}
-						}
-					}
-				}
-				pmap["author"] = am
-			}
-		}
-
-		// If author object still lacks both an id and a foreignAuthorId, remove it
-		// and fall back to authorTitle to avoid Readarr requiring Author.ForeignAuthorId.
-		if av, ok := pmap["author"]; ok {
-			if am, ok2 := av.(map[string]any); ok2 {
-				if am["foreignAuthorId"] == nil || am["foreignAuthorId"] == "" {
-					if _, hasID := am["id"]; !hasID {
-						if name, _ := am["name"].(string); name != "" {
-							// Fallback: use the cleaned name as a foreignAuthorId string so the
-							// field is non-empty and passes Readarr validation. This is a
-							// heuristic; better resolution would use a real foreign ID.
-							// fallback: ensure non-empty foreignAuthorId string (cleaned name)
-							am["foreignAuthorId"] = strings.ReplaceAll(strings.TrimSpace(name), " ", "-")
-							pmap["authorTitle"] = name
-						}
-						delete(pmap, "author")
-					}
-				}
-			}
-		}
-		if av, ok := pmap["authorId"]; ok {
-			remove := false
-			switch v := av.(type) {
-			case nil:
-				remove = true
-			case float64:
-				// valid numeric from JSON; convert to int
-				pmap["authorId"] = int(v)
-			case int:
-				// already fine
-			case string:
-				s := strings.TrimSpace(v)
-				if s == "" || strings.EqualFold(s, "null") {
-					remove = true
-				} else if i, e := strconv.Atoi(s); e == nil {
-					pmap["authorId"] = i
-				} else {
-					remove = true
-				}
-			default:
-				// unknown type, remove
-				remove = true
-			}
-			if remove {
-				delete(pmap, "authorId")
-			}
-		}
-		// If we have an authorId but no nested author object, inject a minimal author object
-		if _, hasAuthor := pmap["author"]; !hasAuthor {
-			if aid, ok := pmap["authorId"].(int); ok && aid > 0 {
-				am := map[string]any{"id": aid}
-				// Try to fetch author details to include foreignAuthorId and name
-				if details, err := r.GetAuthorByID(context.Background(), aid); err == nil && details != nil {
-					if fid, _ := details["foreignAuthorId"].(string); strings.TrimSpace(fid) != "" {
-						am["foreignAuthorId"] = fid
-					}
-					if nm, _ := details["name"].(string); nm != "" {
-						am["name"] = nm
-					}
-				}
-				// Provide a valid qualityProfileId and metadataProfileId/rootFolderPath to satisfy validators
-				if qid := r.getValidQualityProfileID(context.Background()); qid != 0 {
-					am["qualityProfileId"] = qid
-				} else if r.inst.DefaultQualityProfileID != 0 {
-					am["qualityProfileId"] = r.inst.DefaultQualityProfileID
-				}
-				am["metadataProfileId"] = 1
-				if rp := r.getValidRootFolderPath(context.Background(), ""); rp != "" {
-					am["rootFolderPath"] = rp
-				}
-				pmap["author"] = am
-			}
-		}
-		// Re-marshal sanitized payload
+		pmap = r.sanitizeAndEnrichPayload(context.Background(), pmap, opts)
 		if b, err := json.Marshal(pmap); err == nil {
 			payload = b
 		}
@@ -470,140 +458,7 @@ func (r *Readarr) AddBookRaw(ctx context.Context, raw json.RawMessage) ([]byte, 
 	var pmap map[string]any
 	payload := raw
 	if err := json.Unmarshal(raw, &pmap); err == nil {
-		// Ensure top-level defaults similar to AddBook
-		if pmap["qualityProfileId"] == nil || fmt.Sprint(pmap["qualityProfileId"]) == "" || fmt.Sprint(pmap["qualityProfileId"]) == "0" {
-			if qid := r.getValidQualityProfileID(context.Background()); qid != 0 {
-				pmap["qualityProfileId"] = qid
-			} else if r.inst.DefaultQualityProfileID != 0 {
-				pmap["qualityProfileId"] = r.inst.DefaultQualityProfileID
-			}
-		}
-		if pmap["metadataProfileId"] == nil || fmt.Sprint(pmap["metadataProfileId"]) == "" || fmt.Sprint(pmap["metadataProfileId"]) == "0" {
-			pmap["metadataProfileId"] = 1
-		}
-		if pmap["rootFolderPath"] == nil || fmt.Sprint(pmap["rootFolderPath"]) == "" {
-			rp := r.getValidRootFolderPath(context.Background(), "")
-			if rp == "" {
-				rp = r.inst.DefaultRootFolderPath
-			}
-			if rp != "" {
-				pmap["rootFolderPath"] = rp
-			}
-		}
-		if _, ok := pmap["monitored"]; !ok {
-			pmap["monitored"] = true
-		}
-		if _, ok := pmap["addOptions"]; !ok {
-			pmap["addOptions"] = map[string]any{"addType": "automatic", "monitor": "all", "monitored": true, "booksToMonitor": []any{}, "searchForMissingBooks": true, "searchForNewBook": true}
-		}
-		if pmap["tags"] == nil && len(r.inst.DefaultTags) > 0 {
-			pmap["tags"] = r.inst.DefaultTags
-		}
-		// Ensure editions shape
-		if _, ok := pmap["editions"]; !ok || pmap["editions"] == nil {
-			pmap["editions"] = []any{}
-		}
-		if eds, ok := pmap["editions"].([]any); ok && len(eds) == 0 {
-			if fe := strings.TrimSpace(fmt.Sprint(pmap["foreignEditionId"])); fe != "" {
-				pmap["editions"] = []any{map[string]any{"foreignEditionId": fe, "monitored": true}}
-			}
-		}
-		// Enrich nested author similar to AddBook
-		if av, ok := pmap["author"]; ok {
-			if am, ok2 := av.(map[string]any); ok2 {
-				if am["rootFolderPath"] == nil || am["rootFolderPath"] == "" {
-					rp := r.getValidRootFolderPath(context.Background(), "")
-					if rp != "" {
-						am["rootFolderPath"] = rp
-					}
-				}
-				if am["foreignAuthorId"] == nil || am["foreignAuthorId"] == "" {
-					if nm, _ := am["name"].(string); nm != "" {
-						if fid := r.LookupForeignAuthorIDString(context.Background(), nm); fid != "" {
-							am["foreignAuthorId"] = fid
-						} else {
-							// try to import using cleaned name fallback
-							if id, err := r.ImportAuthor(context.Background(), strings.ReplaceAll(strings.TrimSpace(nm), " ", "-")); err == nil && id != 0 {
-								am["foreignAuthorId"] = strings.ReplaceAll(strings.TrimSpace(nm), " ", "-")
-							}
-						}
-					} else if idv, ok := am["id"]; ok {
-						// No name; fetch details by id to populate foreignAuthorId
-						var aid int
-						switch t := idv.(type) {
-						case float64:
-							aid = int(t)
-						case int:
-							aid = t
-						case string:
-							if i, e := strconv.Atoi(strings.TrimSpace(t)); e == nil {
-								aid = i
-							}
-						}
-						if aid > 0 {
-							if details, err := r.GetAuthorByID(context.Background(), aid); err == nil && details != nil {
-								if fid, _ := details["foreignAuthorId"].(string); strings.TrimSpace(fid) != "" {
-									am["foreignAuthorId"] = fid
-								}
-								if nm2, _ := details["name"].(string); nm2 != "" {
-									am["name"] = nm2
-								}
-							}
-						}
-					}
-				}
-				pmap["author"] = am
-			}
-		}
-		if av, ok := pmap["authorId"]; ok {
-			remove := false
-			switch v := av.(type) {
-			case nil:
-				remove = true
-			case float64:
-				pmap["authorId"] = int(v)
-			case int:
-			case string:
-				s := strings.TrimSpace(v)
-				if s == "" || strings.EqualFold(s, "null") {
-					remove = true
-				} else if i, e := strconv.Atoi(s); e == nil {
-					pmap["authorId"] = i
-				} else {
-					remove = true
-				}
-			default:
-				remove = true
-			}
-			if remove {
-				delete(pmap, "authorId")
-			}
-		}
-		// If we have an authorId but no nested author object, inject a minimal author object
-		if _, hasAuthor := pmap["author"]; !hasAuthor {
-			if aid, ok := pmap["authorId"].(int); ok && aid > 0 {
-				am := map[string]any{"id": aid}
-				// Try to fetch author details to include foreignAuthorId and name
-				if details, err := r.GetAuthorByID(context.Background(), aid); err == nil && details != nil {
-					if fid, _ := details["foreignAuthorId"].(string); strings.TrimSpace(fid) != "" {
-						am["foreignAuthorId"] = fid
-					}
-					if nm, _ := details["name"].(string); nm != "" {
-						am["name"] = nm
-					}
-				}
-				if qid := r.getValidQualityProfileID(context.Background()); qid != 0 {
-					am["qualityProfileId"] = qid
-				} else if r.inst.DefaultQualityProfileID != 0 {
-					am["qualityProfileId"] = r.inst.DefaultQualityProfileID
-				}
-				am["metadataProfileId"] = 1
-				if rp := r.getValidRootFolderPath(context.Background(), ""); rp != "" {
-					am["rootFolderPath"] = rp
-				}
-				pmap["author"] = am
-			}
-		}
+		pmap = r.sanitizeAndEnrichPayload(context.Background(), pmap, AddOpts{})
 		if b, err := json.Marshal(pmap); err == nil {
 			payload = b
 		}
@@ -1173,17 +1028,7 @@ func hasIdent(b LookupBook, kind, value string) bool {
 	return false
 }
 
-// parseAuthorNameFromTitle extracts author name from authorTitle like "andrews, ilona Burn for Me"
-func parseAuthorNameFromTitle(title string) string {
-	parts := strings.Split(strings.TrimSpace(title), " ")
-	if len(parts) >= 2 {
-		// Assume "lastname, firstname ..."
-		last := strings.Trim(parts[0], ",")
-		first := parts[1]
-		return strings.Title(strings.ToLower(first + " " + last))
-	}
-	return strings.Title(strings.ToLower(strings.TrimSpace(title)))
-}
+// use util.ParseAuthorNameFromTitle from util package
 
 func (r *Readarr) SelectCandidate(list []LookupBook, isbn13, isbn10, asin string) (Candidate, bool) {
 	c13 := cleanISBN(isbn13)
@@ -1206,7 +1051,7 @@ func (r *Readarr) SelectCandidate(list []LookupBook, isbn13, isbn10, asin string
 			} else if b.AuthorId > 0 {
 				author = map[string]any{"id": b.AuthorId}
 			} else if b.AuthorTitle != "" {
-				name := parseAuthorNameFromTitle(b.AuthorTitle)
+				name := util.ParseAuthorNameFromTitle(b.AuthorTitle)
 				author = map[string]any{"name": name}
 			}
 			// Always return the candidate when the identifier test passes. The
@@ -1330,61 +1175,4 @@ func (r *Readarr) setCachedAuthor(name string, readarrID int) {
 		INSERT OR REPLACE INTO readarr_authors (name, readarr_id, updated_at)
 		VALUES (?, ?, CURRENT_TIMESTAMP)
 	`, strings.ToLower(name), readarrID)
-}
-
-func (r *Readarr) getCachedBook(isbn13, isbn10, asin string) (*LookupBook, bool) {
-	if r.db == nil {
-		return nil, false
-	}
-	var data string
-	query := `SELECT readarr_data FROM readarr_books WHERE `
-	args := []any{}
-
-	if isbn13 != "" {
-		query += `isbn13 = ?`
-		args = append(args, isbn13)
-	} else if isbn10 != "" {
-		query += `isbn10 = ?`
-		args = append(args, isbn10)
-	} else if asin != "" {
-		query += `asin = ?`
-		args = append(args, asin)
-	} else {
-		return nil, false
-	}
-
-	err := r.db.QueryRow(query, args...).Scan(&data)
-	if err != nil {
-		return nil, false
-	}
-
-	var book LookupBook
-	if err := json.Unmarshal([]byte(data), &book); err != nil {
-		return nil, false
-	}
-	return &book, true
-}
-
-func (r *Readarr) setCachedBook(book *LookupBook) {
-	if r.db == nil || book == nil {
-		return
-	}
-	data, _ := json.Marshal(book)
-	// Inline author id extraction to avoid unused helper warning
-	var authorID interface{}
-	if book.Author != nil {
-		if id, ok := book.Author["id"].(float64); ok {
-			i := int(id)
-			authorID = i
-		} else if id2, ok2 := book.Author["id"].(int); ok2 {
-			authorID = id2
-		}
-	}
-	if authorID == nil && book.AuthorId > 0 {
-		authorID = book.AuthorId
-	}
-	r.db.Exec(`
-		INSERT OR REPLACE INTO readarr_books (title, author_id, isbn13, isbn10, asin, readarr_data, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, book.Title, authorID, book.Identifiers, "", "", string(data))
 }

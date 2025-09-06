@@ -11,6 +11,7 @@ import (
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/db"
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
+	"gitea.knapp/jacoknapp/scriptorum/internal/util"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -105,7 +106,7 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		if strings.TrimSpace(inst.BaseURL) != "" && strings.TrimSpace(inst.APIKey) != "" {
 			ra := providers.NewReadarrWithDB(inst, s.db.SQL())
-			term := firstNonEmpty(p.ASIN, p.ISBN13, p.ISBN10)
+			term := util.FirstNonEmpty(p.ASIN, p.ISBN13, p.ISBN10)
 			if term == "" {
 				term = strings.TrimSpace(p.Title)
 				if len(p.Authors) > 0 && strings.TrimSpace(p.Authors[0]) != "" {
@@ -306,6 +307,27 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 	if err != nil {
+		// If Readarr reports a duplicate edition (already added), treat as success/idempotent
+		emsg := strings.ToLower(err.Error())
+		if strings.Contains(emsg, "ix_editions_foreigneditionid") || strings.Contains(emsg, "duplicate key value") || strings.Contains(emsg, "already exists") {
+			_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Email)
+			_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", "already in Readarr (duplicate edition)", r.Context().Value(ctxUser).(*session).Email, payload, respBody)
+			trig := map[string]any{"request:updated": map[string]any{
+				"id":     id,
+				"isbn13": req.ISBN13,
+				"isbn10": req.ISBN10,
+				"asin":   "",
+				"title":  req.Title,
+				"format": req.Format,
+			}}
+			if b, mErr := json.Marshal(trig); mErr == nil {
+				w.Header().Set("HX-Trigger", string(b))
+			} else {
+				w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
+			}
+			writeJSON(w, map[string]string{"status": "queued"}, 200)
+			return
+		}
 		_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", payload, respBody)
 		// Debug: surface payload and Readarr response in server logs for troubleshooting
 		fmt.Printf("DEBUG: Readarr add error: %v\n---payload---\n%s\n---response---\n%s\n", err, string(payload), string(respBody))
@@ -388,7 +410,7 @@ func (s *Server) apiHydrateRequest(w http.ResponseWriter, r *http.Request) {
 	ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 
 	// Build lookup term preference: ISBN13 > ISBN10 > Title [Author]
-	term := firstNonEmpty(req.ISBN13, req.ISBN10)
+	term := util.FirstNonEmpty(req.ISBN13, req.ISBN10)
 	if term == "" {
 		term = strings.TrimSpace(req.Title)
 		if len(req.Authors) > 0 && strings.TrimSpace(req.Authors[0]) != "" {
@@ -464,15 +486,6 @@ func (s *Server) apiHydrateRequest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"status": "ok"}, 200)
 }
 
-func firstNonEmpty(vs ...string) string {
-	for _, v := range vs {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 // parseAuthorNameFromTitle extracts author name from authorTitle like "andrews, ilona Burn for Me"
 func parseAuthorNameFromTitle(title string) string {
 	parts := strings.Split(strings.TrimSpace(title), " ")
@@ -480,30 +493,7 @@ func parseAuthorNameFromTitle(title string) string {
 		// Assume "lastname, firstname ..."
 		last := strings.Trim(parts[0], ",")
 		first := parts[1]
-		return toTitleCase(first + " " + last)
+		return util.ToTitleCase(first + " " + last)
 	}
-	return toTitleCase(strings.TrimSpace(title))
-}
-
-func toTitleCase(s string) string {
-	s = strings.ToLower(strings.TrimSpace(s))
-	if s == "" {
-		return s
-	}
-	var out []rune
-	capNext := true
-	for _, r := range s {
-		if capNext && r >= 'a' && r <= 'z' {
-			out = append(out, r-('a'-'A'))
-			capNext = false
-			continue
-		}
-		out = append(out, r)
-		if r == ' ' || r == '-' || r == '\'' {
-			capNext = true
-		} else {
-			capNext = false
-		}
-	}
-	return string(out)
+	return util.ToTitleCase(strings.TrimSpace(title))
 }

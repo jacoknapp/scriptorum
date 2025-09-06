@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
+	"gitea.knapp/jacoknapp/scriptorum/internal/util"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -142,11 +143,11 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 						}
 					}
 					// Derive cover URL if available
-					cover := firstNonEmpty(b.CoverUrl, b.RemotePoster, b.RemoteCover)
+					cover := util.FirstNonEmpty(b.CoverUrl, b.RemotePoster, b.RemoteCover)
 					if cover == "" && len(b.Images) > 0 {
 						for _, im := range b.Images {
 							if strings.EqualFold(im.CoverType, "cover") || strings.EqualFold(im.CoverType, "poster") {
-								cover = firstNonEmpty(im.Url, im.RemoteUrl)
+								cover = util.FirstNonEmpty(im.Url, im.RemoteUrl)
 								if cover != "" {
 									break
 								}
@@ -195,11 +196,11 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 						}
 					}
 					// Derive cover URL if available
-					cover := firstNonEmpty(b.CoverUrl, b.RemotePoster, b.RemoteCover)
+					cover := util.FirstNonEmpty(b.CoverUrl, b.RemotePoster, b.RemoteCover)
 					if cover == "" && len(b.Images) > 0 {
 						for _, im := range b.Images {
 							if strings.EqualFold(im.CoverType, "cover") || strings.EqualFold(im.CoverType, "poster") {
-								cover = firstNonEmpty(im.Url, im.RemoteUrl)
+								cover = util.FirstNonEmpty(im.Url, im.RemoteUrl)
 								if cover != "" {
 									break
 								}
