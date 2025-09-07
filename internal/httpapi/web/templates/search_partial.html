@@ -5,9 +5,10 @@
 	<ul class="divide-y">
 		{{ range .Items }}
 	<li class="p-4 grid gap-4 items-center grid-cols-[auto,1fr,24rem]">
-			<img src="{{ .CoverMedium }}"
+			{{/* Use placeholder if no cover; fallback on error */}}
+			<img src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
 					 class="w-16 h-24 object-cover rounded-lg border bg-slate-100"
-					 onerror="this.style.display='none'">
+					 onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
 
 			<div class="min-w-0">
 				<div class="font-medium truncate">{{ .Title }}</div>
