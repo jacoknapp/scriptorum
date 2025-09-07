@@ -19,11 +19,6 @@ oauth:
   cookie_secret: ""
 amazon_public:
   enabled: true
-audiobookshelf:
-  enabled: true
-  base_url: "http://audiobookshelf:13378"
-  token: ""
-  search_endpoint: "/api/search?query={{urlquery .Term}}"
 readarr:
   ebooks:
     base_url: "http://readarr-ebooks:8787"
@@ -31,18 +26,17 @@ readarr:
     lookup_endpoint: "/api/v1/book/lookup"
     default_quality_profile_id: 1
     default_root_folder_path: "/books/ebooks"
-    default_tags: ["requested-by-abs"]
+  default_tags: []
   audiobooks:
     base_url: "http://readarr-audio:8787"
     api_key: ""
     lookup_endpoint: "/api/v1/book/lookup"
     default_quality_profile_id: 2
     default_root_folder_path: "/books/audiobooks"
-    default_tags: ["requested-by-abs","audiobook"]
+  default_tags: ["audiobook"]
 admins:
   emails: ["you@example.com"]
 automations:
-  presence_check_abs: true
   prefer_isbn13: true
   auto_search_for_missing: true
   tag_requester: true

@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -49,36 +50,58 @@ func EnsureFirstRun(ctx context.Context, cfgPath, dbPath string) (*config.Config
 
 func defaultConfig(dbPath string) *config.Config {
 	c := &config.Config{}
+
+	// Mirror data/scriptorum.yaml defaults
+	c.Debug = false
 	c.HTTP.Listen = ":8080"
 	c.DB.Path = dbPath
-	c.Setup.Completed = false
+	c.Setup.Completed = true
+
+	saltBytes := make([]byte, 16)
+	if _, err := os.ReadFull(os.Reader, saltBytes); err == nil {
+		c.Auth.Salt = fmt.Sprintf("%x", saltBytes)
+	} else {
+		c.Auth.Salt = "default_salt"
+	}
+	c.Admins.Emails = []string{"jacoknapp@gmail.com"}
+
 	c.OAuth.Enabled = false
-	c.OAuth.RedirectURL = "http://localhost:8080/oauth/callback"
+	c.OAuth.Issuer = ""
+	c.OAuth.ClientID = ""
+	c.OAuth.ClientSecret = ""
+	c.OAuth.RedirectURL = ""
 	c.OAuth.Scopes = []string{"openid", "profile", "email"}
+	c.OAuth.AllowDomains = []string{}
+	c.OAuth.AllowEmails = []string{}
 	c.OAuth.CookieName = "scriptorum_session"
+	c.OAuth.CookieDomain = ""
+	c.OAuth.CookieSecure = false
+	c.OAuth.CookieSecret = ""
+
 	c.AmazonPublic.Enabled = true
 
-	c.Audiobookshelf.Enabled = true
-	c.Audiobookshelf.BaseURL = "http://audiobookshelf:13378"
-	c.Audiobookshelf.SearchEndpoint = "/api/search?query={{urlquery .Term}}"
-
-	c.Readarr.Ebooks.BaseURL = "http://readarr-ebooks:8787"
-	c.Readarr.Ebooks.LookupEndpoint = "/api/v1/book/lookup"
-	c.Readarr.Ebooks.AddEndpoint = "/api/v1/book"
-	c.Readarr.Ebooks.AddMethod = "POST"
+	// Readarr instances (values taken from your scriptorum.yaml)
+	c.Readarr.Ebooks.BaseURL = ""
+	c.Readarr.Ebooks.APIKey = ""
 	c.Readarr.Ebooks.DefaultQualityProfileID = 1
 	c.Readarr.Ebooks.DefaultRootFolderPath = "/books/ebooks"
-	c.Readarr.Ebooks.DefaultTags = []string{"requested-by-abs"}
-	c.Readarr.Ebooks.AddPayloadTemplate = defaultAddTemplate()
+	c.Readarr.Ebooks.DefaultTags = []string{}
 
-	c.Readarr.Audiobooks.BaseURL = "http://readarr-audio:8787"
-	c.Readarr.Audiobooks.LookupEndpoint = "/api/v1/book/lookup"
-	c.Readarr.Audiobooks.AddEndpoint = "/api/v1/book"
-	c.Readarr.Audiobooks.AddMethod = "POST"
+	c.Readarr.Audiobooks.BaseURL = ""
+	c.Readarr.Audiobooks.APIKey = ""
 	c.Readarr.Audiobooks.DefaultQualityProfileID = 2
 	c.Readarr.Audiobooks.DefaultRootFolderPath = "/books/audiobooks"
-	c.Readarr.Audiobooks.DefaultTags = []string{"requested-by-abs", "audiobook"}
-	c.Readarr.Audiobooks.AddPayloadTemplate = defaultAddTemplate()
+	c.Readarr.Audiobooks.DefaultTags = []string{}
+
+	// Automations (match your YAML)
+	c.Automations.PreferISBN13 = false
+	c.Automations.AutoSearchForMissing = false
+	c.Automations.TagRequester = false
+	c.Automations.CreateAuthorIfMissing = false
+	c.Automations.SeriesLinking = false
+	c.Automations.RequireApproval = false
+	c.Automations.AutoCompleteOnImport = false
+
 	return c
 }
 

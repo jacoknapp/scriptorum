@@ -20,12 +20,7 @@
 					{{ if .ASIN }}{{ if or .ISBN13 .ISBN10 }}, {{ end }}ASIN: {{ .ASIN }}{{ end }}
 				</div>
 				<!-- Source label removed: do not display which instance returned the result -->
-				<div class="text-xs mt-2"
-						 hx-get="/ui/presence?q={{ urlquery .Title }}{{ if gt (len .Authors) 0 }}%20{{ urlquery (index .Authors 0) }}{{ end }}"
-						 hx-trigger="load"
-						 hx-target="this">
-					<span class="text-slate-400">Checking presence…</span>
-				</div>
+
 			</div>
 
 			<form method="post" action="/api/v1/requests" class="flex flex-wrap gap-2 items-center justify-start md:justify-end"

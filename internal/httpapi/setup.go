@@ -14,7 +14,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-var stepFlags = map[string]bool{"admin": false, "oauth": false, "abs": false, "rebooks": false, "raudio": false}
+var stepFlags = map[string]bool{"admin": false, "oauth": false, "rebooks": false, "raudio": false}
 
 func (s *Server) mountSetup(r chi.Router) {
 	// If setup is already completed, don't register the setup routes so
@@ -31,7 +31,6 @@ func (s *Server) mountSetup(r chi.Router) {
 		rr.Post("/finish", u.handleSetupFinish(s))
 		rr.Get("/can-advance/{n}", u.handleCanAdvance(s))
 		rr.Get("/test/oauth", u.handleTestOAuth(s))
-		rr.Get("/test/abs", u.handleTestABS(s))
 		rr.Get("/test/readarr", u.handleTestReadarr(s))
 		rr.Get("/step/{n}", u.handleStep(s))
 	})
@@ -75,9 +74,6 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		cur.OAuth.ClientID = r.FormValue("oauth_client_id")
 		cur.OAuth.ClientSecret = r.FormValue("oauth_client_secret")
 		cur.OAuth.RedirectURL = r.FormValue("oauth_redirect")
-		cur.Audiobookshelf.Enabled = r.FormValue("abs_enabled") == "on"
-		cur.Audiobookshelf.BaseURL = strings.TrimSpace(r.FormValue("abs_base"))
-		cur.Audiobookshelf.Token = r.FormValue("abs_token")
 		cur.Readarr.Ebooks.BaseURL = r.FormValue("ra_ebooks_base")
 		cur.Readarr.Ebooks.APIKey = r.FormValue("ra_ebooks_key")
 		cur.Readarr.Audiobooks.BaseURL = r.FormValue("ra_audio_base")
@@ -111,25 +107,7 @@ func (u *setupUI) handleTestOAuth(s *Server) http.HandlerFunc {
 	}
 }
 
-func (u *setupUI) handleTestABS(s *Server) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		cfg := s.settings.Get().Audiobookshelf
-		if !cfg.Enabled {
-			stepFlags["abs"] = true
-			w.Header().Set("HX-Trigger", "setup-saved")
-			writeProbeHTML(w, true, "disabled")
-			return
-		}
-		abs := providers.NewABS(cfg.BaseURL, cfg.Token, cfg.SearchEndpoint)
-		ctx2, cancel := context.WithTimeout(r.Context(), 6*time.Second)
-		defer cancel()
-		err := abs.Ping(ctx2)
-		ok := err == nil
-		stepFlags["abs"] = ok
-		w.Header().Set("HX-Trigger", "setup-saved")
-		writeProbeHTML(w, ok, errString(err))
-	}
-}
+// ABS test removed
 
 func (u *setupUI) handleTestReadarr(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -219,10 +197,8 @@ func (u *setupUI) handleCanAdvance(s *Server) http.HandlerFunc {
 		case "2":
 			ok = stepFlags["oauth"] || !s.settings.Get().OAuth.Enabled
 		case "3":
-			ok = stepFlags["abs"] || !s.settings.Get().Audiobookshelf.Enabled
-		case "4":
 			ok = stepFlags["rebooks"] && stepFlags["raudio"]
-		case "5":
+		case "4":
 			ok = true
 		}
 		writeProbeJSON(w, ok, "")
@@ -247,10 +223,8 @@ func (u *setupUI) handleStep(s *Server) http.HandlerFunc {
 		case "2":
 			_ = u.tpl.ExecuteTemplate(w, "step_oauth.html", s.settings.Get())
 		case "3":
-			_ = u.tpl.ExecuteTemplate(w, "step_abs.html", s.settings.Get())
-		case "4":
 			_ = u.tpl.ExecuteTemplate(w, "step_readarr.html", s.settings.Get())
-		case "5":
+		case "4":
 			_ = u.tpl.ExecuteTemplate(w, "step_finish.html", nil)
 		default:
 			http.Error(w, "unknown", 404)

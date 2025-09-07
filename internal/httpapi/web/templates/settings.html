@@ -2,11 +2,7 @@
 <div class="bg-white rounded-xl2 shadow-card ring-1 ring-slate-900/5 p-5">
 	<h1 class="text-xl font-semibold mb-4">Settings</h1>
 	<form method="post" action="/settings/save" class="grid gap-6">
-		<section>
-			<h2 class="font-semibold mb-2">Audiobookshelf</h2>
-			<input name="abs_base" placeholder="Base URL" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Audiobookshelf.BaseURL }}">
-			<input type="password" name="abs_token" placeholder="Token" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Audiobookshelf.Token }}">
-		</section>
+    
 
 		<section>
 			<h2 class="font-semibold mb-2">Readarr</h2>

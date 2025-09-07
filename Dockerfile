@@ -13,6 +13,6 @@ COPY --from=build /out/scriptorum /app/scriptorum
 COPY scriptorum.example.yaml /app/config.yaml
 USER nonroot:nonroot
 EXPOSE 8080
-ENV CONFIG_PATH=/data/config.yaml ABS_DB_PATH=/data/scriptorum.db
+ENV CONFIG_PATH=/data/config.yaml
 VOLUME ["/data"]
 ENTRYPOINT ["/app/scriptorum"]

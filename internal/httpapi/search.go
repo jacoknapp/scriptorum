@@ -23,7 +23,6 @@ func (s *Server) mountSearch(r chi.Router) {
 	r.Get("/ui/search", u.handleSearch(s))
 	// Readarr cover proxy (fetch fresh each call). Search UI will link images here
 	r.Get("/ui/readarr-cover", s.serveReadarrCover())
-	r.Get("/ui/presence", u.handlePresence(s))
 }
 
 type searchUI struct{ tpl *template.Template }
@@ -330,24 +329,4 @@ func urlHost(base string) string {
 	return base
 }
 
-func (u *searchUI) handlePresence(s *Server) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		title := r.URL.Query().Get("q")
-		// Avoid repeated client-side retries; set short cache, and handle empty input quickly
-		w.Header().Set("Cache-Control", "max-age=30")
-		inABS := false
-		if strings.TrimSpace(title) != "" && s.cfg.Audiobookshelf.BaseURL != "" {
-			abs := providers.NewABS(s.cfg.Audiobookshelf.BaseURL, s.cfg.Audiobookshelf.Token, s.cfg.Audiobookshelf.SearchEndpoint)
-			inABS, _ = abs.HasTitle(r.Context(), title)
-		}
-		badge := `<div class="flex flex-wrap gap-2">`
-		if inABS {
-			badge += `<span class="px-2 py-0.5 text-xs rounded bg-royal-100 text-royal-800">In Audiobookshelf</span>`
-		} else {
-			badge += `<span class="px-2 py-0.5 rounded bg-slate-100 text-slate-500">Not found</span>`
-		}
-		badge += `</div>`
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(badge))
-	}
-}
+// presence checks removed

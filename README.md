@@ -4,7 +4,6 @@ Royal-purple web UI to request eBooks/audiobooks, bridging:
 - **Amazon (public)**: auto-detect ASINs & scrape detail pages; keyword search via public search results
 - **Open Library**: keyword search metadata
 - **Readarr v1**: separate instances for eBooks & audiobooks, identifier-first match (ISBN-13 → ISBN-10 → ASIN)
-- **Audiobookshelf**: presence badge on search results
 
 ## Run (Docker)
 ```bash

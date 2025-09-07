@@ -87,12 +87,7 @@ type Config struct {
 		Enabled bool `yaml:"enabled"`
 	} `yaml:"amazon_public"`
 
-	Audiobookshelf struct {
-		Enabled        bool   `yaml:"enabled"`
-		BaseURL        string `yaml:"base_url"`
-		Token          string `yaml:"token"`
-		SearchEndpoint string `yaml:"search_endpoint"`
-	} `yaml:"audiobookshelf"`
+	// Audiobookshelf integration removed
 
 	Readarr struct {
 		Ebooks     ReadarrInstance `yaml:"ebooks"`
@@ -100,7 +95,6 @@ type Config struct {
 	} `yaml:"readarr"`
 
 	Automations struct {
-		PresenceCheckABS      bool `yaml:"presence_check_abs"`
 		PreferISBN13          bool `yaml:"prefer_isbn13"`
 		AutoSearchForMissing  bool `yaml:"auto_search_for_missing"`
 		TagRequester          bool `yaml:"tag_requester"`
@@ -142,6 +136,10 @@ func Load(path string) (*Config, error) {
 	if cfg.Readarr.Ebooks.AddPayloadTemplate == "" {
 		cfg.Readarr.Ebooks.AddPayloadTemplate = defaultReadarrAddPayloadTemplate
 	}
+	// Ensure lookup endpoints have sensible defaults
+	if cfg.Readarr.Ebooks.LookupEndpoint == "" {
+		cfg.Readarr.Ebooks.LookupEndpoint = "/api/v1/book/lookup"
+	}
 	if cfg.Readarr.Audiobooks.AddEndpoint == "" {
 		cfg.Readarr.Audiobooks.AddEndpoint = defaultReadarrAddEndpoint
 	}
@@ -150,6 +148,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Readarr.Audiobooks.AddPayloadTemplate == "" {
 		cfg.Readarr.Audiobooks.AddPayloadTemplate = defaultReadarrAddPayloadTemplate
+	}
+	if cfg.Readarr.Audiobooks.LookupEndpoint == "" {
+		cfg.Readarr.Audiobooks.LookupEndpoint = "/api/v1/book/lookup"
 	}
 	return &cfg, nil
 }

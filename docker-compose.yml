@@ -8,9 +8,8 @@ services:
     restart: unless-stopped
     environment:
       SCRIPTORUM_CONFIG_PATH: /data/scriptorum.yaml
-      ABS_DB_PATH: /data/scriptorum.db
     volumes:
-      - abs_data:/data
+      - data:/data
     ports:
       - "8080:8080"
     healthcheck:
@@ -20,4 +19,4 @@ services:
       retries: 5
       start_period: 20s
 volumes:
-  abs_data:
+  data:

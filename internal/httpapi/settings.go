@@ -35,8 +35,6 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		cur := *s.settings.Get()
-		cur.Audiobookshelf.BaseURL = strings.TrimSpace(r.FormValue("abs_base"))
-		cur.Audiobookshelf.Token = strings.TrimSpace(r.FormValue("abs_token"))
 		cur.Readarr.Ebooks.BaseURL = strings.TrimSpace(r.FormValue("ra_ebooks_base"))
 		cur.Readarr.Ebooks.APIKey = strings.TrimSpace(r.FormValue("ra_ebooks_key"))
 		cur.Readarr.Audiobooks.BaseURL = strings.TrimSpace(r.FormValue("ra_audio_base"))
