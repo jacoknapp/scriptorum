@@ -6,6 +6,48 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const (
+	defaultReadarrAddEndpoint        = "/api/v1/book"
+	defaultReadarrAddMethod          = "POST"
+	defaultReadarrAddPayloadTemplate = `{
+				"id": {{ if (index .Candidate "id") }}{{ toJSON (index .Candidate "id") }}{{ else }}0{{ end }},
+				"title": {{ toJSON (index .Candidate "title") }},
+				"authorTitle": {{ toJSON (index .Candidate "authorTitle") }},
+				"seriesTitle": {{ toJSON (index .Candidate "seriesTitle") }},
+				"disambiguation": {{ toJSON (index .Candidate "disambiguation") }},
+				"overview": {{ toJSON (index .Candidate "overview") }},
+				"authorId": {{ toJSON (index .Candidate "authorId") }},
+				"foreignBookId": {{ toJSON (index .Candidate "foreignBookId") }},
+				"foreignEditionId": {{ toJSON (index .Candidate "foreignEditionId") }},
+				"titleSlug": {{ toJSON (index .Candidate "titleSlug") }},
+				"monitored": {{ if (index .Candidate "monitored") }}{{ toJSON (index .Candidate "monitored") }}{{ else }}true{{ end }},
+				"anyEditionOk": {{ if (index .Candidate "anyEditionOk") }}{{ toJSON (index .Candidate "anyEditionOk") }}{{ else }}true{{ end }},
+				"ratings": {{ if (index .Candidate "ratings") }}{{ toJSON (index .Candidate "ratings") }}{{ else }}{"votes":0,"value":0}{{ end }},
+				"releaseDate": {{ toJSON (index .Candidate "releaseDate") }},
+				"pageCount": {{ if (index .Candidate "pageCount") }}{{ toJSON (index .Candidate "pageCount") }}{{ else }}0{{ end }},
+				"genres": {{ if (index .Candidate "genres") }}{{ toJSON (index .Candidate "genres") }}{{ else }}[]{{ end }},
+				"author": {{ toJSON (index .Candidate "author") }},
+				"images": {{ if (index .Candidate "images") }}{{ toJSON (index .Candidate "images") }}{{ else }}[]{{ end }},
+				"links": {{ if (index .Candidate "links") }}{{ toJSON (index .Candidate "links") }}{{ else }}[]{{ end }},
+				"statistics": {{ if (index .Candidate "statistics") }}{{ toJSON (index .Candidate "statistics") }}{{ else }}{"bookFileCount":0,"bookCount":0,"totalBookCount":0,"sizeOnDisk":0}{{ end }},
+				"added": {{ toJSON (index .Candidate "added") }},
+				"addOptions": {
+					"addType": {{ if (index (index .Candidate "addOptions") "addType") }}{{ toJSON (index (index .Candidate "addOptions") "addType") }}{{ else }}"automatic"{{ end }},
+					"searchForNewBook": {{ if (index (index .Candidate "addOptions") "searchForNewBook") }}{{ toJSON (index (index .Candidate "addOptions") "searchForNewBook") }}{{ else }}true{{ end }},
+					"monitor": "all",
+					"monitored": true,
+					"booksToMonitor": [],
+					"searchForMissingBooks": {{ if .Opts.SearchForMissing }}true{{ else }}false{{ end }}
+				},
+				"remoteCover": {{ toJSON (index .Candidate "remoteCover") }},
+				"lastSearchTime": {{ toJSON (index .Candidate "lastSearchTime") }},
+				"editions": {{ if (index .Candidate "editions") }}{{ toJSON (index .Candidate "editions") }}{{ else }}[]{{ end }},
+				"qualityProfileId": {{ if .Opts.QualityProfileID }}{{ .Opts.QualityProfileID }}{{ else }}{{ .Inst.DefaultQualityProfileID }}{{ end }},
+				"rootFolderPath": "{{ .Opts.RootFolderPath }}",
+				"tags": {{ toJSON .Opts.Tags }}
+			}`
+)
+
 type Config struct {
 	Debug bool `yaml:"debug"`
 	HTTP  struct {
@@ -89,6 +131,25 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
 		return nil, err
+	}
+	// Ensure Readarr instances have sensible defaults if not provided in YAML
+	if cfg.Readarr.Ebooks.AddEndpoint == "" {
+		cfg.Readarr.Ebooks.AddEndpoint = defaultReadarrAddEndpoint
+	}
+	if cfg.Readarr.Ebooks.AddMethod == "" {
+		cfg.Readarr.Ebooks.AddMethod = defaultReadarrAddMethod
+	}
+	if cfg.Readarr.Ebooks.AddPayloadTemplate == "" {
+		cfg.Readarr.Ebooks.AddPayloadTemplate = defaultReadarrAddPayloadTemplate
+	}
+	if cfg.Readarr.Audiobooks.AddEndpoint == "" {
+		cfg.Readarr.Audiobooks.AddEndpoint = defaultReadarrAddEndpoint
+	}
+	if cfg.Readarr.Audiobooks.AddMethod == "" {
+		cfg.Readarr.Audiobooks.AddMethod = defaultReadarrAddMethod
+	}
+	if cfg.Readarr.Audiobooks.AddPayloadTemplate == "" {
+		cfg.Readarr.Audiobooks.AddPayloadTemplate = defaultReadarrAddPayloadTemplate
 	}
 	return &cfg, nil
 }
