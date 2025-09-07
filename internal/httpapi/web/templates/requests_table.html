@@ -1,5 +1,6 @@
 {{ define "requests_table" }}
-<table class="min-w-full text-sm">
+<!-- Desktop table -->
+<table class="min-w-full text-sm hidden md:table">
 	<thead class="bg-slate-50">
 		<tr>
 			<th class="text-left px-4 py-2">Title</th>
@@ -56,4 +57,46 @@
 		{{ end }}
 	</tbody>
 </table>
+
+<!-- Mobile cards -->
+<div class="grid gap-3 md:hidden">
+	{{ if .FallbackAll }}
+	<div class="px-3 py-2 text-xs text-slate-500">Showing all requests (you have none yet).</div>
+	{{ end }}
+	{{ range .Items }}
+	<div class="rounded-xl border border-slate-200 p-3">
+		<div class="font-medium">{{ .Title }}</div>
+		<div class="text-sm text-slate-600">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
+		<div class="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
+			<span class="px-2 py-0.5 rounded bg-slate-100">{{ .RequesterEmail }}</span>
+			<span class="px-2 py-0.5 rounded bg-slate-100">{{ .Format }}</span>
+			<span class="px-2 py-0.5 rounded bg-slate-100">{{ .Status }}</span>
+		</div>
+		{{ if .StatusReason }}
+		<div class="mt-1 text-xs text-slate-500">{{ .StatusReason }}</div>
+		{{ end }}
+		<div class="mt-3 flex flex-wrap gap-2">
+			{{ if $.IsAdmin }}
+			<form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="this" hx-swap="none"
+				  hx-on="htmx:responseError: this.querySelector('button').classList.add('bg-rose-600'); this.querySelector('button').textContent='Approve failed'; setTimeout(()=>{var b=this.querySelector('button'); b.textContent='Approve'; b.classList.remove('bg-rose-600');}, 2200)">
+				<button class="px-3 py-1.5 rounded {{ if not .ReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white" {{ if not .ReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
+			</form>
+			{{ if not .ReadarrReq }}
+			<form hx-post="/api/v1/requests/{{ .ID }}/hydrate" hx-target="#req-table" hx-swap="innerHTML"
+				  hx-get="/ui/requests/table" hx-trigger="after-request" hx-target="#req-table" hx-swap="innerHTML">
+				<button class="px-3 py-1.5 rounded bg-amber-600 text-white">Attach selection</button>
+			</form>
+			{{ end }}
+			<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest div.rounded-xl" hx-swap="none">
+				<button class="px-3 py-1.5 rounded bg-red-600 text-white">Decline</button>
+			</form>
+			{{ else }}
+			<span class="text-slate-400">-</span>
+			{{ end }}
+		</div>
+	</div>
+	{{ else }}
+	<div class="p-4 text-slate-500">No requests yet.</div>
+	{{ end }}
+</div>
 {{ end }}

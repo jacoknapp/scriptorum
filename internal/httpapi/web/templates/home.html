@@ -1,12 +1,21 @@
 {{ template "header" . }}
 <div class="bg-white rounded-xl2 shadow-card p-6">
 	<h1 class="text-xl font-semibold mb-3">Search books</h1>
-	<form id="searchForm" hx-get="/ui/search" hx-target="#results" hx-swap="innerHTML" class="flex gap-2">
-		<input name="q" class="flex-1 border rounded px-3 py-2" placeholder="Title / Author / ISBN / ASIN / paste Amazon URL" required>
+	<form id="searchForm" hx-get="/ui/search" hx-target="#results" hx-swap="innerHTML" class="flex flex-col sm:flex-row gap-2">
+		<input name="q" class="flex-1 border rounded px-3 py-2 min-w-0"
+			   placeholder="Title / Author / ISBN / ASIN / paste Amazon URL"
+			   hx-trigger="keyup changed delay:400ms, search"
+			   hx-include="#searchForm"
+			   hx-get="/ui/search"
+			   hx-target="#results"
+			   hx-indicator="#searchIndicator"
+			   hx-on="input: document.querySelector('#searchForm input[name=page]').value='1'"
+			   hx-swap="innerHTML">
 		<input type="hidden" name="page" value="1">
 		<input type="hidden" name="limit" value="20">
 		<button class="px-4 py-2 rounded bg-royal-600 text-white">Search</button>
 	</form>
+	<div id="searchIndicator" class="text-sm text-slate-500 htmx-indicator mt-2">Searching…</div>
 	</div>
 <div id="results" class="mt-4"
 		 hx-get="/ui/search"
@@ -22,7 +31,7 @@
 		 hx-swap="innerHTML">
 	<!-- results will render here -->
 </div>
-<div id="more"
+<div id="more" class="md:block"
 		 hx-get="/ui/search"
 		 hx-trigger="revealed"
 		 hx-target="#results"

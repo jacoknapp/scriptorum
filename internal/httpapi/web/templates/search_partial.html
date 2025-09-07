@@ -4,7 +4,7 @@
 	</div>
 	<ul class="divide-y">
 		{{ range .Items }}
-	<li class="p-4 grid gap-4 items-center grid-cols-[auto,1fr,24rem]">
+	<li class="p-4 grid gap-4 items-center grid-cols-[auto,1fr] md:grid-cols-[auto,1fr,24rem]">
 			{{/* Use placeholder if no cover; fallback on error */}}
 			<img src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
 					 class="w-16 h-24 object-cover rounded-lg border bg-slate-100"
@@ -28,7 +28,7 @@
 				</div>
 			</div>
 
-			<form method="post" action="/api/v1/requests" class="flex gap-2 items-center justify-end"
+			<form method="post" action="/api/v1/requests" class="flex flex-wrap gap-2 items-center justify-start md:justify-end"
 					data-title="{{ .Title }}"
 					data-isbn10="{{ .ISBN10 }}"
 					data-isbn13="{{ .ISBN13 }}"
@@ -48,17 +48,17 @@
 
 				<!-- Use the same purple and fixed width for both buttons so layout doesn't shift -->
 				<button type="button" name="format" value="ebook"
-						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700 w-44"
+						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700 w-full sm:w-44"
 						onclick="scriptorumRequestFallback(this,'ebook')">
 						Request eBook
 					</button>
 				<button type="button" name="format" value="audiobook"
-						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700 w-44"
+						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700 w-full sm:w-44"
 						onclick="scriptorumRequestFallback(this,'audiobook')">
 						Request Audiobook
 					</button>
 			</form>
-			<div class="req-ind htmx-indicator text-xs text-slate-500 hidden col-start-3">Submitting…</div>
+			<div class="req-ind htmx-indicator text-xs text-slate-500 hidden md:col-start-3">Submitting…</div>
 		</li>
 		{{ else }}
 		<li class="p-6 text-slate-500">No results.</li>
