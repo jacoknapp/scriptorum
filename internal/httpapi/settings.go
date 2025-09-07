@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
+	"strconv"
 	"strings"
 
+	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -16,6 +18,7 @@ func (s *Server) mountSettings(r chi.Router) {
 		rt.Use(func(next http.Handler) http.Handler { return s.requireAdmin(next.ServeHTTP) })
 		rt.Get("/settings", u.handleSettings(s))
 		rt.Post("/settings/save", u.handleSettingsSave(s))
+		rt.Get("/api/readarr/profiles", s.apiReadarrProfiles())
 	})
 }
 
@@ -38,8 +41,49 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 		cur.Readarr.Ebooks.APIKey = strings.TrimSpace(r.FormValue("ra_ebooks_key"))
 		cur.Readarr.Audiobooks.BaseURL = strings.TrimSpace(r.FormValue("ra_audio_base"))
 		cur.Readarr.Audiobooks.APIKey = strings.TrimSpace(r.FormValue("ra_audio_key"))
+		// Save quality profile selections
+		if v := strings.TrimSpace(r.FormValue("ra_ebooks_qp")); v != "" {
+			if i, err := strconv.Atoi(v); err == nil {
+				cur.Readarr.Ebooks.DefaultQualityProfileID = i
+			}
+		}
+		if v := strings.TrimSpace(r.FormValue("ra_audio_qp")); v != "" {
+			if i, err := strconv.Atoi(v); err == nil {
+				cur.Readarr.Audiobooks.DefaultQualityProfileID = i
+			}
+		}
 		_ = s.settings.Update(&cur)
 		http.Redirect(w, r, "/settings", http.StatusFound)
+	}
+}
+
+// apiReadarrProfiles returns quality profiles for a given instance (ebooks|audiobooks)
+func (s *Server) apiReadarrProfiles() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		kind := r.URL.Query().Get("kind")
+		var inst providers.ReadarrInstance
+		cfg := s.settings.Get()
+		switch kind {
+		case "ebooks":
+			c := cfg.Readarr.Ebooks
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey}
+		case "audiobooks":
+			c := cfg.Readarr.Audiobooks
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey}
+		default:
+			http.Error(w, "missing kind", http.StatusBadRequest)
+			return
+		}
+		ra := providers.NewReadarrWithDB(inst, s.db.SQL())
+		// Use the by-id fetcher as requested
+		qps, err := ra.GetQualityProfilesByID(r.Context())
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		b, _ := json.Marshal(qps)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(b)
 	}
 }
 

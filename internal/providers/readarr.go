@@ -68,14 +68,39 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 		return pmap
 	}
 	// Defaults
-	if pmap["qualityProfileId"] == nil || fmt.Sprint(pmap["qualityProfileId"]) == "" || fmt.Sprint(pmap["qualityProfileId"]) == "0" {
-		if opts.QualityProfileID != 0 {
-			pmap["qualityProfileId"] = opts.QualityProfileID
-		} else if qid := r.getValidQualityProfileID(ctx); qid != 0 {
-			pmap["qualityProfileId"] = qid
-		} else if r.inst.DefaultQualityProfileID != 0 {
-			pmap["qualityProfileId"] = r.inst.DefaultQualityProfileID
+	// Resolve a valid quality profile id, preferring opts override, then configured/default, and validate against server
+	resolveQID := func() int {
+		// Helper to check existence of an id on server
+		exists := func(id int) bool {
+			if id == 0 {
+				return false
+			}
+			if qps, err := r.fetchQualityProfiles(ctx); err == nil {
+				if _, ok := qps[id]; ok {
+					return true
+				}
+			}
+			return false
 		}
+		if opts.QualityProfileID != 0 && exists(opts.QualityProfileID) {
+			return opts.QualityProfileID
+		}
+		if qid := r.getValidQualityProfileID(ctx); qid != 0 {
+			return qid
+		}
+		// last resort, try configured default even if not validated
+		if r.inst.DefaultQualityProfileID != 0 {
+			return r.inst.DefaultQualityProfileID
+		}
+		return 0
+	}
+	resolvedQID := resolveQID()
+	// Keep top-level field consistent (some servers ignore this, but set it anyway)
+	if resolvedQID != 0 {
+		pmap["qualityProfileId"] = resolvedQID
+	} else if pmap["qualityProfileId"] == nil || fmt.Sprint(pmap["qualityProfileId"]) == "" || fmt.Sprint(pmap["qualityProfileId"]) == "0" {
+		// if still empty, clear it
+		delete(pmap, "qualityProfileId")
 	}
 	if pmap["metadataProfileId"] == nil || fmt.Sprint(pmap["metadataProfileId"]) == "" || fmt.Sprint(pmap["metadataProfileId"]) == "0" {
 		pmap["metadataProfileId"] = 1
@@ -114,7 +139,35 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 
 	// Nested author enrichment
 	if av, ok := pmap["author"]; ok {
-		if am, ok2 := av.(map[string]any); ok2 {
+		// If author is explicitly null or not an object, treat as missing so we can inject later
+		if av == nil {
+			delete(pmap, "author")
+		} else if am, ok2 := av.(map[string]any); ok2 {
+			// Ensure qualityProfileId is present on the author (where Readarr expects it)
+			if resolvedQID != 0 {
+				// Overwrite when missing or invalid/zero
+				if am["qualityProfileId"] == nil || fmt.Sprint(am["qualityProfileId"]) == "" || fmt.Sprint(am["qualityProfileId"]) == "0" {
+					am["qualityProfileId"] = resolvedQID
+				} else {
+					// If set but not a valid int, coerce/replace
+					switch v := am["qualityProfileId"].(type) {
+					case float64:
+						if int(v) == 0 {
+							am["qualityProfileId"] = resolvedQID
+						}
+					case int:
+						if v == 0 {
+							am["qualityProfileId"] = resolvedQID
+						}
+					case string:
+						if s := strings.TrimSpace(v); s == "" || s == "0" {
+							am["qualityProfileId"] = resolvedQID
+						}
+					default:
+						am["qualityProfileId"] = resolvedQID
+					}
+				}
+			}
 			if am["rootFolderPath"] == nil || am["rootFolderPath"] == "" {
 				rp := r.getValidRootFolderPath(ctx, opts.RootFolderPath)
 				if rp == "" {
@@ -123,6 +176,30 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 				if rp != "" {
 					am["rootFolderPath"] = rp
 				}
+			}
+			// Mirror into nested author.value when payload uses that shape
+			if vm, ok := am["value"].(map[string]any); ok {
+				// qualityProfileId
+				if resolvedQID != 0 {
+					if vm["qualityProfileId"] == nil || fmt.Sprint(vm["qualityProfileId"]) == "" || fmt.Sprint(vm["qualityProfileId"]) == "0" {
+						vm["qualityProfileId"] = resolvedQID
+					}
+				}
+				// metadataProfileId (default to 1 like top-level author)
+				if vm["metadataProfileId"] == nil || fmt.Sprint(vm["metadataProfileId"]) == "" || fmt.Sprint(vm["metadataProfileId"]) == "0" {
+					vm["metadataProfileId"] = 1
+				}
+				// rootFolderPath
+				if vm["rootFolderPath"] == nil || fmt.Sprint(vm["rootFolderPath"]) == "" {
+					rp := r.getValidRootFolderPath(ctx, opts.RootFolderPath)
+					if rp == "" {
+						rp = r.getValidRootFolderPath(ctx, "")
+					}
+					if rp != "" {
+						vm["rootFolderPath"] = rp
+					}
+				}
+				am["value"] = vm
 			}
 			if am["foreignAuthorId"] == nil || am["foreignAuthorId"] == "" {
 				if nm, _ := am["name"].(string); nm != "" {
@@ -157,6 +234,27 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 							}
 						}
 					}
+				}
+			}
+			// Ensure author metadataProfileId
+			if am["metadataProfileId"] == nil || fmt.Sprint(am["metadataProfileId"]) == "" || fmt.Sprint(am["metadataProfileId"]) == "0" {
+				am["metadataProfileId"] = 1
+			}
+			// Ensure author tags, prefer payload/top-level tags when present
+			if am["tags"] == nil {
+				if tv, ok := pmap["tags"]; ok && tv != nil {
+					am["tags"] = tv
+				} else if len(r.inst.DefaultTags) > 0 {
+					am["tags"] = r.inst.DefaultTags
+				}
+			}
+			// Ensure author addOptions block exists
+			if _, ok := am["addOptions"].(map[string]any); !ok {
+				am["addOptions"] = map[string]any{
+					"monitor":               "all",
+					"booksToMonitor":        []any{},
+					"monitored":             true,
+					"searchForMissingBooks": opts.SearchForMissing,
 				}
 			}
 			pmap["author"] = am
@@ -201,14 +299,26 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 					am["name"] = nm
 				}
 			}
-			if qid := r.getValidQualityProfileID(ctx); qid != 0 {
-				am["qualityProfileId"] = qid
-			} else if r.inst.DefaultQualityProfileID != 0 {
-				am["qualityProfileId"] = r.inst.DefaultQualityProfileID
+			if resolvedQID != 0 {
+				am["qualityProfileId"] = resolvedQID
 			}
 			am["metadataProfileId"] = 1
 			if rp := r.getValidRootFolderPath(ctx, ""); rp != "" {
 				am["rootFolderPath"] = rp
+			}
+			// Carry over tags/addOptions to author
+			if tv, ok := pmap["tags"]; ok && tv != nil {
+				am["tags"] = tv
+			} else if len(r.inst.DefaultTags) > 0 {
+				am["tags"] = r.inst.DefaultTags
+			}
+			if _, ok := am["addOptions"].(map[string]any); !ok {
+				am["addOptions"] = map[string]any{
+					"monitor":               "all",
+					"booksToMonitor":        []any{},
+					"monitored":             true,
+					"searchForMissingBooks": opts.SearchForMissing,
+				}
 			}
 			pmap["author"] = am
 		}
@@ -406,7 +516,7 @@ func (r *Readarr) AddBook(ctx context.Context, candidate Candidate, opts AddOpts
 		return nil, nil, err
 	}
 	buf := &bytes.Buffer{}
-	if err := tpl.Execute(buf, map[string]any{"Candidate": candidate, "Opts": opts}); err != nil {
+	if err := tpl.Execute(buf, map[string]any{"Candidate": candidate, "Opts": opts, "Inst": r.inst}); err != nil {
 		return nil, nil, err
 	}
 
@@ -1068,6 +1178,53 @@ func (r *Readarr) fetchQualityProfiles(ctx context.Context) (map[int]string, err
 			name, _ := p["name"].(string)
 			out[id] = name
 		}
+	}
+	return out, nil
+}
+
+// fetchQualityProfileByID queries Readarr for a single quality profile by id.
+// Returns (name, found, error). If Readarr returns 404 the profile is not found and found=false.
+func (r *Readarr) fetchQualityProfileByID(ctx context.Context, id int) (string, bool, error) {
+	u := strings.TrimRight(r.inst.BaseURL, "/") + fmt.Sprintf("%s/qualityprofile/%d?apikey=%s", apiVersionPrefix, id, url.QueryEscape(r.inst.APIKey))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	req.Header.Set("X-Api-Key", r.inst.APIKey)
+	req.Header.Set("User-Agent", "Scriptorum/1.0")
+	req.Header.Set("Accept", "application/json")
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return "", false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "", false, nil
+	}
+	if resp.StatusCode >= 400 {
+		body, _ := io.ReadAll(resp.Body)
+		return "", false, fmt.Errorf("HTTP %s: %s", resp.Status, string(body))
+	}
+	body, _ := io.ReadAll(resp.Body)
+	var obj map[string]any
+	if err := json.Unmarshal(body, &obj); err != nil {
+		return "", false, err
+	}
+	name, _ := obj["name"].(string)
+	return name, true, nil
+}
+
+// GetQualityProfilesByID fetches quality profiles by querying the per-id endpoint
+// starting at id=1 and counting up until a 404 is received.
+func (r *Readarr) GetQualityProfilesByID(ctx context.Context) (map[int]string, error) {
+	out := make(map[int]string)
+	for id := 1; ; id++ {
+		name, found, err := r.fetchQualityProfileByID(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			// stop when a 404 is encountered
+			break
+		}
+		out[id] = name
 	}
 	return out, nil
 }

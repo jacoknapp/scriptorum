@@ -15,11 +15,19 @@
 					<h3 class="font-medium">eBooks</h3>
 					<input name="ra_ebooks_base" placeholder="Base URL" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.BaseURL }}">
 					<input name="ra_ebooks_key" placeholder="API Key" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.APIKey }}">
+					<label class="block mt-2 text-sm text-slate-600">Quality Profile</label>
+					<select id="ra_ebooks_qp" name="ra_ebooks_qp" class="border rounded px-3 py-2 w-full">
+						<option value="">(server: {{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }})</option>
+					</select>
 				</div>
 				<div class="border rounded p-3">
 					<h3 class="font-medium">Audiobooks</h3>
 					<input name="ra_audio_base" placeholder="Base URL" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.BaseURL }}">
 					<input name="ra_audio_key" placeholder="API Key" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.APIKey }}">
+					<label class="block mt-2 text-sm text-slate-600">Quality Profile</label>
+					<select id="ra_audio_qp" name="ra_audio_qp" class="border rounded px-3 py-2 w-full">
+						<option value="">(server: {{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }})</option>
+					</select>
 				</div>
 			</div>
 		</section>
@@ -30,4 +38,33 @@
 		</div>
 	</form>
 </div>
+<script>
+// populate Readarr quality profile selects
+async function loadQPs(kind, selId, serverDefault) {
+	const sel = document.getElementById(selId);
+	if (!sel) return;
+	try {
+		const res = await fetch('/api/readarr/profiles?kind='+encodeURIComponent(kind));
+		if (!res.ok) return;
+		const obj = await res.json();
+		// clear existing options except first
+		sel.options.length = 1;
+		const entries = Object.entries(obj).map(([k,v]) => ({id: parseInt(k,10), name: v}));
+		entries.sort((a,b)=>a.id-b.id);
+		for (const e of entries) {
+			const o = document.createElement('option');
+			o.value = e.id;
+			o.text = e.id + ' — ' + e.name;
+			if (e.id === serverDefault) o.selected = true;
+			sel.appendChild(o);
+		}
+	} catch (e) {
+		console.error('qp load', e);
+	}
+}
+document.addEventListener('DOMContentLoaded', ()=>{
+	loadQPs('ebooks','ra_ebooks_qp', {{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }});
+	loadQPs('audiobooks','ra_audio_qp', {{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }});
+});
+</script>
 {{ template "footer" . }}
