@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"embed"
 	"encoding/json"
 	"io/fs"
@@ -78,33 +77,33 @@ func (s *Server) setupGate(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if s.needsSetup() {
-			http.Redirect(w, r, "/setup", http.StatusFound)
-			return
-		}
+		// NOTE: Previously we forced a redirect to /setup when the app
+		// reported it needed setup. That made it impossible to visit other
+		// management pages while setup was marked incomplete. Allow normal
+		// routing to continue so admins can re-run the setup manually at
+		// /setup without being forcibly redirected there on every request.
 		next.ServeHTTP(w, r)
 	})
 }
 
 func (s *Server) needsSetup() bool {
-	cur := s.settings.Get()
-	if cur == nil {
-		return true
+	// Prefer reading the on-disk config so manual edits to the config file
+	// (for example toggling setup.completed) are respected immediately
+	// without needing to restart the server.
+	cur, err := config.Load(s.cfgPath)
+	if err != nil {
+		// Fall back to in-memory settings if loading fails.
+		cur = s.settings.Get()
+		if cur == nil {
+			return true
+		}
 	}
 	// If setup was marked completed, don't force the wizard again.
 	if cur.Setup.Completed {
 		return false
 	}
-	// Require at least one admin path: local admin user in DB or configured admin email(s)
-	if n, err := s.db.CountAdmins(context.Background()); err != nil || n == 0 {
-		if len(cur.Admins.Emails) == 0 {
-			return true
-		}
-	}
-	if cur.OAuth.Enabled && (cur.OAuth.Issuer == "" || cur.OAuth.ClientID == "" || cur.OAuth.ClientSecret == "" || cur.OAuth.RedirectURL == "") {
-		return true
-	}
-	return false
+	// setup not completed -> allow the wizard to run (so admins can re-run it)
+	return true
 }
 
 func writeJSON(w http.ResponseWriter, v any, code int) {

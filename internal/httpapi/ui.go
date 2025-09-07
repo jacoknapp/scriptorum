@@ -41,7 +41,7 @@ func (s *Server) mountUI(r chi.Router) {
 			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": fallbackAll}
 			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
 		}))
-		rt.Get("/users", s.requireAdmin(u.handleUsers(s)))
+		rt.HandleFunc("/users", s.requireAdmin(u.handleUsers(s)))
 	})
 	r.Get("/ui/requests/table", s.requireLogin(u.handleRequestsTable(s)))
 	r.Group(func(rt chi.Router) {

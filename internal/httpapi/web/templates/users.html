@@ -36,20 +36,67 @@
 
 	<hr class="my-4">
 
-	<form method="post" action="/users" class="grid gap-3 max-w-md">
-		<label class="grid gap-1">
-			<span>Username</span>
-			<input name="username" required class="border rounded px-3 py-2">
-		</label>
-		<label class="grid gap-1">
-			<span>Password</span>
-			<input type="password" name="password" required class="border rounded px-3 py-2">
-		</label>
-		<label class="inline-flex items-center gap-2">
-			<input type="checkbox" name="is_admin">
-			<span>Admin</span>
-		</label>
-		<button class="px-4 py-2 rounded bg-royal-600 text-white">Add User</button>
-	</form>
+	<!-- Create user button (bottom-right) -->
+	<button id="openCreateUser" aria-haspopup="dialog" class="fixed bottom-6 right-6 z-50 px-4 py-3 bg-royal-600 text-white rounded-full shadow-lg hover:opacity-95">Create user</button>
+
+	<!-- Modal: Create User -->
+	<div id="createUserModal" class="hidden fixed inset-0 z-40 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="createUserTitle">
+		<!-- overlay -->
+		<div id="createUserOverlay" class="absolute inset-0 bg-black opacity-50"></div>
+
+		<!-- dialog -->
+		<div class="relative bg-white rounded-xl2 shadow-card p-6 max-w-md w-full z-10">
+			<div class="flex items-center justify-between mb-4">
+				<h2 id="createUserTitle" class="text-lg font-semibold">Create User</h2>
+				<button id="closeCreateUser" aria-label="Close" class="text-slate-500 hover:text-slate-700">✕</button>
+			</div>
+
+			<form method="post" action="/users" class="grid gap-3">
+				<label class="grid gap-1">
+					<span>Username</span>
+					<input name="username" required class="border rounded px-3 py-2">
+				</label>
+				<label class="grid gap-1">
+					<span>Password</span>
+					<input type="password" name="password" required class="border rounded px-3 py-2">
+				</label>
+				<label class="inline-flex items-center gap-2">
+					<input type="checkbox" name="is_admin">
+					<span>Admin</span>
+				</label>
+				<div class="flex items-center justify-end gap-2 mt-2">
+					<button type="button" id="cancelCreateUser" class="px-3 py-2 rounded border">Cancel</button>
+					<button class="px-4 py-2 rounded bg-royal-600 text-white">Add User</button>
+				</div>
+			</form>
+		</div>
+	</div>
+
+	<script>
+	// Modal open/close logic
+	(function(){
+		var openBtn = document.getElementById('openCreateUser');
+		var modal = document.getElementById('createUserModal');
+		var overlay = document.getElementById('createUserOverlay');
+		var closeBtn = document.getElementById('closeCreateUser');
+		var cancelBtn = document.getElementById('cancelCreateUser');
+
+		function show() {
+			modal.classList.remove('hidden');
+		}
+		function hide() {
+			modal.classList.add('hidden');
+		}
+
+		if (openBtn) openBtn.addEventListener('click', show);
+		if (closeBtn) closeBtn.addEventListener('click', hide);
+		if (cancelBtn) cancelBtn.addEventListener('click', hide);
+		if (overlay) overlay.addEventListener('click', hide);
+
+		document.addEventListener('keydown', function(e){
+			if (e.key === 'Escape') hide();
+		});
+	})();
+	</script>
 </div>
 {{ template "footer" . }}

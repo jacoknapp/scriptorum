@@ -7,6 +7,8 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"html"
 	"net/http"
 	"strings"
 	"time"
@@ -123,14 +125,24 @@ func (s *Server) mountAuth(r chi.Router) {
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.oidc.enabled {
 		// Render a tiny login form
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.WriteHeader(200)
-		w.Write([]byte(`<!doctype html><html><head><title>Login</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"></head><body><main class="container"><h3>Login</h3><form method="post" action="/login"><label>Username<input name="username" required></label><label>Password<input type="password" name="password" required></label><button type="submit">Sign in</button></form></main></body></html>`))
+		s.renderLoginForm(w, "", "")
 		return
 	}
 	state := "st"
 	url := s.oidc.config.AuthCodeURL(state)
 	http.Redirect(w, r, url, http.StatusFound)
+}
+
+// renderLoginForm renders the local login page. If msg is non-empty it is shown above the form.
+func (s *Server) renderLoginForm(w http.ResponseWriter, username, msg string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(200)
+	escUser := html.EscapeString(username)
+	msgHTML := ""
+	if strings.TrimSpace(msg) != "" {
+		msgHTML = fmt.Sprintf("<p style=\"color:red\">%s</p>", html.EscapeString(msg))
+	}
+	w.Write([]byte(`<!doctype html><html><head><title>Login</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"></head><body><main class="container"><h3>Login</h3>` + msgHTML + `<form method="post" action="/login"><label>Username<input name="username" required value="` + escUser + `"></label><label>Password<input type="password" name="password" required></label><button type="submit">Sign in</button></form></main></body></html>`))
 }
 
 func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
@@ -151,7 +163,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	token, err := s.oidc.verifier.Verify(r.Context(), idToken)
 	if err != nil {
-		http.Error(w, "verify: "+err.Error(), 401)
+		http.Error(w, "verify: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
 	var claims struct{ Email, Name string }
@@ -187,16 +199,16 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 	if username == "" || password == "" {
-		http.Error(w, "missing creds", 400)
+		s.renderLoginForm(w, username, "invalid information")
 		return
 	}
 	u, err := s.db.GetUserByUsername(r.Context(), username)
 	if err != nil {
-		http.Error(w, "invalid credentials", 401)
+		s.renderLoginForm(w, username, "invalid information")
 		return
 	}
 	if err := s.comparePassword(u.Hash, password, s.settings.Get().Auth.Salt); err != nil {
-		http.Error(w, "invalid credentials", 401)
+		s.renderLoginForm(w, username, "invalid information")
 		return
 	}
 	sess := &session{Email: u.Username, Name: u.Username, Admin: u.IsAdmin, Exp: time.Now().Add(24 * time.Hour).Unix()}
