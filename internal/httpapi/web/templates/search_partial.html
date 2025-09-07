@@ -18,9 +18,7 @@
 					{{ if .ISBN10 }}ISBN-10: {{ .ISBN10 }}{{ end }}
 					{{ if .ASIN }}{{ if or .ISBN13 .ISBN10 }}, {{ end }}ASIN: {{ .ASIN }}{{ end }}
 				</div>
-				{{ if .Provider }}
-				<div class="text-[11px] text-slate-400 mt-1">Source: {{ .Provider }}</div>
-				{{ end }}
+				<!-- Source label removed: do not display which instance returned the result -->
 				<div class="text-xs mt-2"
 						 hx-get="/ui/presence?q={{ urlquery .Title }}{{ if gt (len .Authors) 0 }}%20{{ urlquery (index .Authors 0) }}{{ end }}"
 						 hx-trigger="load"
@@ -42,20 +40,19 @@
 				<input type="hidden" name="isbn10" value="{{ .ISBN10 }}">
 				<input type="hidden" name="isbn13" value="{{ .ISBN13 }}">
 				<input type="hidden" name="asin" value="{{ .ASIN }}">
-				{{ if .Provider }}
-				<input type="hidden" name="provider" value="{{ .Provider }}">
+				<!-- Always include provider payloads so server can attach Readarr payloads without exposing source -->
 				<input type="hidden" name="provider_payload" value='{{ .ProviderPayload }}'>
 				<input type="hidden" name="provider_payload_ebook" value='{{ .ProviderEbookPayload }}'>
 				<input type="hidden" name="provider_payload_audiobook" value='{{ .ProviderAudiobookPayload }}'>
-				{{ end }}
 
+				<!-- Use the same purple and fixed width for both buttons so layout doesn't shift -->
 				<button type="button" name="format" value="ebook"
-						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700 w-36"
+						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700 w-44"
 						onclick="scriptorumRequestFallback(this,'ebook')">
 						Request eBook
 					</button>
 				<button type="button" name="format" value="audiobook"
-						class="px-3 py-2 rounded-lg bg-royal-500 text-white hover:bg-royal-600 w-44"
+						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700 w-44"
 						onclick="scriptorumRequestFallback(this,'audiobook')">
 						Request Audiobook
 					</button>

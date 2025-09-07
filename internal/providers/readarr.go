@@ -138,6 +138,65 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 	}
 
 	// Nested author enrichment
+	// Helper: convert various tag shapes (e.g., []string, []any) to []int when possible
+	tagsToInts := func(v any) ([]int, bool) {
+		if v == nil {
+			return nil, false
+		}
+		out := []int{}
+		switch t := v.(type) {
+		case []int:
+			if len(t) == 0 {
+				return nil, false
+			}
+			return t, true
+		case []any:
+			for _, e := range t {
+				switch x := e.(type) {
+				case float64:
+					out = append(out, int(x))
+				case int:
+					out = append(out, x)
+				case string:
+					if i, err := strconv.Atoi(strings.TrimSpace(x)); err == nil {
+						out = append(out, i)
+					}
+				}
+			}
+		case []string:
+			for _, s := range t {
+				if i, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+					out = append(out, i)
+				}
+			}
+		case string:
+			// single string value
+			if i, err := strconv.Atoi(strings.TrimSpace(t)); err == nil {
+				out = append(out, i)
+			}
+		default:
+			// try reflection-ish fallback for slices of numeric types encoded as []interface{}
+			if sl, ok := t.([]interface{}); ok {
+				for _, e := range sl {
+					switch x := e.(type) {
+					case float64:
+						out = append(out, int(x))
+					case int:
+						out = append(out, x)
+					case string:
+						if i, err := strconv.Atoi(strings.TrimSpace(x)); err == nil {
+							out = append(out, i)
+						}
+					}
+				}
+			}
+		}
+		if len(out) == 0 {
+			return nil, false
+		}
+		return out, true
+	}
+
 	if av, ok := pmap["author"]; ok {
 		// If author is explicitly null or not an object, treat as missing so we can inject later
 		if av == nil {
@@ -243,9 +302,13 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 			// Ensure author tags, prefer payload/top-level tags when present
 			if am["tags"] == nil {
 				if tv, ok := pmap["tags"]; ok && tv != nil {
-					am["tags"] = tv
+					if ints, ok2 := tagsToInts(tv); ok2 {
+						am["tags"] = ints
+					}
 				} else if len(r.inst.DefaultTags) > 0 {
-					am["tags"] = r.inst.DefaultTags
+					if ints, ok2 := tagsToInts(r.inst.DefaultTags); ok2 {
+						am["tags"] = ints
+					}
 				}
 			}
 			// Ensure author addOptions block exists
@@ -308,9 +371,13 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 			}
 			// Carry over tags/addOptions to author
 			if tv, ok := pmap["tags"]; ok && tv != nil {
-				am["tags"] = tv
+				if ints, ok2 := tagsToInts(tv); ok2 {
+					am["tags"] = ints
+				}
 			} else if len(r.inst.DefaultTags) > 0 {
-				am["tags"] = r.inst.DefaultTags
+				if ints, ok2 := tagsToInts(r.inst.DefaultTags); ok2 {
+					am["tags"] = ints
+				}
 			}
 			if _, ok := am["addOptions"].(map[string]any); !ok {
 				am["addOptions"] = map[string]any{

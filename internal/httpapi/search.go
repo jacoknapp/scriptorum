@@ -72,10 +72,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 						items[i].ProviderAudiobookPayload = payload
 					}
 				}
-				// prefer provider label if empty
-				if items[i].Provider == "" {
-					items[i].Provider = si.Provider
-				}
+				// do not record or surface which instance produced the result
 				// Prefer cover from provider payload when available. Use helper
 				// to decide whether to overwrite.
 				items[i].BookItem.CoverMedium = mergeCover(items[i].BookItem.CoverMedium, si.BookItem.CoverMedium)
@@ -87,6 +84,8 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			} else {
 				si.ProviderAudiobookPayload = payload
 			}
+			// Do not set Provider label so UI won't display source instance
+			si.Provider = ""
 			idx[k] = len(items)
 			items = append(items, si)
 		}
