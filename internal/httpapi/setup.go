@@ -17,6 +17,11 @@ import (
 var stepFlags = map[string]bool{"admin": false, "oauth": false, "abs": false, "rebooks": false, "raudio": false}
 
 func (s *Server) mountSetup(r chi.Router) {
+	// If setup is already completed, don't register the setup routes so
+	// the wizard cannot be reached.
+	if !s.needsSetup() {
+		return
+	}
 	u := &setupUI{tpl: template.Must(template.ParseFS(setupFS, "web/setup/*.html"))}
 	// Mount under /setup and apply the setupGate so the wizard is only accessible when needed
 	r.Route("/setup", func(rr chi.Router) {
