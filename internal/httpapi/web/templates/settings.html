@@ -5,7 +5,7 @@
 		<section>
 			<h2 class="font-semibold mb-2">Audiobookshelf</h2>
 			<input name="abs_base" placeholder="Base URL" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Audiobookshelf.BaseURL }}">
-			<input name="abs_token" placeholder="Token" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Audiobookshelf.Token }}">
+			<input type="password" name="abs_token" placeholder="Token" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Audiobookshelf.Token }}">
 		</section>
 
 		<section>
@@ -14,7 +14,7 @@
 				<div class="border rounded p-3">
 					<h3 class="font-medium">eBooks</h3>
 					<input name="ra_ebooks_base" placeholder="Base URL" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.BaseURL }}">
-					<input name="ra_ebooks_key" placeholder="API Key" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.APIKey }}">
+					<input type="password" name="ra_ebooks_key" placeholder="API Key" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.APIKey }}">
 					<label class="block mt-2 text-sm text-slate-600">Quality Profile</label>
 					<select id="ra_ebooks_qp" name="ra_ebooks_qp" class="border rounded px-3 py-2 w-full">
 						<option value="">(server: {{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }})</option>
@@ -23,7 +23,7 @@
 				<div class="border rounded p-3">
 					<h3 class="font-medium">Audiobooks</h3>
 					<input name="ra_audio_base" placeholder="Base URL" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.BaseURL }}">
-					<input name="ra_audio_key" placeholder="API Key" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.APIKey }}">
+					<input type="password" name="ra_audio_key" placeholder="API Key" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.APIKey }}">
 					<label class="block mt-2 text-sm text-slate-600">Quality Profile</label>
 					<select id="ra_audio_qp" name="ra_audio_qp" class="border rounded px-3 py-2 w-full">
 						<option value="">(server: {{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }})</option>
