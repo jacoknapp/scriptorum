@@ -380,6 +380,61 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// If the add to Readarr succeeded, start a background monitor task that
+	// repeatedly sends a monitor payload for the newly created book every 30s
+	// for 5 minutes. This helps ensure the book is properly monitored even if
+	// the initial request has transient issues. Do not block the HTTP flow.
+	if respBody != nil {
+		var rb map[string]any
+		if json.Unmarshal(respBody, &rb) == nil {
+			// Readarr returns the created book with an "id" field when successful
+			if v, ok := rb["id"]; ok {
+				var bid int
+				switch t := v.(type) {
+				case float64:
+					bid = int(t)
+				case int:
+					bid = t
+				case int64:
+					bid = int(t)
+				}
+				if bid > 0 {
+					go func(rra *providers.Readarr, bookID int, dbg bool) {
+						bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+						defer cancel()
+						ticker := time.NewTicker(30 * time.Second)
+						defer ticker.Stop()
+
+						sendMonitor := func() {
+							perCtx, pCancel := context.WithTimeout(bgCtx, 12*time.Second)
+							defer pCancel()
+							if monBody, merr := rra.MonitorBooks(perCtx, []int{bookID}, true); merr == nil {
+								if dbg {
+									mb, _ := json.Marshal(map[string]any{"bookIds": []int{bookID}, "monitored": true})
+									fmt.Printf("DEBUG: PUT /api/v1/book/monitor sent payload:\n%s\n", string(mb))
+									fmt.Printf("DEBUG: PUT /api/v1/book/monitor returned body:\n%s\n", string(monBody))
+								}
+							} else if dbg {
+								fmt.Printf("DEBUG: MonitorBooks attempt for id=%d failed: %v\n", bookID, merr)
+							}
+						}
+
+						// First immediate attempt
+						sendMonitor()
+						for {
+							select {
+							case <-bgCtx.Done():
+								return
+							case <-ticker.C:
+								sendMonitor()
+							}
+						}
+					}(ra, bid, s.settings.Get().Debug)
+				}
+			}
+		}
+	}
+
 	_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Email)
 	_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", "sent to Readarr", r.Context().Value(ctxUser).(*session).Email, payload, respBody)
 	// Include minimal identifiers so the UI can update any matching search results
