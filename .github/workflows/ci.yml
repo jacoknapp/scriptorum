@@ -65,8 +65,6 @@ jobs:
       - name: Upload binary artifact
         if: always()
         uses: actions/upload-artifact@v3
-        env:
-          NODE_TLS_REJECT_UNAUTHORIZED: 0
         with:
           name: scriptorum-binary
           path: ./bin
@@ -80,6 +78,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install custom CA (optional)
+        # If your environment requires trusting a private CA, set the secret
+        # CI_ROOT_CA containing the PEM contents of the CA certificate. This
+        # step will install it into the runner's trusted store on Ubuntu.
+        if: ${{ secrets.CI_ROOT_CA != '' }}
+        run: |
+          echo "${{ secrets.CI_ROOT_CA }}" > /tmp/ci_root_ca.pem
+          sudo mkdir -p /usr/local/share/ca-certificates/ci
+          sudo cp /tmp/ci_root_ca.pem /usr/local/share/ca-certificates/ci/ci_root_ca.crt
+          sudo update-ca-certificates
 
       - name: Download binary artifact
         uses: actions/download-artifact@v3
@@ -128,14 +137,20 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
+          go-version: '1.25'
       - name: Vet
         run: go vet ./...
       - name: Staticcheck
         uses: dominikh/staticcheck-action@v1.3.1
         with:
+          # Provide explicit inputs to avoid the action emitting empty-input warnings
           version: "2023.1.6"
           install-go: false
+          build-tags: ""
+          min-go-version: "1.25"
+          output-format: "text"
+          checks: "inherit"
+          merge-files: "false"
 
   coverage-check:
     needs: build-test
