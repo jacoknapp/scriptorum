@@ -126,6 +126,12 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 	}
 	if _, ok := pmap["addOptions"]; !ok {
 		pmap["addOptions"] = map[string]any{"addType": "automatic", "monitor": "none", "monitored": true, "booksToMonitor": []any{}, "searchForMissingBooks": true, "searchForNewBook": true}
+	} else {
+		// If addOptions exists, ensure the monitor mode for new books is set to "none"
+		if ao, ok := pmap["addOptions"].(map[string]any); ok {
+			ao["monitor"] = "none"
+			pmap["addOptions"] = ao
+		}
 	}
 	if pmap["tags"] == nil && len(r.inst.DefaultTags) > 0 {
 		pmap["tags"] = r.inst.DefaultTags
@@ -262,6 +268,21 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 						vm["rootFolderPath"] = rp
 					}
 				}
+				// Ensure addOptions.monitor is enforced in the nested value shape as well
+				if _, ok := vm["addOptions"].(map[string]any); !ok {
+					vm["addOptions"] = map[string]any{
+						"monitor":        "none",
+						"booksToMonitor": []any{},
+						"monitored":      true,
+					}
+				} else {
+					if vamo, ok := vm["addOptions"].(map[string]any); ok {
+						vamo["monitor"] = "none"
+						vm["addOptions"] = vamo
+					}
+				}
+				// Also set author.value.monitorNewItems for Readarr variants expecting it at the author level
+				vm["monitorNewItems"] = "none"
 				am["value"] = vm
 			}
 			if am["foreignAuthorId"] == nil || am["foreignAuthorId"] == "" {
@@ -324,7 +345,15 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 					"monitored":             true,
 					"searchForMissingBooks": opts.SearchForMissing,
 				}
+			} else {
+				// If author.addOptions exists, override monitor to "none" to avoid enabling monitoring of new books
+				if aao, ok := am["addOptions"].(map[string]any); ok {
+					aao["monitor"] = "none"
+					am["addOptions"] = aao
+				}
 			}
+			// Ensure author.monitorNewItems exists at top-level of the author object
+			am["monitorNewItems"] = "none"
 			pmap["author"] = am
 		}
 	}
@@ -391,6 +420,12 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 					"booksToMonitor":        []any{},
 					"monitored":             true,
 					"searchForMissingBooks": opts.SearchForMissing,
+				}
+			} else {
+				// Ensure injected author addOptions also force monitor to "none"
+				if aao, ok := am["addOptions"].(map[string]any); ok {
+					aao["monitor"] = "none"
+					am["addOptions"] = aao
 				}
 			}
 			pmap["author"] = am

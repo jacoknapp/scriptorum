@@ -23,4 +23,7 @@ func TestSanitizeAuthorAddOptionsMonitor(t *testing.T) {
 	if m, _ := ao["monitor"].(string); m != "none" {
 		t.Fatalf("expected author.addOptions.monitor == 'none', got %q", m)
 	}
+	if mn, _ := a["monitorNewItems"].(string); mn != "none" {
+		t.Fatalf("expected author.monitorNewItems == 'none', got %q", mn)
+	}
 }
