@@ -262,22 +262,24 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 			} else if n, _ := cand["title"].(string); n != "" {
 				name = n
 			}
-			fmt.Printf("DEBUG: Author missing id, trying to resolve name='%s'\n", name)
+			if s.settings.Get().Debug {
+				fmt.Printf("DEBUG: Author missing id, trying to resolve name='%s'\n", name)
+			}
 			if name != "" {
 				if aid, err := ra.FindAuthorIDByName(ctx, name); err == nil && aid != 0 {
 					a["id"] = aid
-					fmt.Printf("DEBUG: Found author id %d for name '%s'\n", aid, name)
-				} else if err == nil {
-					// not found, try to create
-					fmt.Printf("DEBUG: Author not found, trying to create for name '%s'\n", name)
-					if aid2, cerr := ra.CreateAuthor(ctx, name); cerr == nil && aid2 != 0 {
-						a["id"] = aid2
-						fmt.Printf("DEBUG: Created author id %d for name '%s'\n", aid2, name)
-					} else {
-						fmt.Printf("DEBUG: Failed to create author for name '%s': %v\n", name, cerr)
+					if s.settings.Get().Debug {
+						fmt.Printf("DEBUG: Found author id %d for name '%s'\n", aid, name)
 					}
 				} else {
-					fmt.Printf("DEBUG: Error finding author for name '%s': %v\n", name, err)
+					// Do not attempt to create an author here. If not found, leave author as-is
+					if s.settings.Get().Debug {
+						if err == nil {
+							fmt.Printf("DEBUG: Author not found for name '%s' (will not create)\n", name)
+						} else {
+							fmt.Printf("DEBUG: Error finding author for name '%s': %v\n", name, err)
+						}
+					}
 				}
 			}
 			cand["author"] = a
@@ -371,7 +373,9 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 		}
 		_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", payload, respBody)
 		// Debug: surface payload and Readarr response in server logs for troubleshooting
-		fmt.Printf("DEBUG: Readarr add error: %v\n---payload---\n%s\n---response---\n%s\n", err, string(payload), string(respBody))
+		if s.settings.Get().Debug {
+			fmt.Printf("DEBUG: Readarr add error: %v\n---payload---\n%s\n---response---\n%s\n", err, string(payload), string(respBody))
+		}
 		http.Error(w, "readarr add: "+err.Error(), http.StatusBadGateway)
 		return
 	}

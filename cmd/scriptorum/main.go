@@ -10,6 +10,7 @@ import (
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/bootstrap"
 	"gitea.knapp/jacoknapp/scriptorum/internal/httpapi"
+	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 )
 
 func main() {
@@ -23,6 +24,9 @@ func main() {
 		log.Fatalf("bootstrap: %v", err)
 	}
 	defer database.Close()
+
+	// Propagate debug setting to provider packages that may print directly
+	providers.Debug = cfg.Debug
 
 	srv := httpapi.NewServer(cfg, database, cfgPath)
 	server := &http.Server{Addr: cfg.HTTP.Listen, Handler: srv.Router()}

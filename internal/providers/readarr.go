@@ -62,6 +62,10 @@ type Readarr struct {
 	db   *sql.DB // Database connection for caching
 }
 
+// Debug enables printing of debug messages from this package when true.
+// It is intended to be set by the application at startup based on user config.
+var Debug bool = false
+
 // sanitizeAndEnrichPayload applies defaults, shapes editions, normalizes authorId, and enriches the nested author object.
 func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]any, opts AddOpts) map[string]any {
 	if pmap == nil {
@@ -121,7 +125,7 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 		pmap["monitored"] = true
 	}
 	if _, ok := pmap["addOptions"]; !ok {
-		pmap["addOptions"] = map[string]any{"addType": "automatic", "monitor": "all", "monitored": true, "booksToMonitor": []any{}, "searchForMissingBooks": true, "searchForNewBook": true}
+		pmap["addOptions"] = map[string]any{"addType": "automatic", "monitor": "none", "monitored": true, "booksToMonitor": []any{}, "searchForMissingBooks": true, "searchForNewBook": true}
 	}
 	if pmap["tags"] == nil && len(r.inst.DefaultTags) > 0 {
 		pmap["tags"] = r.inst.DefaultTags
@@ -314,7 +318,8 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 			// Ensure author addOptions block exists
 			if _, ok := am["addOptions"].(map[string]any); !ok {
 				am["addOptions"] = map[string]any{
-					"monitor":               "all",
+					// Ensure we do not auto-monitor author books when sending via Scriptorum
+					"monitor":               "none",
 					"booksToMonitor":        []any{},
 					"monitored":             true,
 					"searchForMissingBooks": opts.SearchForMissing,
@@ -381,7 +386,8 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 			}
 			if _, ok := am["addOptions"].(map[string]any); !ok {
 				am["addOptions"] = map[string]any{
-					"monitor":               "all",
+					// When injecting author from authorId, avoid enabling monitoring of all author books
+					"monitor":               "none",
 					"booksToMonitor":        []any{},
 					"monitored":             true,
 					"searchForMissingBooks": opts.SearchForMissing,
@@ -700,7 +706,9 @@ func (r *Readarr) GetBookByAddPayload(ctx context.Context, payload []byte) (int,
 			bodyStr = bodyStr[:200] + "..."
 		}
 		// If debug enabled, print the full body for diagnostics
-		fmt.Printf("DEBUG: GetBookByAddPayload HTTP %s body: %s\n", resp.Status, string(body))
+		if Debug {
+			fmt.Printf("DEBUG: GetBookByAddPayload HTTP %s body: %s\n", resp.Status, string(body))
+		}
 		return 0, body, fmt.Errorf("lookup existing book failed (HTTP %s) from %s: %s", resp.Status, safeURL, bodyStr)
 	}
 	// Try object first
@@ -774,12 +782,16 @@ func (r *Readarr) GetBookByAddPayload(ctx context.Context, payload []byte) (int,
 
 		// As a last resort, pick the first element and log debug so operator can inspect
 		if id, ok := getID(arr[0]); ok {
-			fmt.Printf("DEBUG: GetBookByAddPayload: multiple books returned; no foreign id match, picking first id=%d\n", id)
+			if Debug {
+				fmt.Printf("DEBUG: GetBookByAddPayload: multiple books returned; no foreign id match, picking first id=%d\n", id)
+			}
 			return id, body, nil
 		}
 	}
 	// Debug: print returned body when no id parsed
-	fmt.Printf("DEBUG: GetBookByAddPayload: could not extract id from response body: %s\n", string(body))
+	if Debug {
+		fmt.Printf("DEBUG: GetBookByAddPayload: could not extract id from response body: %s\n", string(body))
+	}
 	return 0, body, fmt.Errorf("existing book id not found in response")
 }
 
@@ -879,7 +891,9 @@ func (r *Readarr) LookupByTerm(ctx context.Context, term string) ([]LookupBook, 
 	}
 
 	// Debug: dump the full JSON response
-	fmt.Printf("DEBUG: Full Readarr lookup JSON: %s\n", string(body))
+	if Debug {
+		fmt.Printf("DEBUG: Full Readarr lookup JSON: %s\n", string(body))
+	}
 	return arr, nil
 }
 
@@ -972,223 +986,21 @@ func (r *Readarr) FindAuthorIDByName(ctx context.Context, name string) (int, err
 	return 0, nil
 }
 
-// CreateAuthor creates a new author record in Readarr and returns its id.
+// CreateAuthor does not create authors via the Readarr API; authors are created when adding books.
+// This helper only looks up an existing author and returns its id if present, or 0 if not found.
 func (r *Readarr) CreateAuthor(ctx context.Context, name string) (int, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return 0, fmt.Errorf("empty author name")
+		return 0, nil
 	}
-	// Build the payload for author creation. Include defaults only when set.
-	payload := map[string]any{
-		"name": name,
-		"addOptions": map[string]any{
-			"monitor":               "none",
-			"searchForMissingBooks": false,
-		},
-	}
-	// Determine a valid quality profile id to use (prefer configured value)
-	if qid := r.getValidQualityProfileID(ctx); qid != 0 {
-		payload["qualityProfileId"] = qid
-	} else if r.inst.DefaultQualityProfileID != 0 {
-		payload["qualityProfileId"] = r.inst.DefaultQualityProfileID
-	}
-	// keep a sane default for metadataProfileId when available
-	payload["metadataProfileId"] = 1
-	// Use a validated root folder path when possible
-	if rp := r.getValidRootFolderPath(ctx, ""); rp != "" {
-		payload["rootFolderPath"] = rp
-	}
-	// Also include authorName and a non-empty foreignAuthorId when possible
-	payload["authorName"] = name
-	if _, ok := payload["foreignAuthorId"]; !ok {
-		payload["foreignAuthorId"] = strings.ReplaceAll(strings.TrimSpace(name), " ", "-")
-	}
-
-	payloadBytes, err := json.Marshal(payload)
+	id, err := r.FindAuthorIDByName(ctx, name)
 	if err != nil {
-		return 0, fmt.Errorf("failed to marshal author payload: %v", err)
+		return 0, err
 	}
-
-	// Debug: log the payload we will send (sanitized)
-	fmt.Printf("DEBUG: Readarr create author payload: %s\n", string(payloadBytes))
-
-	// Send POST request to create author
-	u := r.inst.BaseURL + "/api/v1/author"
-	if strings.Contains(u, "?") {
-		u += "&apikey=" + url.QueryEscape(r.inst.APIKey)
-	} else {
-		u += "?apikey=" + url.QueryEscape(r.inst.APIKey)
+	if id > 0 {
+		r.setCachedAuthor(name, id)
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payloadBytes))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := r.cl.Do(req)
-	if err != nil {
-		return 0, fmt.Errorf("failed to create author: %v", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		// Try to parse the response body to extract validation errors for clearer debugging
-		var parsed map[string]any
-		var details string
-		if err := json.Unmarshal(respBody, &parsed); err == nil {
-			// Common Readarr error shapes include title/message and an `errors` map
-			if t, ok := parsed["title"].(string); ok && t != "" {
-				details += t
-			}
-			if m, ok := parsed["message"].(string); ok && m != "" {
-				if details != "" {
-					details += ": "
-				}
-				details += m
-			}
-			if errs, ok := parsed["errors"].(map[string]any); ok {
-				// Flatten errors map into a short string
-				parts := []string{}
-				for k, v := range errs {
-					parts = append(parts, fmt.Sprintf("%s=%v", k, v))
-				}
-				if len(parts) > 0 {
-					if details != "" {
-						details += "; "
-					}
-					details += strings.Join(parts, ", ")
-				}
-			}
-		}
-		if details == "" {
-			// Fallback to the raw body (trimmed)
-			bodyStr := strings.TrimSpace(string(respBody))
-			if len(bodyStr) > 400 {
-				bodyStr = bodyStr[:400] + "..."
-			}
-			details = bodyStr
-		}
-		// Log the full parsed response for debugging
-		fmt.Printf("DEBUG: Readarr create author validation details: %s\n", details)
-
-		// If validation likely complains about rootFolderPath or QualityProfile, try fallback creates
-		lower := strings.ToLower(details)
-		if strings.Contains(lower, "root") || strings.Contains(lower, "rootfolder") || strings.Contains(lower, "rootfolderpath") {
-			fallbackPayload := map[string]any{
-				"name":              name,
-				"qualityProfileId":  r.inst.DefaultQualityProfileID,
-				"metadataProfileId": 1,
-				"addOptions":        map[string]any{"searchForMissingBooks": false},
-			}
-			fbBytes, _ := json.Marshal(fallbackPayload)
-			fbURL := r.inst.BaseURL + "/api/v1/author"
-			if strings.Contains(fbURL, "?") {
-				fbURL += "&apikey=" + url.QueryEscape(r.inst.APIKey)
-			} else {
-				fbURL += "?apikey=" + url.QueryEscape(r.inst.APIKey)
-			}
-			fbReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, fbURL, bytes.NewReader(fbBytes))
-			fbReq.Header.Set("Content-Type", "application/json")
-			fbReq.Header.Set("X-Api-Key", r.inst.APIKey)
-			fbReq.Header.Set("User-Agent", "Scriptorum/1.0")
-			fbReq.Header.Set("Accept", "application/json")
-
-			fbResp, ferr := r.cl.Do(fbReq)
-			if ferr == nil {
-				fbBody, _ := io.ReadAll(fbResp.Body)
-				fbResp.Body.Close()
-				if fbResp.StatusCode < 400 {
-					var created map[string]any
-					if err := json.Unmarshal(fbBody, &created); err == nil {
-						if idv, ok := created["id"]; ok {
-							switch v := idv.(type) {
-							case float64:
-								return int(v), nil
-							case int:
-								return v, nil
-							case int64:
-								return int(v), nil
-							}
-						}
-					}
-					// If fallback succeeded but id not parsed, return raw success
-					return 0, nil
-				}
-				// include fallback response in details for diagnostics
-				details += "; fallback_attempt_response: " + strings.TrimSpace(string(fbBody))
-			}
-		}
-		// If details include QualityProfile or an internal exception, try a minimal create without qualityProfileId
-		if strings.Contains(lower, "quality") || strings.Contains(lower, "object reference not set") || strings.Contains(lower, "nullreferenceexception") {
-			minPayload := map[string]any{
-				"name":              name,
-				"metadataProfileId": 1,
-				"addOptions":        map[string]any{"searchForMissingBooks": false},
-			}
-			mpBytes, _ := json.Marshal(minPayload)
-			mpURL := r.inst.BaseURL + "/api/v1/author"
-			if strings.Contains(mpURL, "?") {
-				mpURL += "&apikey=" + url.QueryEscape(r.inst.APIKey)
-			} else {
-				mpURL += "?apikey=" + url.QueryEscape(r.inst.APIKey)
-			}
-			mpReq, _ := http.NewRequestWithContext(ctx, http.MethodPost, mpURL, bytes.NewReader(mpBytes))
-			mpReq.Header.Set("Content-Type", "application/json")
-			mpReq.Header.Set("X-Api-Key", r.inst.APIKey)
-			mpReq.Header.Set("User-Agent", "Scriptorum/1.0")
-			mpReq.Header.Set("Accept", "application/json")
-			mpResp, merr := r.cl.Do(mpReq)
-			if merr == nil {
-				mpBody, _ := io.ReadAll(mpResp.Body)
-				mpResp.Body.Close()
-				if mpResp.StatusCode < 400 {
-					var created map[string]any
-					if err := json.Unmarshal(mpBody, &created); err == nil {
-						if idv, ok := created["id"]; ok {
-							switch v := idv.(type) {
-							case float64:
-								return int(v), nil
-							case int:
-								return v, nil
-							case int64:
-								return int(v), nil
-							}
-						}
-					}
-					return 0, nil
-				}
-				// append diagnostic
-				details += "; minimal_fallback_response: " + strings.TrimSpace(string(mpBody))
-			}
-		}
-		safeURL := redactAPIKey(u)
-		return 0, fmt.Errorf("create author failed (HTTP %s) to %s: %s", resp.Status, safeURL, details)
-	}
-
-	// Parse the response to get the created author ID
-	var createdAuthor map[string]any
-	if err := json.Unmarshal(respBody, &createdAuthor); err != nil {
-		return 0, fmt.Errorf("failed to parse author creation response: %v", err)
-	}
-
-	if idv, ok := createdAuthor["id"]; ok {
-		var authorID int
-		switch v := idv.(type) {
-		case float64:
-			authorID = int(v)
-		case int:
-			authorID = v
-		case int64:
-			authorID = int(v)
-		}
-		if authorID > 0 {
-			r.setCachedAuthor(name, authorID)
-			return authorID, nil
-		}
-	}
-
-	return 0, fmt.Errorf("author created but no ID returned in response")
+	return id, nil
 }
 
 // redactAPIKey hides apikey query param values from logs/errors
