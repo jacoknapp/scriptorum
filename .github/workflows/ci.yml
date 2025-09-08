@@ -134,10 +134,30 @@ jobs:
         id: meta
         run: |
           SHA_TAG=${GITHUB_SHA::7}
-          echo "sha=${SHA_TAG}" >> $GITHUB_OUTPUT
+          # Default rel to sha; overwrite with tag name for tag refs
+          REL=${SHA_TAG}
           if [[ "${GITHUB_REF_TYPE}" == "tag" ]]; then
-            echo "rel=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
+            REL=${GITHUB_REF_NAME}
           fi
+
+          echo "sha=${SHA_TAG}" >> $GITHUB_OUTPUT
+          echo "rel=${REL}" >> $GITHUB_OUTPUT
+
+          # Build a newline-delimited list of tags for buildx. Include :latest
+          # only when this is a direct push to the main branch.
+          TAGS=""
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            TAGS+="${IMAGE_NAME}:latest\n"
+          fi
+          TAGS+="${IMAGE_NAME}:${SHA_TAG}\n"
+          if [[ "${REL}" != "${SHA_TAG}" ]]; then
+            TAGS+="${IMAGE_NAME}:${REL}\n"
+          fi
+
+          # Emit multiline output
+          echo "tags<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$TAGS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -147,10 +167,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: |
             PREBUILT=true
-          tags: |
-            ${{ env.IMAGE_NAME }}:latest
-            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.sha }}
-            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.rel }}
+          tags: ${{ steps.meta.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
   lint:
