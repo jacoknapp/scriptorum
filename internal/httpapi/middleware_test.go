@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -14,7 +15,7 @@ func TestSetupGateRedirectsWhenNeeded(t *testing.T) {
 	tdir := t.TempDir()
 	cfgPath := filepath.Join(tdir, "config.yaml")
 	dbPath := filepath.Join(tdir, "scriptorum.db")
-	cfg, database, err := bootstrap.EnsureFirstRun(t.Context(), cfgPath, dbPath)
+	cfg, database, err := bootstrap.EnsureFirstRun(context.Background(), cfgPath, dbPath)
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
@@ -34,7 +35,7 @@ func TestLoginRequiredForProtected(t *testing.T) {
 	tdir := t.TempDir()
 	cfgPath := filepath.Join(tdir, "config.yaml")
 	dbPath := filepath.Join(tdir, "scriptorum.db")
-	cfg, database, err := bootstrap.EnsureFirstRun(t.Context(), cfgPath, dbPath)
+	cfg, database, err := bootstrap.EnsureFirstRun(context.Background(), cfgPath, dbPath)
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}

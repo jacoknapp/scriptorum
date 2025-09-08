@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -20,7 +21,7 @@ func newServerForTest(t *testing.T) *Server {
 	tdir := t.TempDir()
 	cfgPath := filepath.Join(tdir, "config.yaml")
 	dbPath := filepath.Join(tdir, "scriptorum.db")
-	cfg, database, err := bootstrap.EnsureFirstRun(t.Context(), cfgPath, dbPath)
+	cfg, database, err := bootstrap.EnsureFirstRun(context.Background(), cfgPath, dbPath)
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}

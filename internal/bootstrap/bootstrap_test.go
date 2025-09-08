@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,7 +12,7 @@ func TestEnsureFirstRunCreatesConfigAndDB(t *testing.T) {
 	cfg := filepath.Join(tdir, "config.yaml")
 	dbp := filepath.Join(tdir, "scriptorum.db")
 
-	c, d, err := EnsureFirstRun(t.Context(), cfg, dbp)
+	c, d, err := EnsureFirstRun(context.Background(), cfg, dbp)
 	if err != nil {
 		t.Fatalf("EnsureFirstRun: %v", err)
 	}
