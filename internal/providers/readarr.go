@@ -982,6 +982,7 @@ func (r *Readarr) CreateAuthor(ctx context.Context, name string) (int, error) {
 	payload := map[string]any{
 		"name": name,
 		"addOptions": map[string]any{
+			"monitor":               "none",
 			"searchForMissingBooks": false,
 		},
 	}

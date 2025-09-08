@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
@@ -58,7 +59,7 @@ func defaultConfig(dbPath string) *config.Config {
 	c.Setup.Completed = true
 
 	saltBytes := make([]byte, 16)
-	if _, err := os.ReadFull(os.Reader, saltBytes); err == nil {
+	if _, err := rand.Read(saltBytes); err == nil {
 		c.Auth.Salt = fmt.Sprintf("%x", saltBytes)
 	} else {
 		c.Auth.Salt = "default_salt"
