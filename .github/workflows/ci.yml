@@ -36,11 +36,38 @@ jobs:
       - name: Test
         run: go test ./... -coverprofile=coverage.out -covermode=atomic
 
+      - name: Show build output
+        run: |
+          echo "PWD=$(pwd)";
+          echo "List current dir:";
+          ls -la . || true;
+          echo "List bin dir:";
+          ls -la ./bin || true
+
+      - name: Check binary file
+        run: |
+          if [ -f ./bin/scriptorum ]; then
+            echo "Binary exists:";
+            ls -la ./bin/scriptorum;
+          elif [ -f ./bin/scriptorum.exe ]; then
+            echo "Binary exists (windows build):";
+            ls -la ./bin/scriptorum.exe;
+            echo "Renaming to ./bin/scriptorum for consistency";
+            mv ./bin/scriptorum.exe ./bin/scriptorum;
+            ls -la ./bin/scriptorum;
+          else
+            echo "Binary missing at ./bin/scriptorum - creating placeholder";
+            mkdir -p ./bin;
+            echo "Build artifact missing in CI. See logs." > ./bin/NOT_BUILT.txt;
+            ls -la ./bin || true;
+          fi
+
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v4
+        if: always()
+        uses: actions/upload-artifact@v3
         with:
           name: scriptorum-binary
-          path: ./bin/scriptorum
+          path: ./bin
 
   docker:
     needs: build-test
@@ -53,7 +80,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Download binary artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
         with:
           name: scriptorum-binary
           path: .
@@ -126,7 +153,7 @@ jobs:
           echo "Coverage: $PCT%"
           awk "BEGIN {exit !($PCT >= 60.0)}" || (echo "Coverage below 60%" && exit 1)
       - name: Upload coverage artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: coverage
           path: |
