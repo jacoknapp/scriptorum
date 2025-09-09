@@ -17,9 +17,8 @@ FROM gcr.io/distroless/base-debian12:nonroot
 WORKDIR /app
 # copy built binary from build stage
 COPY --from=build /out/scriptorum /app/scriptorum
-# ensure default config is available under /data
-RUN mkdir -p /data
-COPY scriptorum.example.yaml /data/config.yaml
+# ensure default config is available under /data (create via COPY so no shell is required in distroless)
+COPY --chown=nonroot:nonroot scriptorum.example.yaml /data/config.yaml
 USER nonroot:nonroot
 EXPOSE 8080
 ENV CONFIG_PATH=/data/config.yaml
