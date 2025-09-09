@@ -18,9 +18,11 @@ WORKDIR /app
 # copy built binary from build stage
 COPY --from=build /out/scriptorum /app/scriptorum
 # ensure default config is available under /data (create via COPY so no shell is required in distroless)
-COPY --chown=nonroot:nonroot scriptorum.example.yaml /data/config.yaml
+COPY --chown=nonroot:nonroot scriptorum.example.yaml /data/scriptorum.yaml
 USER nonroot:nonroot
 EXPOSE 8080
-ENV CONFIG_PATH=/data/config.yaml
+# Export env vars that the application reads at startup
+ENV SCRIPTORUM_CONFIG_PATH=/data/scriptorum.yaml
+ENV SCRIPTORUM_DB_PATH=/data/scriptorum.db
 VOLUME ["/data"]
 ENTRYPOINT ["/app/scriptorum"]
