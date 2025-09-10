@@ -37,7 +37,7 @@ func makeCookie(t *testing.T, s *Server, email string, admin bool) *http.Cookie 
 	b, _ := json.Marshal(sess)
 	sig := s.sign(b)
 	val := base64.RawURLEncoding.EncodeToString(b) + "." + base64.RawURLEncoding.EncodeToString(sig)
-	return &http.Cookie{Name: defaultIf(s.cfg.OAuth.CookieName, "scriptorum_session"), Value: val, Path: "/"}
+	return &http.Cookie{Name: "scriptorum_session", Value: val, Path: "/"}
 }
 
 func TestHealthAndSetupGate(t *testing.T) {

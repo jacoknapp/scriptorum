@@ -1,0 +1,41 @@
+{{ template "header" . }}
+<div class="bg-white rounded-xl2 shadow-card ring-1 ring-slate-900/5 p-5">
+  <h1 class="text-xl font-semibold mb-4">Auth</h1>
+  <form method="post" action="/settings/save" class="grid gap-6">
+    <section>
+      <h2 class="font-semibold mb-2">OAuth</h2>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="border rounded p-3 md:col-span-2">
+          <div class="flex items-center gap-4">
+            <span class="text-sm text-slate-700">Enable OAuth:</span>
+            <label class="inline-flex items-center gap-2">
+              <input type="radio" name="oauth_enabled" value="true" {{if .Cfg.OAuth.Enabled}}checked{{end}}> Yes
+            </label>
+            <label class="inline-flex items-center gap-2">
+              <input type="radio" name="oauth_enabled" value="false" {{if not .Cfg.OAuth.Enabled}}checked{{end}}> No
+            </label>
+          </div>
+          <div class="grid md:grid-cols-2 gap-3 mt-3">
+            <input name="oauth_issuer" placeholder="Issuer" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.Issuer }}">
+            <input name="oauth_redirect" placeholder="Redirect URL" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.RedirectURL }}">
+            <input name="oauth_client_id" placeholder="Client ID" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.ClientID }}">
+            <input type="password" name="oauth_client_secret" placeholder="Client Secret" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.ClientSecret }}">
+            <!-- cookie options are server-managed -->
+          </div>
+          <div class="grid md:grid-cols-2 gap-3 mt-3">
+            <input name="oauth_scopes" placeholder="Scopes (comma-separated)" class="border rounded px-3 py-2 w-full" value="{{ range $i, $s := .Cfg.OAuth.Scopes }}{{ if $i }}, {{ end }}{{$s}}{{ end }}">
+            <input name="oauth_allow_domains" placeholder="Allow email domains (comma-separated)" class="border rounded px-3 py-2 w-full" value="{{ range $i, $s := .Cfg.OAuth.AllowDomains }}{{ if $i }}, {{ end }}{{$s}}{{ end }}">
+            <input name="oauth_allow_emails" placeholder="Allow emails (comma-separated)" class="border rounded px-3 py-2 w-full" value="{{ range $i, $s := .Cfg.OAuth.AllowEmails }}{{ if $i }}, {{ end }}{{$s}}{{ end }}">
+          </div>
+          <div class="mt-3"><label class="inline-flex items-center gap-2"><input type="checkbox" name="oauth_autocreate" {{if .Cfg.OAuth.AutoCreateUsers}}checked{{end}}> Auto-create users on first OAuth login</label></div>
+        </div>
+      </div>
+    </section>
+
+    <div>
+      <button class="px-4 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700">Save</button>
+      <a class="ml-2 text-royal-700 hover:underline" href="/settings">Back</a>
+    </div>
+  </form>
+</div>
+{{ template "footer" . }}

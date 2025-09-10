@@ -50,10 +50,44 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 				cur.Readarr.Audiobooks.DefaultQualityProfileID = i
 			}
 		}
+
+		// OAuth settings (merged into the settings form)
+		vEnabled := strings.ToLower(strings.TrimSpace(r.FormValue("oauth_enabled")))
+		cur.OAuth.Enabled = (vEnabled == "true" || vEnabled == "on" || vEnabled == "1")
+		cur.OAuth.Issuer = strings.TrimSpace(r.FormValue("oauth_issuer"))
+		cur.OAuth.ClientID = strings.TrimSpace(r.FormValue("oauth_client_id"))
+		if v := strings.TrimSpace(r.FormValue("oauth_client_secret")); v != "" {
+			cur.OAuth.ClientSecret = v
+		}
+		cur.OAuth.RedirectURL = strings.TrimSpace(r.FormValue("oauth_redirect"))
+
+		// Lists helper
+		parseCSV := func(sv string) []string {
+			sv = strings.TrimSpace(sv)
+			if sv == "" {
+				return []string{}
+			}
+			parts := strings.Split(sv, ",")
+			out := make([]string, 0, len(parts))
+			for _, p := range parts {
+				t := strings.TrimSpace(p)
+				if t != "" {
+					out = append(out, t)
+				}
+			}
+			return out
+		}
+		cur.OAuth.Scopes = parseCSV(r.FormValue("oauth_scopes"))
+		cur.OAuth.AllowDomains = parseCSV(r.FormValue("oauth_allow_domains"))
+		cur.OAuth.AllowEmails = parseCSV(r.FormValue("oauth_allow_emails"))
+		cur.OAuth.AutoCreateUsers = r.FormValue("oauth_autocreate") == "on"
 		_ = s.settings.Update(&cur)
+		_ = s.initOIDC()
 		http.Redirect(w, r, "/settings", http.StatusFound)
 	}
 }
+
+// OAuth settings are handled as part of the main settings form (/settings/save).
 
 // apiReadarrProfiles returns quality profiles for a given instance (ebooks|audiobooks)
 func (s *Server) apiReadarrProfiles() http.HandlerFunc {

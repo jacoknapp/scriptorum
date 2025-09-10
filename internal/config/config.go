@@ -77,10 +77,10 @@ type Config struct {
 		Scopes       []string `yaml:"scopes"`
 		AllowDomains []string `yaml:"allow_email_domains"`
 		AllowEmails  []string `yaml:"allow_emails"`
-		CookieName   string   `yaml:"cookie_name"`
-		CookieDomain string   `yaml:"cookie_domain"`
-		CookieSecure bool     `yaml:"cookie_secure"`
-		CookieSecret string   `yaml:"cookie_secret"`
+		// Cookie-related settings are managed by the server and not exposed to user config
+		// AutoCreateUsers will create a local user record on first OAuth login
+		// using the OIDC email as the username. Password is random/unusable.
+		AutoCreateUsers bool `yaml:"auto_create_users"`
 	} `yaml:"oauth"`
 
 	AmazonPublic struct {

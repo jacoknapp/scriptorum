@@ -25,23 +25,22 @@ type oidcMgr struct {
 	clientID     string
 	clientSecret string
 	redirectURL  string
-	cookieName   string
-	cookieSecret string
-	provider     *oidc.Provider
-	verifier     *oidc.IDTokenVerifier
-	config       oauth2.Config
+	// cookieName is intentionally not configurable via user settings; server controls session cookie name
+	cookieName string
+	provider   *oidc.Provider
+	verifier   *oidc.IDTokenVerifier
+	config     oauth2.Config
 }
 
 func (s *Server) initOIDC() error {
-	cfg := s.cfg
+	cfg := s.settings.Get()
 	s.oidc = &oidcMgr{
 		enabled:      cfg.OAuth.Enabled,
 		issuer:       cfg.OAuth.Issuer,
 		clientID:     cfg.OAuth.ClientID,
 		clientSecret: cfg.OAuth.ClientSecret,
 		redirectURL:  cfg.OAuth.RedirectURL,
-		cookieName:   defaultIf(cfg.OAuth.CookieName, "scriptorum_session"),
-		cookieSecret: cfg.OAuth.CookieSecret,
+		cookieName:   "scriptorum_session",
 	}
 	if !s.oidc.enabled {
 		return nil
@@ -57,7 +56,7 @@ func (s *Server) initOIDC() error {
 		ClientSecret: s.oidc.clientSecret,
 		Endpoint:     p.Endpoint(),
 		RedirectURL:  s.oidc.redirectURL,
-		Scopes:       append([]string{"openid", "email", "profile"}, s.cfg.OAuth.Scopes...),
+		Scopes:       append([]string{"openid", "email", "profile"}, cfg.OAuth.Scopes...),
 	}
 	return nil
 }
@@ -80,13 +79,11 @@ func (s *Server) setSession(w http.ResponseWriter, sess *session) {
 	b, _ := json.Marshal(sess)
 	sig := s.sign(b)
 	cookie := base64.RawURLEncoding.EncodeToString(b) + "." + base64.RawURLEncoding.EncodeToString(sig)
-	http.SetCookie(w, &http.Cookie{
-		Name: s.oidc.cookieName, Value: cookie, Path: "/", HttpOnly: true, Secure: s.cfg.OAuth.CookieSecure, SameSite: http.SameSiteLaxMode,
-	})
+	http.SetCookie(w, &http.Cookie{Name: "scriptorum_session", Value: cookie, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
 }
 
 func (s *Server) getSession(r *http.Request) *session {
-	c, err := r.Cookie(s.oidc.cookieName)
+	c, err := r.Cookie("scriptorum_session")
 	if err != nil || c.Value == "" {
 		return nil
 	}
@@ -110,7 +107,10 @@ func (s *Server) getSession(r *http.Request) *session {
 }
 
 func (s *Server) sign(b []byte) []byte {
-	h := hmac.New(sha256.New, []byte(defaultIf(s.cfg.OAuth.CookieSecret, "changeme")))
+	// Use the server auth salt (config.Auth.Salt) as the HMAC key for session signing
+	cfg := s.settings.Get()
+	key := defaultIf(cfg.Auth.Salt, "changeme")
+	h := hmac.New(sha256.New, []byte(key))
 	h.Write(b)
 	return h.Sum(nil)
 }
@@ -170,13 +170,48 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	_ = token.Claims(&claims)
 
 	email := strings.ToLower(claims.Email)
-	sess := &session{Email: email, Name: claims.Name, Admin: s.isAdminEmail(email), Exp: time.Now().Add(24 * time.Hour).Unix()}
+	// Optional allowlists
+	cfg := s.settings.Get()
+	allowed := true
+	if len(cfg.OAuth.AllowDomains) > 0 {
+		allowed = false
+		for _, d := range cfg.OAuth.AllowDomains {
+			if strings.HasSuffix(strings.ToLower(email), "@"+strings.ToLower(strings.TrimSpace(d))) {
+				allowed = true
+				break
+			}
+		}
+	}
+	if allowed && len(cfg.OAuth.AllowEmails) > 0 {
+		allowed = false
+		for _, e := range cfg.OAuth.AllowEmails {
+			if strings.EqualFold(strings.TrimSpace(e), email) {
+				allowed = true
+				break
+			}
+		}
+	}
+	if !allowed {
+		http.Error(w, "email not allowed", http.StatusForbidden)
+		return
+	}
+
+	// Auto-provision users if enabled
+	if cfg.OAuth.AutoCreateUsers {
+		if _, err := s.db.GetUserByUsername(r.Context(), email); err != nil {
+			// create with random/empty password hash; password not used for OAuth logins
+			randHash := "$2a$10$scriptorum.oauth.autocreate.dummyhash012345678901234567890"
+			_, _ = s.db.CreateUser(r.Context(), email, randHash, s.isAdminEmail(email))
+		}
+	}
+
+	sess := &session{Email: email, Name: defaultIf(claims.Name, email), Admin: s.isAdminEmail(email), Exp: time.Now().Add(24 * time.Hour).Unix()}
 	s.setSession(w, sess)
 	http.Redirect(w, r, "/search", http.StatusFound)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: s.oidc.cookieName, Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: "scriptorum_session", Value: "", Path: "/", MaxAge: -1})
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
