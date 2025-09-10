@@ -48,6 +48,16 @@ func (s *Server) Router() http.Handler {
 	s.mountSetup(r)
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); w.Write([]byte("ok")) })
+
+	// If setup is needed, redirect the root path to the setup wizard so
+	// first-time users are guided through initial configuration.
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		if s.needsSetup() {
+			http.Redirect(w, r, "/setup", http.StatusFound)
+			return
+		}
+		http.Redirect(w, r, "/login", http.StatusFound)
+	})
 	// Serve embedded static files under /static from the web/static folder
 	sub, _ := fs.Sub(staticFS, "web/static")
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(sub))))

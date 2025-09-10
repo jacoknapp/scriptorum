@@ -56,7 +56,9 @@ func defaultConfig(dbPath string) *config.Config {
 	c.Debug = false
 	c.HTTP.Listen = ":8080"
 	c.DB.Path = dbPath
-	c.Setup.Completed = true
+	// Mark setup as not completed so the initial-run setup wizard is shown
+	// when the application creates the default config for the first time.
+	c.Setup.Completed = false
 
 	saltBytes := make([]byte, 16)
 	if _, err := rand.Read(saltBytes); err == nil {
