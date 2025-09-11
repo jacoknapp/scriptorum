@@ -65,7 +65,9 @@ type Config struct {
 	} `yaml:"auth"`
 
 	Admins struct {
-		Emails []string `yaml:"emails"`
+		Usernames []string `yaml:"usernames"`
+		// Back-compat: allow reading legacy admins.emails and map into usernames on load
+		Emails []string `yaml:"emails,omitempty"`
 	} `yaml:"admins"`
 
 	OAuth struct {
@@ -75,11 +77,14 @@ type Config struct {
 		ClientSecret string `yaml:"client_secret"`
 		RedirectURL  string `yaml:"redirect_url"`
 		// Optional overrides for provider-discovered endpoints; normally not needed.
-		AuthURL      string   `yaml:"auth_url,omitempty"`
-		TokenURL     string   `yaml:"token_url,omitempty"`
-		Scopes       []string `yaml:"scopes"`
-		AllowDomains []string `yaml:"allow_email_domains"`
-		AllowEmails  []string `yaml:"allow_emails"`
+		AuthURL  string   `yaml:"auth_url,omitempty"`
+		TokenURL string   `yaml:"token_url,omitempty"`
+		Scopes   []string `yaml:"scopes"`
+		// UsernameClaim selects the OIDC claim used as the username (e.g. "preferred_username").
+		UsernameClaim string `yaml:"username_claim"`
+		// Legacy allowlists retained for backward-compatibility; not used anymore.
+		AllowDomains []string `yaml:"allow_email_domains,omitempty"`
+		AllowEmails  []string `yaml:"allow_emails,omitempty"`
 		// Cookie-related settings are managed by the server and not exposed to user config
 		// AutoCreateUsers will create a local user record on first OAuth login
 		// using the OIDC email as the username. Password is random/unusable.
@@ -130,6 +135,10 @@ func Load(path string) (*Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(b, &cfg); err != nil {
 		return nil, err
+	}
+	// Migrate legacy admin emails to usernames if needed
+	if len(cfg.Admins.Usernames) == 0 && len(cfg.Admins.Emails) > 0 {
+		cfg.Admins.Usernames = append(cfg.Admins.Usernames, cfg.Admins.Emails...)
 	}
 	// Ensure Readarr instances have sensible defaults if not provided in YAML
 	if cfg.Readarr.Ebooks.AddEndpoint == "" {

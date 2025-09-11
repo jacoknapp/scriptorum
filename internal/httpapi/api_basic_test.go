@@ -12,8 +12,8 @@ import (
 func TestCreateListDeclineLifecycle(t *testing.T) {
 	s := newServerForTest(t)
 	r := s.Router()
-	user := makeCookie(t, s, "user@example.com", false)
-	admin := makeCookie(t, s, "admin@example.com", true)
+	user := makeCookie(t, s, "user", false)
+	admin := makeCookie(t, s, "admin", true)
 
 	// Create
 	body := []byte(`{"title":"A","authors":["B"],"format":"ebook"}`)

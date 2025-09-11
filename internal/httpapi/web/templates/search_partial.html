@@ -1,4 +1,4 @@
-<div class="bg-white rounded-xl2 shadow-card ring-1 ring-slate-900/5">
+<div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10">
 	<div class="p-4 border-b">
 		<h2 class="font-semibold">Results for “{{ .Query }}”</h2>
 	</div>
@@ -7,13 +7,13 @@
 	<li class="p-4 grid gap-4 items-center grid-cols-[auto,1fr] md:grid-cols-[auto,1fr,24rem]">
 			{{/* Use placeholder if no cover; fallback on error */}}
 			<img src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
-					 class="w-16 h-24 object-cover rounded-lg border bg-slate-100"
+					 class="w-16 h-24 object-cover rounded-lg border border-white/10 bg-night-900"
 					 onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
 
 			<div class="min-w-0">
 				<div class="font-medium truncate">{{ .Title }}</div>
-				<div class="text-sm text-slate-600 truncate">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
-				<div class="text-xs text-slate-500">
+				<div class="text-sm text-slate-400 truncate">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
+				<div class="text-xs text-slate-400">
 					{{ if .ISBN13 }}ISBN-13: {{ .ISBN13 }}{{ end }}
 					{{ if and .ISBN13 .ISBN10 }}, {{ end }}
 					{{ if .ISBN10 }}ISBN-10: {{ .ISBN10 }}{{ end }}
@@ -43,20 +43,20 @@
 
 				<!-- Use the same purple and fixed width for both buttons so layout doesn't shift -->
 				<button type="button" name="format" value="ebook"
-						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700 w-full sm:w-44"
+						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500 w-full sm:w-44"
 						onclick="scriptorumRequestFallback(this,'ebook')">
 						Request eBook
 					</button>
 				<button type="button" name="format" value="audiobook"
-						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700 w-full sm:w-44"
+						class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500 w-full sm:w-44"
 						onclick="scriptorumRequestFallback(this,'audiobook')">
 						Request Audiobook
 					</button>
 			</form>
-			<div class="req-ind htmx-indicator text-xs text-slate-500 hidden md:col-start-3">Submitting…</div>
+				<div class="req-ind htmx-indicator text-xs text-slate-400 hidden md:col-start-3">Submitting…</div>
 		</li>
 		{{ else }}
-		<li class="p-6 text-slate-500">No results.</li>
+			<li class="p-6 text-slate-400">No results.</li>
 		{{ end }}
 	</ul>
 </div>

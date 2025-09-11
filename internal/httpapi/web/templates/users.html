@@ -1,8 +1,8 @@
 {{ template "header" . }}
-<div class="bg-white rounded-xl2 shadow-card p-6">
+<div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6">
 	<div class="flex items-center justify-between">
 		<h1 class="text-xl font-semibold">Users</h1>
-		<a href="/search" class="text-royal-700 hover:underline">Back</a>
+		<a href="/search" class="text-royal-300 hover:underline">Back</a>
 	</div>
 
 	<div class="mt-4 overflow-x-auto">
@@ -17,19 +17,19 @@
 		</thead>
 		<tbody>
 			{{ range .Users }}
-			<tr class="border-t">
+			<tr class="border-t border-white/10">
 				<td class="p-2">{{ .ID }}</td>
 				<td class="p-2">{{ .Username }}</td>
 				<td class="p-2">{{ if .IsAdmin }}yes{{ else }}no{{ end }}</td>
 				<td class="p-2">
-					<a class="text-royal-700 hover:underline" href="/users/delete?id={{ .ID }}">Delete</a>
+					<a class="text-royal-300 hover:underline" href="/users/delete?id={{ .ID }}">Delete</a>
 					·
-					<a class="text-royal-700 hover:underline" href="/users/toggle?id={{ .ID }}">Toggle Admin</a>
+					<a class="text-royal-300 hover:underline" href="/users/toggle?id={{ .ID }}">Toggle Admin</a>
 				</td>
 			</tr>
 			{{ else }}
 			<tr>
-				<td colspan="4" class="p-4 text-slate-500">No users</td>
+				<td colspan="4" class="p-4 text-slate-400">No users</td>
 			</tr>
 			{{ end }}
 		</tbody>
@@ -39,36 +39,36 @@
 	<hr class="my-4">
 
 	<!-- Create user button (bottom-right) -->
-	<button id="openCreateUser" aria-haspopup="dialog" class="fixed bottom-6 right-6 z-50 px-4 py-3 bg-royal-600 text-white rounded-full shadow-lg hover:opacity-95">Create user</button>
+	<button id="openCreateUser" aria-haspopup="dialog" class="fixed bottom-6 right-6 z-50 px-4 py-3 bg-royal-600 text-white rounded-full shadow-lg hover:bg-royal-500">Create user</button>
 
 	<!-- Modal: Create User -->
 	<div id="createUserModal" class="hidden fixed inset-0 z-40 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="createUserTitle">
 		<!-- overlay -->
-		<div id="createUserOverlay" class="absolute inset-0 bg-black opacity-50"></div>
+		<div id="createUserOverlay" class="absolute inset-0 bg-black opacity-60"></div>
 
 		<!-- dialog -->
-		<div class="relative bg-white rounded-xl2 shadow-card p-6 max-w-md w-full z-10">
+		<div class="relative bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6 max-w-md w-full z-10">
 			<div class="flex items-center justify-between mb-4">
 				<h2 id="createUserTitle" class="text-lg font-semibold">Create User</h2>
-				<button id="closeCreateUser" aria-label="Close" class="text-slate-500 hover:text-slate-700">✕</button>
+				<button id="closeCreateUser" aria-label="Close" class="text-slate-400 hover:text-slate-200">✕</button>
 			</div>
 
 			<form method="post" action="/users" class="grid gap-3">
 				<label class="grid gap-1">
 					<span>Username</span>
-					<input name="username" required class="border rounded px-3 py-2">
+					<input name="username" required class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2">
 				</label>
 				<label class="grid gap-1">
 					<span>Password</span>
-					<input type="password" name="password" required class="border rounded px-3 py-2">
+					<input type="password" name="password" required class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2">
 				</label>
 				<label class="inline-flex items-center gap-2">
 					<input type="checkbox" name="is_admin">
 					<span>Admin</span>
 				</label>
 				<div class="flex items-center justify-end gap-2 mt-2">
-					<button type="button" id="cancelCreateUser" class="px-3 py-2 rounded border">Cancel</button>
-					<button class="px-4 py-2 rounded bg-royal-600 text-white">Add User</button>
+					<button type="button" id="cancelCreateUser" class="px-3 py-2 rounded border border-white/10 bg-night-900">Cancel</button>
+					<button class="px-4 py-2 rounded bg-royal-600 hover:bg-royal-500 text-white">Add User</button>
 				</div>
 			</form>
 		</div>

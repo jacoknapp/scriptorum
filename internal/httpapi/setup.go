@@ -50,18 +50,9 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		if strings.TrimSpace(cur.Auth.Salt) == "" {
 			cur.Auth.Salt = genSalt()
 		}
-		// Admin email for OIDC admin mapping
-		adminEmail := strings.TrimSpace(r.FormValue("admin_email"))
-		if adminEmail != "" && !containsInsensitive(cur.Admins.Emails, adminEmail) {
-			cur.Admins.Emails = append(cur.Admins.Emails, adminEmail)
-		}
 		// Local admin user (username/password) creation
 		adminUser := strings.TrimSpace(r.FormValue("admin_username"))
 		adminPass := r.FormValue("admin_password")
-		// If no explicit username but email provided, use email as username for local account
-		if adminUser == "" && adminEmail != "" {
-			adminUser = adminEmail
-		}
 		if adminUser != "" && adminPass != "" {
 			// Hash with config salt and store
 			hash, err := s.hashPassword(adminPass, cur.Auth.Salt)
@@ -81,11 +72,11 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		cur.Readarr.Audiobooks.APIKey = r.FormValue("ra_audio_key")
 		cur.Readarr.Audiobooks.InsecureSkipVerify = r.FormValue("ra_audio_insecure") == "on"
 		_ = s.settings.Update(&cur)
-		// Admin step satisfied if either OIDC admin email configured or a local admin user exists
+		// Admin step satisfied if at least one local admin user exists
 		if n, err := s.db.CountAdmins(r.Context()); err == nil && n > 0 {
 			stepFlags["admin"] = true
 		} else {
-			stepFlags["admin"] = len(cur.Admins.Emails) > 0
+			stepFlags["admin"] = false
 		}
 		// HTMX: trigger a refresh of gating and reload the current step; no content body
 		w.Header().Set("HX-Trigger", "setup-saved")
@@ -162,9 +153,9 @@ func errString(err error) string {
 func (u *setupUI) handleSetupFinish(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cur := *s.settings.Get()
-		// Require at least one admin: local or OIDC email mapping
+		// Require at least one admin: either a local admin user or a configured admin username in settings
 		if n, err := s.db.CountAdmins(r.Context()); err != nil || n == 0 {
-			if len(cur.Admins.Emails) == 0 {
+			if len(cur.Admins.Usernames) == 0 {
 				http.Error(w, "admin required", 400)
 				return
 			}

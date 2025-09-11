@@ -85,7 +85,8 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 
 	u := r.Context().Value(ctxUser).(*session)
 	req := &db.Request{
-		RequesterEmail: strings.ToLower(u.Email),
+		// store username in requester_email for backward-compatible storage
+		RequesterEmail: strings.ToLower(u.Username),
 		Title:          p.Title, Authors: p.Authors, ISBN10: p.ISBN10, ISBN13: p.ISBN13,
 		Format: format, Status: "pending",
 	}
@@ -202,7 +203,7 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) apiListRequests(w http.ResponseWriter, r *http.Request) {
 	u := r.Context().Value(ctxUser).(*session)
-	items, err := s.db.ListRequests(r.Context(), u.Email, 200)
+	items, err := s.db.ListRequests(r.Context(), u.Username, 200)
 	if err != nil {
 		http.Error(w, "db: "+err.Error(), 500)
 		return
@@ -230,8 +231,8 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	// If Readarr not configured, approve without sending
 	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
-		_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Email)
-		_ = s.db.UpdateRequestStatus(r.Context(), id, "approved", "approved (no Readarr configured)", r.Context().Value(ctxUser).(*session).Email, nil, nil)
+		_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
+		_ = s.db.UpdateRequestStatus(r.Context(), id, "approved", "approved (no Readarr configured)", r.Context().Value(ctxUser).(*session).Username, nil, nil)
 		w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 		writeJSON(w, map[string]string{"status": "approved"}, 200)
 		return
@@ -332,8 +333,8 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 							fmt.Printf("DEBUG: PUT /api/v1/book/monitor sent payload:\n%s\n", string(mb))
 							fmt.Printf("DEBUG: PUT /api/v1/book/monitor returned body:\n%s\n", string(monBody))
 						}
-						_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Email)
-						_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid), r.Context().Value(ctxUser).(*session).Email, payload, respBody)
+						_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
+						_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid), r.Context().Value(ctxUser).(*session).Username, payload, respBody)
 						trig := map[string]any{"request:updated": map[string]any{
 							"id":     id,
 							"isbn13": req.ISBN13,
@@ -353,8 +354,8 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			// Fallback: treat as already present without monitor update
-			_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Email)
-			_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", "already in Readarr (duplicate edition)", r.Context().Value(ctxUser).(*session).Email, payload, respBody)
+			_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
+			_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", "already in Readarr (duplicate edition)", r.Context().Value(ctxUser).(*session).Username, payload, respBody)
 			trig := map[string]any{"request:updated": map[string]any{
 				"id":     id,
 				"isbn13": req.ISBN13,
@@ -435,8 +436,8 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Email)
-	_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", "sent to Readarr", r.Context().Value(ctxUser).(*session).Email, payload, respBody)
+	_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
+	_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", "sent to Readarr", r.Context().Value(ctxUser).(*session).Username, payload, respBody)
 	// Include minimal identifiers so the UI can update any matching search results
 	trig := map[string]any{"request:updated": map[string]any{
 		"id":     id,

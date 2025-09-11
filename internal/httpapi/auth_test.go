@@ -24,7 +24,7 @@ func newServerForAuthTest(t *testing.T) *Server {
 		t.Fatalf("bootstrap: %v", err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	cfg.Admins.Emails = []string{"admin@example.com"}
+	cfg.Admins.Usernames = []string{"admin"}
 	cfg.Setup.Completed = true
 	cfg.OAuth.Enabled = false
 	_ = config.Save(cfgPath, cfg)
@@ -43,7 +43,7 @@ func TestLocalLoginFormWhenOAuthDisabled(t *testing.T) {
 
 func TestSetAndReadSessionCookie(t *testing.T) {
 	s := newServerForAuthTest(t)
-	sess := &session{Email: "u@example.com", Name: "U", Admin: true, Exp: 9999999999}
+	sess := &session{Username: "u", Name: "U", Admin: true, Exp: 9999999999}
 	rec := httptest.NewRecorder()
 	s.setSession(rec, sess)
 	ck := rec.Result().Cookies()
@@ -56,7 +56,7 @@ func TestSetAndReadSessionCookie(t *testing.T) {
 		req.AddCookie(c)
 	}
 	got := s.getSession(req)
-	if got == nil || got.Email != "u@example.com" || !got.Admin {
+	if got == nil || got.Username != "u" || !got.Admin {
 		b, _ := json.Marshal(got)
 		t.Fatalf("bad session: %s", string(b))
 	}

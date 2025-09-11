@@ -66,14 +66,15 @@ func defaultConfig(dbPath string) *config.Config {
 	} else {
 		c.Auth.Salt = "default_salt"
 	}
-	c.Admins.Emails = []string{"jacoknapp@gmail.com"}
+	c.Admins.Usernames = []string{"admin"}
 
 	c.OAuth.Enabled = false
 	c.OAuth.Issuer = ""
 	c.OAuth.ClientID = ""
 	c.OAuth.ClientSecret = ""
 	c.OAuth.RedirectURL = ""
-	c.OAuth.Scopes = []string{"openid", "profile", "email"}
+	c.OAuth.Scopes = []string{"openid", "profile"}
+	c.OAuth.UsernameClaim = "preferred_username"
 	c.OAuth.AllowDomains = []string{}
 	c.OAuth.AllowEmails = []string{}
 	// Cookie handling (name/secret/etc.) is managed by the server and not stored in user config.

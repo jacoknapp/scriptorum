@@ -1,7 +1,7 @@
 {{ define "requests_table" }}
 <!-- Desktop table -->
 <table class="min-w-full text-sm hidden md:table">
-	<thead class="bg-slate-50">
+	<thead class="bg-night-800/80">
 		<tr>
 			<th class="text-left px-4 py-2">Title</th>
 			<th class="text-left px-4 py-2">Requester</th>
@@ -10,49 +10,49 @@
 			<th class="text-right px-4 py-2">Actions</th>
 		</tr>
 	</thead>
-	<tbody class="divide-y">
+	<tbody class="divide-y divide-white/10">
 		{{ if .FallbackAll }}
 		<tr>
-			<td colspan="5" class="px-4 py-2 text-xs text-slate-500">Showing all requests (you have none yet).</td>
+			<td colspan="5" class="px-4 py-2 text-xs text-slate-400">Showing all requests (you have none yet).</td>
 		</tr>
 		{{ end }}
 		{{ range .Items }}
 		<tr>
 			<td class="px-4 py-2">
 				<div class="font-medium">{{ .Title }}</div>
-				<div class="text-slate-500">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
+				<div class="text-slate-400">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
 			</td>
 			<td class="px-4 py-2">{{ .RequesterEmail }}</td>
 			<td class="px-4 py-2">{{ .Format }}</td>
 			<td class="px-4 py-2">
 				<div>{{ .Status }}</div>
 				{{ if .StatusReason }}
-				<div class="text-xs text-slate-500 max-w-xs truncate" title="{{ .StatusReason }}">{{ .StatusReason }}</div>
+				<div class="text-xs text-slate-400 max-w-xs truncate" title="{{ .StatusReason }}">{{ .StatusReason }}</div>
 				{{ end }}
 			</td>
 			<td class="px-4 py-2 text-right">
 				{{ if $.IsAdmin }}
 				<form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="this" hx-swap="none" style="display: inline;"
 						hx-on="htmx:responseError: this.querySelector('button').classList.add('bg-rose-600'); this.querySelector('button').textContent='Approve failed'; setTimeout(()=>{var b=this.querySelector('button'); b.textContent='Approve'; b.classList.remove('bg-rose-600');}, 2200)">
-					<button class="px-3 py-1 rounded {{ if not .ReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-700" {{ if not .ReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
+					<button class="px-3 py-1 rounded {{ if not .ReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-500" {{ if not .ReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
 				</form>
 				{{ if not .ReadarrReq }}
 				<form hx-post="/api/v1/requests/{{ .ID }}/hydrate" hx-target="#req-table" hx-swap="innerHTML" style="display: inline; margin-left: 8px;"
 						hx-get="/ui/requests/table" hx-trigger="after-request" hx-target="#req-table" hx-swap="innerHTML">
-					<button class="px-3 py-1 rounded bg-amber-600 text-white hover:bg-amber-700" title="Attempt to attach a selection payload from Readarr">Attach selection</button>
+					<button class="px-3 py-1 rounded bg-amber-600 text-white hover:bg-amber-500" title="Attempt to attach a selection payload from Readarr">Attach selection</button>
 				</form>
 				{{ end }}
 				<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest tr" hx-swap="none" style="display: inline; margin-left: 8px;">
-					<button class="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700">Decline</button>
+					<button class="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-500">Decline</button>
 				</form>
 				{{ else }}
-				<span class="text-slate-400">-</span>
+				<span class="text-slate-500">-</span>
 				{{ end }}
 			</td>
 		</tr>
 		{{ else }}
 		<tr>
-			<td colspan="5" class="px-4 py-6 text-slate-500">No requests yet.</td>
+			<td colspan="5" class="px-4 py-6 text-slate-400">No requests yet.</td>
 		</tr>
 		{{ end }}
 	</tbody>
@@ -61,42 +61,42 @@
 <!-- Mobile cards -->
 <div class="grid gap-3 md:hidden">
 	{{ if .FallbackAll }}
-	<div class="px-3 py-2 text-xs text-slate-500">Showing all requests (you have none yet).</div>
+	<div class="px-3 py-2 text-xs text-slate-400">Showing all requests (you have none yet).</div>
 	{{ end }}
 	{{ range .Items }}
-	<div class="rounded-xl border border-slate-200 p-3">
+	<div class="rounded-xl border border-white/10 bg-night-800 p-3">
 		<div class="font-medium">{{ .Title }}</div>
-		<div class="text-sm text-slate-600">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
-		<div class="mt-2 flex flex-wrap gap-2 text-xs text-slate-600">
-			<span class="px-2 py-0.5 rounded bg-slate-100">{{ .RequesterEmail }}</span>
-			<span class="px-2 py-0.5 rounded bg-slate-100">{{ .Format }}</span>
-			<span class="px-2 py-0.5 rounded bg-slate-100">{{ .Status }}</span>
+		<div class="text-sm text-slate-400">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
+		<div class="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
+			<span class="px-2 py-0.5 rounded bg-night-700 ring-1 ring-white/10">{{ .RequesterEmail }}</span>
+			<span class="px-2 py-0.5 rounded bg-night-700 ring-1 ring-white/10">{{ .Format }}</span>
+			<span class="px-2 py-0.5 rounded bg-night-700 ring-1 ring-white/10">{{ .Status }}</span>
 		</div>
 		{{ if .StatusReason }}
-		<div class="mt-1 text-xs text-slate-500">{{ .StatusReason }}</div>
+		<div class="mt-1 text-xs text-slate-400">{{ .StatusReason }}</div>
 		{{ end }}
 		<div class="mt-3 flex flex-wrap gap-2">
 			{{ if $.IsAdmin }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="this" hx-swap="none"
 				  hx-on="htmx:responseError: this.querySelector('button').classList.add('bg-rose-600'); this.querySelector('button').textContent='Approve failed'; setTimeout(()=>{var b=this.querySelector('button'); b.textContent='Approve'; b.classList.remove('bg-rose-600');}, 2200)">
-				<button class="px-3 py-1.5 rounded {{ if not .ReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white" {{ if not .ReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
+				<button class="px-3 py-1.5 rounded {{ if not .ReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-500" {{ if not .ReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
 			</form>
 			{{ if not .ReadarrReq }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/hydrate" hx-target="#req-table" hx-swap="innerHTML"
 				  hx-get="/ui/requests/table" hx-trigger="after-request" hx-target="#req-table" hx-swap="innerHTML">
-				<button class="px-3 py-1.5 rounded bg-amber-600 text-white">Attach selection</button>
+				<button class="px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-500">Attach selection</button>
 			</form>
 			{{ end }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest div.rounded-xl" hx-swap="none">
-				<button class="px-3 py-1.5 rounded bg-red-600 text-white">Decline</button>
+				<button class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-500">Decline</button>
 			</form>
 			{{ else }}
-			<span class="text-slate-400">-</span>
+			<span class="text-slate-500">-</span>
 			{{ end }}
 		</div>
 	</div>
 	{{ else }}
-	<div class="p-4 text-slate-500">No requests yet.</div>
+	<div class="p-4 text-slate-400">No requests yet.</div>
 	{{ end }}
 </div>
 {{ end }}

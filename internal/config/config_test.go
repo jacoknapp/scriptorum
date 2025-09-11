@@ -13,7 +13,7 @@ func TestSaveAndLoadRoundtrip(t *testing.T) {
 	cfg := &Config{}
 	cfg.HTTP.Listen = ":9090"
 	cfg.DB.Path = filepath.Join(tdir, "db.sqlite")
-	cfg.Admins.Emails = []string{"admin@example.com"}
+	cfg.Admins.Usernames = []string{"admin"}
 	cfg.OAuth.Enabled = true
 	cfg.OAuth.Issuer = "https://issuer.example"
 	cfg.OAuth.ClientID = "id"
@@ -35,7 +35,7 @@ func TestSaveAndLoadRoundtrip(t *testing.T) {
 	if got.HTTP.Listen != cfg.HTTP.Listen || got.DB.Path != cfg.DB.Path {
 		t.Fatalf("mismatch after load")
 	}
-	if len(got.Admins.Emails) != 1 || got.Admins.Emails[0] != "admin@example.com" {
+	if len(got.Admins.Usernames) != 1 || got.Admins.Usernames[0] != "admin" {
 		t.Fatalf("admins mismatch: %+v", got.Admins)
 	}
 	if !got.OAuth.Enabled || got.OAuth.Issuer == "" {

@@ -1,21 +1,21 @@
 {{ template "header" . }}
-<div class="bg-white rounded-xl2 shadow-card ring-1 ring-slate-900/5 p-5">
+<div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-5">
 	<h1 class="text-xl font-semibold mb-4">Settings</h1>
 	<form method="post" action="/settings/save" class="grid gap-6">
     
 		<section>
 		<h2 class="font-semibold mb-2">General</h2>
-		<div class="border rounded p-3">
+		<div class="border border-white/10 rounded p-3">
 			<label class="inline-flex items-center gap-2">
 				<input type="checkbox" name="debug" {{ if .Cfg.Debug }}checked{{ end }}> Enable debug logging
 			</label>
-			<div class="text-sm text-slate-600 ml-6">Prints verbose provider/API logs to server stdout (docker logs).</div>
+			<div class="text-sm text-slate-400 ml-6">Prints verbose provider/API logs to server stdout (docker logs).</div>
 		</div>
 		</section>
 
 		<section>
 		<h2 class="font-semibold mb-2">Auth</h2>
-		<div class="border rounded p-3">
+		<div class="border border-white/10 rounded p-3">
 			<label class="inline-flex items-center gap-2"><input type="radio" name="oauth_enabled" value="true" {{if .Cfg.OAuth.Enabled}}checked{{end}}> Enable OAuth</label>
 			{{if .Cfg.OAuth.Enabled}}
 			<label class="inline-flex items-center gap-2 ml-4"><input type="radio" name="oauth_enabled" value="false"> Disable</label>
@@ -23,15 +23,14 @@
 			<label class="inline-flex items-center gap-2 ml-4"><input type="radio" name="oauth_enabled" value="false" checked> Disable</label>
 			{{end}}
 			<div class="grid md:grid-cols-2 gap-3 mt-3">
-				<input name="oauth_issuer" placeholder="Issuer" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.Issuer }}">
-				<input name="oauth_redirect" placeholder="Redirect URL" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.RedirectURL }}">
-				<input name="oauth_client_id" placeholder="Client ID" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.ClientID }}">
-				<input type="password" name="oauth_client_secret" placeholder="Client Secret" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.ClientSecret }}">
+				<input name="oauth_issuer" placeholder="Issuer" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.Issuer }}">
+				<input name="oauth_redirect" placeholder="Redirect URL" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.RedirectURL }}">
+				<input name="oauth_client_id" placeholder="Client ID" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.ClientID }}">
+				<input type="password" name="oauth_client_secret" placeholder="Client Secret" autocomplete="new-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.ClientSecret }}">
 			</div>
 			<div class="grid md:grid-cols-2 gap-3 mt-3">
-				<input name="oauth_scopes" placeholder="Scopes (comma-separated)" class="border rounded px-3 py-2 w-full" value="{{ range $i, $s := .Cfg.OAuth.Scopes }}{{ if $i }}, {{ end }}{{$s}}{{ end }}">
-				<input name="oauth_allow_domains" placeholder="Allow email domains (comma-separated)" class="border rounded px-3 py-2 w-full" value="{{ range $i, $s := .Cfg.OAuth.AllowDomains }}{{ if $i }}, {{ end }}{{$s}}{{ end }}">
-				<input name="oauth_allow_emails" placeholder="Allow emails (comma-separated)" class="border rounded px-3 py-2 w-full" value="{{ range $i, $s := .Cfg.OAuth.AllowEmails }}{{ if $i }}, {{ end }}{{$s}}{{ end }}">
+				<input name="oauth_scopes" placeholder="Scopes (comma-separated)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ range $i, $s := .Cfg.OAuth.Scopes }}{{ if $i }}, {{ end }}{{$s}}{{ end }}">
+				<input name="oauth_username_claim" placeholder="Username claim (e.g. preferred_username)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.UsernameClaim }}">
 			</div>
 			<div class="mt-3"><label class="inline-flex items-center gap-2"><input type="checkbox" name="oauth_autocreate" {{if .Cfg.OAuth.AutoCreateUsers}}checked{{end}}> Auto-create users on first OAuth login</label></div>
 		</div>
@@ -40,48 +39,48 @@
 
 				<h2 class="font-semibold mb-2">Readarr</h2>
 				<div class="grid md:grid-cols-2 gap-4">
-					<div class="border rounded p-3">
+					<div class="border border-white/10 rounded p-3">
 						<h3 class="font-medium">eBooks</h3>
-						<input name="ra_ebooks_base" placeholder="Base URL (include http:// or https://)" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.BaseURL }}">
-						<input type="password" name="ra_ebooks_key" placeholder="API Key" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.APIKey }}">
+						<input name="ra_ebooks_base" placeholder="Base URL (include http:// or https://)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.BaseURL }}">
+						<input type="password" name="ra_ebooks_key" placeholder="API Key" autocomplete="new-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.APIKey }}">
 						<div class="mt-2">
 							<label class="inline-flex items-center gap-2"><input type="radio" name="ra_ebooks_insecure" value="on" {{ if .Cfg.Readarr.Ebooks.InsecureSkipVerify }}checked{{ end }}> Yes</label>
 							<label class="inline-flex items-center gap-2 ml-3"><input type="radio" name="ra_ebooks_insecure" value="off" {{ if not .Cfg.Readarr.Ebooks.InsecureSkipVerify }}checked{{ end }}> No</label>
-							<div class="text-sm text-slate-600 ml-2">Skip TLS verification (trust self-signed cert)</div>
+							<div class="text-sm text-slate-400 ml-2">Skip TLS verification (trust self-signed cert)</div>
 						</div>
-						<label class="block mt-2 text-sm text-slate-600">Quality Profile</label>
-						<select id="ra_ebooks_qp" name="ra_ebooks_qp" class="border rounded px-3 py-2 w-full" data-server-default="{{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }}">
+						<label class="block mt-2 text-sm text-slate-400">Quality Profile</label>
+						<select id="ra_ebooks_qp" name="ra_ebooks_qp" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" data-server-default="{{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }}">
 							<option value="">(server: {{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }})</option>
 						</select>
 						<div class="mt-2 flex items-center gap-2">
-							<button type="button" class="px-3 py-1 rounded bg-royal-50 text-royal-800" onclick="testReadarr('ebooks')">Test</button>
-							<span id="ra_ebooks_test" class="text-sm text-slate-600">—</span>
+							<button type="button" class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-500" onclick="testReadarr('ebooks')">Test</button>
+							<span id="ra_ebooks_test" class="text-sm text-slate-400">—</span>
 						</div>
 					</div>
-					<div class="border rounded p-3">
+					<div class="border border-white/10 rounded p-3">
 						<h3 class="font-medium">Audiobooks</h3>
-						<input name="ra_audio_base" placeholder="Base URL (include http:// or https://)" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.BaseURL }}">
-						<input type="password" name="ra_audio_key" placeholder="API Key" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.APIKey }}">
+						<input name="ra_audio_base" placeholder="Base URL (include http:// or https://)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.BaseURL }}">
+						<input type="password" name="ra_audio_key" placeholder="API Key" autocomplete="new-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.APIKey }}">
 						<div class="mt-2">
 							<label class="inline-flex items-center gap-2"><input type="radio" name="ra_audio_insecure" value="on" {{ if .Cfg.Readarr.Audiobooks.InsecureSkipVerify }}checked{{ end }}> Yes</label>
 							<label class="inline-flex items-center gap-2 ml-3"><input type="radio" name="ra_audio_insecure" value="off" {{ if not .Cfg.Readarr.Audiobooks.InsecureSkipVerify }}checked{{ end }}> No</label>
-							<div class="text-sm text-slate-600 ml-2">Skip TLS verification (trust self-signed cert)</div>
+							<div class="text-sm text-slate-400 ml-2">Skip TLS verification (trust self-signed cert)</div>
 						</div>
-						<label class="block mt-2 text-sm text-slate-600">Quality Profile</label>
-						<select id="ra_audio_qp" name="ra_audio_qp" class="border rounded px-3 py-2 w-full" data-server-default="{{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }}">
+						<label class="block mt-2 text-sm text-slate-400">Quality Profile</label>
+						<select id="ra_audio_qp" name="ra_audio_qp" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" data-server-default="{{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }}">
 							<option value="">(server: {{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }})</option>
 						</select>
 						<div class="mt-2 flex items-center gap-2">
-							<button type="button" class="px-3 py-1 rounded bg-royal-50 text-royal-800" onclick="testReadarr('audiobooks')">Test</button>
-							<span id="ra_audio_test" class="text-sm text-slate-600">—</span>
+							<button type="button" class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-500" onclick="testReadarr('audiobooks')">Test</button>
+							<span id="ra_audio_test" class="text-sm text-slate-400">—</span>
 						</div>
 					</div>
 				</div>
 			</section>
 
 			<div>
-				<button class="px-4 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-700">Save</button>
-				<a class="ml-2 text-royal-700 hover:underline" href="/">Back</a>
+				<button class="px-4 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500">Save</button>
+				<a class="ml-2 text-royal-300 hover:underline" href="/">Back</a>
 			</div>
 		</form>
 </div>
@@ -122,7 +121,7 @@ async function testReadarr(kind) {
 	const spanId = kind === 'ebooks' ? 'ra_ebooks_test' : 'ra_audio_test';
 	const span = document.getElementById(spanId);
 	if (!span) return;
-	span.textContent = 'testing...';
+		span.textContent = 'testing...';
 	try {
 		const res = await fetch('/api/readarr/profiles?kind='+encodeURIComponent(kind));
 		if (!res.ok) {
@@ -131,9 +130,9 @@ async function testReadarr(kind) {
 			return;
 		}
 		const obj = await res.json();
-		span.innerHTML = '<span class="text-green-700">OK ('+Object.keys(obj).length+' profiles)</span>';
+		span.innerHTML = '<span class="text-emerald-300">OK ('+Object.keys(obj).length+' profiles)</span>';
 	} catch (e) {
-		span.innerHTML = '<span class="text-red-700">Error: '+String(e)+'</span>';
+		span.innerHTML = '<span class="text-rose-300">Error: '+String(e)+'</span>';
 	}
 }
 </script>

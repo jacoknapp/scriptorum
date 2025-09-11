@@ -73,10 +73,10 @@ func TestApproveWithoutReadarrConfigured(t *testing.T) {
 	t.Cleanup(func() { _ = database.Close() })
 
 	// Admin cookie
-	cookie := makeCookie(t, s, "admin@example.com", true)
+	cookie := makeCookie(t, s, "admin", true)
 
 	// Seed a request
-	id, err := database.CreateRequest(t.Context(), &db.Request{RequesterEmail: "user@example.com", Title: "Book", Authors: []string{"A"}, Format: "ebook", Status: "pending"})
+	id, err := database.CreateRequest(t.Context(), &db.Request{RequesterEmail: "user", Title: "Book", Authors: []string{"A"}, Format: "ebook", Status: "pending"})
 	if err != nil {
 		t.Fatalf("seed request: %v", err)
 	}

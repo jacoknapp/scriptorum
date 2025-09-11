@@ -84,8 +84,7 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 			return out
 		}
 		cur.OAuth.Scopes = parseCSV(r.FormValue("oauth_scopes"))
-		cur.OAuth.AllowDomains = parseCSV(r.FormValue("oauth_allow_domains"))
-		cur.OAuth.AllowEmails = parseCSV(r.FormValue("oauth_allow_emails"))
+		cur.OAuth.UsernameClaim = strings.TrimSpace(r.FormValue("oauth_username_claim"))
 		cur.OAuth.AutoCreateUsers = r.FormValue("oauth_autocreate") == "on"
 		_ = s.settings.Update(&cur)
 		// Propagate debug flag to provider packages that use package-level Debug variables
@@ -176,5 +175,5 @@ func (s *Server) userEmail(r *http.Request) string {
 	if u == nil {
 		return ""
 	}
-	return strings.ToLower(u.Email)
+	return strings.ToLower(u.Username)
 }

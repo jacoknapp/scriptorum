@@ -10,7 +10,7 @@ import (
 func TestNavTabsWorkForAdmin(t *testing.T) {
 	s := newServerForTest(t)
 	r := s.Router()
-	adminCookie := makeCookie(t, s, "admin@example.com", true)
+	adminCookie := makeCookie(t, s, "admin", true)
 
 	// Root should redirect to /search
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

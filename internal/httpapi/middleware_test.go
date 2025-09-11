@@ -40,7 +40,7 @@ func TestLoginRequiredForProtected(t *testing.T) {
 		t.Fatalf("bootstrap: %v", err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	cfg.Admins.Emails = []string{"a@example.com"}
+	cfg.Admins.Usernames = []string{"admin"}
 	cfg.Setup.Completed = true
 	_ = config.Save(cfgPath, cfg)
 	s := NewServer(cfg, database, cfgPath)

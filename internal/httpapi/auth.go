@@ -111,10 +111,10 @@ func defaultIf(v, d string) string {
 }
 
 type session struct {
-	Email string `json:"email"`
-	Name  string `json:"name"`
-	Admin bool   `json:"admin"`
-	Exp   int64  `json:"exp"`
+	Username string `json:"username"`
+	Name     string `json:"name"`
+	Admin    bool   `json:"admin"`
+	Exp      int64  `json:"exp"`
 }
 
 func (s *Server) setSession(w http.ResponseWriter, sess *session) {
@@ -320,46 +320,47 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "verify: "+err.Error(), http.StatusUnauthorized)
 		return
 	}
-	var claims struct{ Email, Name string }
+	var claims map[string]any
 	_ = token.Claims(&claims)
-
-	email := strings.ToLower(claims.Email)
-	// Optional allowlists
+	// Choose a stable username from OIDC claims; use configured claim if present, else preferred_username, else sanitized name
 	cfg := s.settings.Get()
-	allowed := true
-	if len(cfg.OAuth.AllowDomains) > 0 {
-		allowed = false
-		for _, d := range cfg.OAuth.AllowDomains {
-			if strings.HasSuffix(strings.ToLower(email), "@"+strings.ToLower(strings.TrimSpace(d))) {
-				allowed = true
-				break
-			}
+	var username string
+	if c := strings.TrimSpace(cfg.OAuth.UsernameClaim); c != "" {
+		if v, ok := claims[c]; ok {
+			username = strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
 		}
 	}
-	if allowed && len(cfg.OAuth.AllowEmails) > 0 {
-		allowed = false
-		for _, e := range cfg.OAuth.AllowEmails {
-			if strings.EqualFold(strings.TrimSpace(e), email) {
-				allowed = true
-				break
-			}
+	if username == "" {
+		if v, ok := claims["preferred_username"]; ok {
+			username = strings.ToLower(strings.TrimSpace(fmt.Sprint(v)))
 		}
 	}
-	if !allowed {
-		http.Error(w, "email not allowed", http.StatusForbidden)
+	if username == "" {
+		// Fallback to name without spaces/symbols if provided
+		n := strings.ToLower(strings.TrimSpace(fmt.Sprint(claims["name"])))
+		n = strings.ReplaceAll(n, " ", "")
+		username = n
+	}
+	if username == "" {
+		http.Error(w, "no username in claims", http.StatusForbidden)
 		return
 	}
+	// Email/domain allowlists removed; access is controlled by presence of username and (optionally) admin mapping
 
-	// Auto-provision users if enabled
+	// Auto-provision users if enabled (use username)
 	if cfg.OAuth.AutoCreateUsers {
-		if _, err := s.db.GetUserByUsername(r.Context(), email); err != nil {
+		if _, err := s.db.GetUserByUsername(r.Context(), username); err != nil {
 			// create with random/empty password hash; password not used for OAuth logins
 			randHash := "$2a$10$scriptorum.oauth.autocreate.dummyhash012345678901234567890"
-			_, _ = s.db.CreateUser(r.Context(), email, randHash, s.isAdminEmail(email))
+			_, _ = s.db.CreateUser(r.Context(), username, randHash, s.isAdminUsername(username))
 		}
 	}
 
-	sess := &session{Email: email, Name: defaultIf(claims.Name, email), Admin: s.isAdminEmail(email), Exp: time.Now().Add(24 * time.Hour).Unix()}
+	disp := fmt.Sprint(claims["name"])
+	if strings.TrimSpace(disp) == "" {
+		disp = username
+	}
+	sess := &session{Username: username, Name: disp, Admin: s.isAdminUsername(username), Exp: time.Now().Add(24 * time.Hour).Unix()}
 	s.setSession(w, sess)
 	http.Redirect(w, r, "/search", http.StatusFound)
 }
@@ -371,9 +372,9 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusFound)
 }
 
-func (s *Server) isAdminEmail(e string) bool {
-	for _, a := range s.settings.Get().Admins.Emails {
-		if strings.EqualFold(a, e) {
+func (s *Server) isAdminUsername(u string) bool {
+	for _, a := range s.settings.Get().Admins.Usernames {
+		if strings.EqualFold(a, u) {
 			return true
 		}
 	}
@@ -402,7 +403,7 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		s.renderLoginForm(w, username, "invalid information")
 		return
 	}
-	sess := &session{Email: u.Username, Name: u.Username, Admin: u.IsAdmin, Exp: time.Now().Add(24 * time.Hour).Unix()}
+	sess := &session{Username: u.Username, Name: u.Username, Admin: u.IsAdmin, Exp: time.Now().Add(24 * time.Hour).Unix()}
 	s.setSession(w, sess)
 	http.Redirect(w, r, "/search", http.StatusFound)
 }

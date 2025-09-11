@@ -22,7 +22,7 @@ func TestAuthPageAndSave(t *testing.T) {
 		t.Fatalf("bootstrap: %v", err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	cfg.Admins.Emails = []string{"admin@example.com"}
+	cfg.Admins.Usernames = []string{"admin"}
 	cfg.Setup.Completed = true
 	_ = config.Save(cfgPath, cfg)
 	s := NewServer(cfg, database, cfgPath)
@@ -30,7 +30,7 @@ func TestAuthPageAndSave(t *testing.T) {
 
 	// GET page (require admin)
 	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
-	req.AddCookie(makeCookie(t, s, "admin@example.com", true))
+	req.AddCookie(makeCookie(t, s, "admin", true))
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "OAuth") {
@@ -45,14 +45,13 @@ func TestAuthPageAndSave(t *testing.T) {
 	form.Set("oauth_client_secret", "csecret")
 	form.Set("oauth_redirect", "http://localhost:8080/oauth/callback")
 	// cookie settings are server-managed
-	form.Set("oauth_scopes", "openid, email")
-	form.Set("oauth_allow_domains", "example.com, test.dev")
-	form.Set("oauth_allow_emails", "one@example.com")
+	form.Set("oauth_scopes", "openid, profile")
+	form.Set("oauth_username_claim", "preferred_username")
 	form.Set("oauth_autocreate", "on")
 
 	req2 := httptest.NewRequest(http.MethodPost, "/settings/save", strings.NewReader(form.Encode()))
 	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req2.AddCookie(makeCookie(t, s, "admin@example.com", true))
+	req2.AddCookie(makeCookie(t, s, "admin", true))
 	rec2 := httptest.NewRecorder()
 	r.ServeHTTP(rec2, req2)
 	if rec2.Code != 302 {

@@ -1,6 +1,6 @@
 <div class="grid gap-4">
 	<h2 class="text-lg font-semibold">Admin</h2>
-	<p class="text-sm text-slate-600">Either create a local admin user or provide an admin email for OIDC mapping (or both). If you enter a password without a username, the admin email will be used as the username.</p>
+	<p class="text-sm text-slate-600">Create a local admin user. OIDC admins are matched by username (preferred_username claim).</p>
 	<form hx-post="/setup/save" hx-target="#admin-result" hx-swap="innerHTML" class="grid gap-2">
 		<fieldset class="border rounded p-3">
 			<legend class="px-1 text-slate-700">Local admin</legend>
@@ -11,24 +11,8 @@
 				<input name="admin_password" id="admin_password" type="password" class="border rounded px-3 py-2 w-full" autocomplete="new-password">
 			</label>
 		</fieldset>
-		<fieldset class="border rounded p-3">
-			<legend class="px-1 text-slate-700">OIDC admin mapping</legend>
-			<label class="block">Admin Email
-				<input name="admin_email" id="admin_email" type="email" class="border rounded px-3 py-2 w-full" placeholder="admin@example.com">
-			</label>
-		</fieldset>
 		<button class="px-4 py-2 rounded-lg bg-royal-600 text-white">Save</button>
 	</form>
 	<div id="admin-result"></div>
 </div>
-<script>
-// Autofill username from email when password is entered, if username is empty
-document.addEventListener('input', function() {
-	const u = document.getElementById('admin_username');
-	const p = document.getElementById('admin_password');
-	const e = document.getElementById('admin_email');
-	if (u && p && e && u.value.trim() === '' && p.value.trim().length > 0 && e.value.trim().length > 0) {
-		u.value = e.value.trim();
-	}
-});
-</script>
+<script></script>

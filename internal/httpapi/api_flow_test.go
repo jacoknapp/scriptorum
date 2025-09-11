@@ -26,14 +26,14 @@ func newServerForTest(t *testing.T) *Server {
 		t.Fatalf("bootstrap: %v", err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	cfg.Admins.Emails = []string{"admin@example.com"}
+	cfg.Admins.Usernames = []string{"admin"}
 	cfg.Setup.Completed = true
 	_ = config.Save(cfgPath, cfg)
 	return NewServer(cfg, database, cfgPath)
 }
 
-func makeCookie(t *testing.T, s *Server, email string, admin bool) *http.Cookie {
-	sess := &session{Email: strings.ToLower(email), Name: "T", Admin: admin, Exp: 9999999999}
+func makeCookie(t *testing.T, s *Server, username string, admin bool) *http.Cookie {
+	sess := &session{Username: strings.ToLower(username), Name: "T", Admin: admin, Exp: 9999999999}
 	b, _ := json.Marshal(sess)
 	sig := s.sign(b)
 	val := base64.RawURLEncoding.EncodeToString(b) + "." + base64.RawURLEncoding.EncodeToString(sig)
@@ -57,7 +57,7 @@ func TestCreateAndApproveFlow(t *testing.T) {
 	// Create (requires login)
 	body := []byte(`{"title":"Book","authors":["Alice"],"format":"ebook"}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/requests", bytes.NewReader(body))
-	req.AddCookie(makeCookie(t, s, "user@example.com", false))
+	req.AddCookie(makeCookie(t, s, "user", false))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
@@ -70,7 +70,7 @@ func TestCreateAndApproveFlow(t *testing.T) {
 
 	// Approve (requires admin). Readarr endpoints are unset, so it may 502/404. Only assert no panic & valid HTTP.
 	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/requests/"+strconv.Itoa(id)+"/approve", nil)
-	req2.AddCookie(makeCookie(t, s, "admin@example.com", true))
+	req2.AddCookie(makeCookie(t, s, "admin", true))
 	rec2 := httptest.NewRecorder()
 	r.ServeHTTP(rec2, req2)
 	if rec2.Code != 200 && rec2.Code != 502 && rec2.Code != 404 {

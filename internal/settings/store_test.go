@@ -14,7 +14,7 @@ func TestStoreUpdateAndGet(t *testing.T) {
 	cfg := &config.Config{}
 	s := New(path, cfg)
 
-	cfg.Admins.Emails = []string{"a@example.com"}
+	cfg.Admins.Usernames = []string{"admin"}
 	if err := s.Update(cfg); err != nil {
 		t.Fatalf("update: %v", err)
 	}
@@ -23,7 +23,7 @@ func TestStoreUpdateAndGet(t *testing.T) {
 	}
 
 	got := s.Get()
-	if len(got.Admins.Emails) != 1 {
+	if len(got.Admins.Usernames) != 1 {
 		t.Fatalf("get mismatch: %+v", got)
 	}
 }
