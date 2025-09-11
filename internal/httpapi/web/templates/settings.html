@@ -41,9 +41,13 @@
 							<div class="text-sm text-slate-600 ml-2">Skip TLS verification (trust self-signed cert)</div>
 						</div>
 						<label class="block mt-2 text-sm text-slate-600">Quality Profile</label>
-						<select id="ra_ebooks_qp" name="ra_ebooks_qp" class="border rounded px-3 py-2 w-full">
+						<select id="ra_ebooks_qp" name="ra_ebooks_qp" class="border rounded px-3 py-2 w-full" data-server-default="{{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }}">
 							<option value="">(server: {{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }})</option>
 						</select>
+						<div class="mt-2 flex items-center gap-2">
+							<button type="button" class="px-3 py-1 rounded bg-royal-50 text-royal-800" onclick="testReadarr('ebooks')">Test</button>
+							<span id="ra_ebooks_test" class="text-sm text-slate-600">—</span>
+						</div>
 					</div>
 					<div class="border rounded p-3">
 						<h3 class="font-medium">Audiobooks</h3>
@@ -55,9 +59,13 @@
 							<div class="text-sm text-slate-600 ml-2">Skip TLS verification (trust self-signed cert)</div>
 						</div>
 						<label class="block mt-2 text-sm text-slate-600">Quality Profile</label>
-						<select id="ra_audio_qp" name="ra_audio_qp" class="border rounded px-3 py-2 w-full">
+						<select id="ra_audio_qp" name="ra_audio_qp" class="border rounded px-3 py-2 w-full" data-server-default="{{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }}">
 							<option value="">(server: {{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }})</option>
 						</select>
+						<div class="mt-2 flex items-center gap-2">
+							<button type="button" class="px-3 py-1 rounded bg-royal-50 text-royal-800" onclick="testReadarr('audiobooks')">Test</button>
+							<span id="ra_audio_test" class="text-sm text-slate-600">—</span>
+						</div>
 					</div>
 				</div>
 			</section>
@@ -93,8 +101,31 @@ async function loadQPs(kind, selId, serverDefault) {
 	}
 }
 document.addEventListener('DOMContentLoaded', ()=>{
-	loadQPs('ebooks','ra_ebooks_qp', {{ printf "%d" .Cfg.Readarr.Ebooks.DefaultQualityProfileID }});
-	loadQPs('audiobooks','ra_audio_qp', {{ printf "%d" .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }});
+	const ebSel = document.getElementById('ra_ebooks_qp');
+	const auSel = document.getElementById('ra_audio_qp');
+	const ebDef = ebSel ? parseInt(ebSel.getAttribute('data-server-default') || '0', 10) : 0;
+	const auDef = auSel ? parseInt(auSel.getAttribute('data-server-default') || '0', 10) : 0;
+	loadQPs('ebooks','ra_ebooks_qp', ebDef);
+	loadQPs('audiobooks','ra_audio_qp', auDef);
 });
+// Test Readarr instance and update UI
+async function testReadarr(kind) {
+	const spanId = kind === 'ebooks' ? 'ra_ebooks_test' : 'ra_audio_test';
+	const span = document.getElementById(spanId);
+	if (!span) return;
+	span.textContent = 'testing...';
+	try {
+		const res = await fetch('/api/readarr/profiles?kind='+encodeURIComponent(kind));
+		if (!res.ok) {
+			const txt = await res.text();
+			span.innerHTML = '<span class="text-red-700">Error: '+(txt||res.statusText)+'</span>';
+			return;
+		}
+		const obj = await res.json();
+		span.innerHTML = '<span class="text-green-700">OK ('+Object.keys(obj).length+' profiles)</span>';
+	} catch (e) {
+		span.innerHTML = '<span class="text-red-700">Error: '+String(e)+'</span>';
+	}
+}
 </script>
 {{ template "footer" . }}

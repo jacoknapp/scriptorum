@@ -459,6 +459,11 @@ func NewReadarrWithDB(i ReadarrInstance, db *sql.DB) *Readarr {
 }
 
 func normalize(i ReadarrInstance) ReadarrInstance {
+	i.BaseURL = strings.TrimSpace(i.BaseURL)
+	// If user provided a host:port without scheme, default to http.
+	if i.BaseURL != "" && !strings.HasPrefix(i.BaseURL, "http://") && !strings.HasPrefix(i.BaseURL, "https://") {
+		i.BaseURL = "http://" + i.BaseURL
+	}
 	i.BaseURL = strings.TrimRight(i.BaseURL, "/")
 	if !strings.Contains(i.LookupEndpoint, apiVersionPrefix) {
 		i.LookupEndpoint = apiVersionPrefix + "/book/lookup"

@@ -103,9 +103,17 @@ func (s *Server) apiReadarrProfiles() http.HandlerFunc {
 		case "ebooks":
 			c := cfg.Readarr.Ebooks
 			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, InsecureSkipVerify: c.InsecureSkipVerify}
+			if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+				http.Error(w, "readarr ebooks not configured", http.StatusBadRequest)
+				return
+			}
 		case "audiobooks":
 			c := cfg.Readarr.Audiobooks
 			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, InsecureSkipVerify: c.InsecureSkipVerify}
+			if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+				http.Error(w, "readarr audiobooks not configured", http.StatusBadRequest)
+				return
+			}
 		default:
 			http.Error(w, "missing kind", http.StatusBadRequest)
 			return
