@@ -117,10 +117,10 @@ func (u *setupUI) handleTestReadarr(s *Server) http.HandlerFunc {
 		var inst providers.ReadarrInstance
 		if tag == "ebooks" {
 			c := s.settings.Get().Readarr.Ebooks
-			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint}
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, InsecureSkipVerify: c.InsecureSkipVerify}
 		} else {
 			c := s.settings.Get().Readarr.Audiobooks
-			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint}
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, InsecureSkipVerify: c.InsecureSkipVerify}
 		}
 		ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 		ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
