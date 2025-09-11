@@ -3,6 +3,7 @@ package providers
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -54,6 +55,7 @@ type ReadarrInstance struct {
 	DefaultQualityProfileID int
 	DefaultRootFolderPath   string
 	DefaultTags             []string
+	InsecureSkipVerify      bool
 }
 
 type Readarr struct {
@@ -436,11 +438,20 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 }
 
 func NewReadarr(i ReadarrInstance) *Readarr {
-	return &Readarr{inst: normalize(i), cl: &http.Client{Timeout: 12 * time.Second}, db: nil}
+	r := &Readarr{inst: normalize(i), cl: &http.Client{Timeout: 12 * time.Second}, db: nil}
+	if r.inst.InsecureSkipVerify {
+		tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+		r.cl = &http.Client{Timeout: 12 * time.Second, Transport: tr}
+	}
+	return r
 }
 
 func NewReadarrWithDB(i ReadarrInstance, db *sql.DB) *Readarr {
 	r := &Readarr{inst: normalize(i), cl: &http.Client{Timeout: 12 * time.Second}, db: db}
+	if r.inst.InsecureSkipVerify {
+		tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+		r.cl = &http.Client{Timeout: 12 * time.Second, Transport: tr}
+	}
 	if db != nil {
 		r.initCacheTables()
 	}

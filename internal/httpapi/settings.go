@@ -37,8 +37,10 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 		cur := *s.settings.Get()
 		cur.Readarr.Ebooks.BaseURL = strings.TrimSpace(r.FormValue("ra_ebooks_base"))
 		cur.Readarr.Ebooks.APIKey = strings.TrimSpace(r.FormValue("ra_ebooks_key"))
+		cur.Readarr.Ebooks.InsecureSkipVerify = (r.FormValue("ra_ebooks_insecure") == "on")
 		cur.Readarr.Audiobooks.BaseURL = strings.TrimSpace(r.FormValue("ra_audio_base"))
 		cur.Readarr.Audiobooks.APIKey = strings.TrimSpace(r.FormValue("ra_audio_key"))
+		cur.Readarr.Audiobooks.InsecureSkipVerify = (r.FormValue("ra_audio_insecure") == "on")
 		// Save quality profile selections
 		if v := strings.TrimSpace(r.FormValue("ra_ebooks_qp")); v != "" {
 			if i, err := strconv.Atoi(v); err == nil {
@@ -98,10 +100,10 @@ func (s *Server) apiReadarrProfiles() http.HandlerFunc {
 		switch kind {
 		case "ebooks":
 			c := cfg.Readarr.Ebooks
-			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey}
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, InsecureSkipVerify: c.InsecureSkipVerify}
 		case "audiobooks":
 			c := cfg.Readarr.Audiobooks
-			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey}
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, InsecureSkipVerify: c.InsecureSkipVerify}
 		default:
 			http.Error(w, "missing kind", http.StatusBadRequest)
 			return

@@ -76,8 +76,10 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		cur.OAuth.RedirectURL = r.FormValue("oauth_redirect")
 		cur.Readarr.Ebooks.BaseURL = r.FormValue("ra_ebooks_base")
 		cur.Readarr.Ebooks.APIKey = r.FormValue("ra_ebooks_key")
+		cur.Readarr.Ebooks.InsecureSkipVerify = r.FormValue("ra_ebooks_insecure") == "on"
 		cur.Readarr.Audiobooks.BaseURL = r.FormValue("ra_audio_base")
 		cur.Readarr.Audiobooks.APIKey = r.FormValue("ra_audio_key")
+		cur.Readarr.Audiobooks.InsecureSkipVerify = r.FormValue("ra_audio_insecure") == "on"
 		_ = s.settings.Update(&cur)
 		// Admin step satisfied if either OIDC admin email configured or a local admin user exists
 		if n, err := s.db.CountAdmins(r.Context()); err == nil && n > 0 {

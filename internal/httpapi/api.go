@@ -99,10 +99,10 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 		var inst providers.ReadarrInstance
 		if format == "audiobook" {
 			c := s.settings.Get().Readarr.Audiobooks
-			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags}
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
 		} else {
 			c := s.settings.Get().Readarr.Ebooks
-			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags}
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
 		}
 		if strings.TrimSpace(inst.BaseURL) != "" && strings.TrimSpace(inst.APIKey) != "" {
 			ra := providers.NewReadarrWithDB(inst, s.db.SQL())
@@ -223,10 +223,10 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 	var inst providers.ReadarrInstance
 	if req.Format == "audiobook" {
 		c := s.settings.Get().Readarr.Audiobooks
-		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags}
+		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
 	} else {
 		c := s.settings.Get().Readarr.Ebooks
-		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags}
+		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
 	}
 	// If Readarr not configured, approve without sending
 	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
@@ -497,10 +497,10 @@ func (s *Server) apiHydrateRequest(w http.ResponseWriter, r *http.Request) {
 	var inst providers.ReadarrInstance
 	if strings.ToLower(req.Format) == "audiobook" {
 		c := s.settings.Get().Readarr.Audiobooks
-		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags}
+		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
 	} else {
 		c := s.settings.Get().Readarr.Ebooks
-		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags}
+		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, LookupEndpoint: c.LookupEndpoint, AddEndpoint: c.AddEndpoint, AddMethod: c.AddMethod, AddPayloadTemplate: c.AddPayloadTemplate, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
 	}
 	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
 		http.Error(w, "readarr not configured", http.StatusBadRequest)

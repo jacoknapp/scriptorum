@@ -69,11 +69,14 @@ type Config struct {
 	} `yaml:"admins"`
 
 	OAuth struct {
-		Enabled      bool     `yaml:"enabled"`
-		Issuer       string   `yaml:"issuer"`
-		ClientID     string   `yaml:"client_id"`
-		ClientSecret string   `yaml:"client_secret"`
-		RedirectURL  string   `yaml:"redirect_url"`
+		Enabled      bool   `yaml:"enabled"`
+		Issuer       string `yaml:"issuer"`
+		ClientID     string `yaml:"client_id"`
+		ClientSecret string `yaml:"client_secret"`
+		RedirectURL  string `yaml:"redirect_url"`
+		// Optional overrides for provider-discovered endpoints; normally not needed.
+		AuthURL      string   `yaml:"auth_url,omitempty"`
+		TokenURL     string   `yaml:"token_url,omitempty"`
 		Scopes       []string `yaml:"scopes"`
 		AllowDomains []string `yaml:"allow_email_domains"`
 		AllowEmails  []string `yaml:"allow_emails"`
@@ -115,6 +118,8 @@ type ReadarrInstance struct {
 	DefaultQualityProfileID int      `yaml:"default_quality_profile_id"`
 	DefaultRootFolderPath   string   `yaml:"default_root_folder_path"`
 	DefaultTags             []string `yaml:"default_tags"`
+	// If true, the Readarr HTTP client will skip TLS certificate verification.
+	InsecureSkipVerify bool `yaml:"insecure_skip_verify"`
 }
 
 func Load(path string) (*Config, error) {

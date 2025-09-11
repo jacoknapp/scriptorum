@@ -1,1 +1,39 @@
+{{ define "setup/step_readarr.html" }}
+<div class="row">
+  <div class="col-md-6">
+    <div class="form-group">
+      <label for="ra_ebooks_base">Readarr (Ebooks) Base URL</label>
+      <input id="ra_ebooks_base" name="ra_ebooks_base" class="form-control" value="{{ .Readarr.Ebooks.BaseURL }}">
+    </div>
+    <div class="form-group">
+      <label for="ra_ebooks_key">API Key</label>
+      <input id="ra_ebooks_key" name="ra_ebooks_key" class="form-control" value="{{ .Readarr.Ebooks.APIKey }}">
+    </div>
+    <div class="form-group">
+      <label>
+        <input type="checkbox" name="ra_ebooks_insecure" {{ if .Readarr.Ebooks.InsecureSkipVerify }}checked{{ end }}>
+        Skip TLS verification for this Readarr instance
+      </label>
+    </div>
+  </div>
+
+  <div class="col-md-6">
+    <div class="form-group">
+      <label for="ra_audio_base">Readarr (Audiobooks) Base URL</label>
+      <input id="ra_audio_base" name="ra_audio_base" class="form-control" value="{{ .Readarr.Audiobooks.BaseURL }}">
+    </div>
+    <div class="form-group">
+      <label for="ra_audio_key">API Key</label>
+      <input id="ra_audio_key" name="ra_audio_key" class="form-control" value="{{ .Readarr.Audiobooks.APIKey }}">
+    </div>
+    <div class="form-group">
+      <label>
+        <input type="checkbox" name="ra_audio_insecure" {{ if .Readarr.Audiobooks.InsecureSkipVerify }}checked{{ end }}>
+        Skip TLS verification for this Readarr instance
+      </label>
+    </div>
+  </div>
+</div>
+
+{{ end }}
 <div class="grid gap-4"><h2 class="text-lg font-semibold">Readarr</h2><div class="grid md:grid-cols-2 gap-4"><div class="border rounded p-3"><h3 class="font-medium">eBooks</h3><form hx-post="/setup/save" hx-target="#rebooks-status" hx-swap="outerHTML" class="grid gap-2"><input name="ra_ebooks_base" placeholder="Base URL" class="border rounded px-3 py-2 w-full" value="{{.Readarr.Ebooks.BaseURL}}"><input type="password" name="ra_ebooks_key" placeholder="API Key" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{.Readarr.Ebooks.APIKey}}"><button class="px-3 py-1.5 rounded-lg bg-royal-600 text-white">Save</button></form><div class="flex items-center gap-2 mt-2"><button class="px-3 py-1.5 rounded-lg bg-royal-50 text-royal-800 ring-1 ring-royal-200 hover:bg-royal-100" hx-get="/setup/test/readarr?tag=ebooks" hx-target="#rebooks-probe" hx-swap="innerHTML">Test</button><div id="rebooks-probe" class="text-sm text-slate-600">—</div></div><div id="rebooks-status"></div></div><div class="border rounded p-3"><h3 class="font-medium">Audiobooks</h3><form hx-post="/setup/save" hx-target="#raudio-status" hx-swap="outerHTML" class="grid gap-2"><input name="ra_audio_base" placeholder="Base URL" class="border rounded px-3 py-2 w-full" value="{{.Readarr.Audiobooks.BaseURL}}"><input type="password" name="ra_audio_key" placeholder="API Key" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{.Readarr.Audiobooks.APIKey}}"><button class="px-3 py-1.5 rounded-lg bg-royal-600 text-white">Save</button></form><div class="flex items-center gap-2 mt-2"><button class="px-3 py-1.5 rounded-lg bg-royal-50 text-royal-800 ring-1 ring-royal-200 hover:bg-royal-100" hx-get="/setup/test/readarr?tag=audio" hx-target="#raudio-probe" hx-swap="innerHTML">Test</button><div id="raudio-probe" class="text-sm text-slate-600">—</div></div><div id="raudio-status"></div></div></div></div>

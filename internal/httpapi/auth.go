@@ -1,14 +1,17 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
-	"crypto/sha256"
+	"crypto/rand"
+	sha256pkg "crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -45,19 +48,58 @@ func (s *Server) initOIDC() error {
 	if !s.oidc.enabled {
 		return nil
 	}
-	p, err := oidc.NewProvider(context.Background(), s.oidc.issuer)
+	// Basic validation
+	if strings.TrimSpace(s.oidc.issuer) == "" || strings.TrimSpace(s.oidc.clientID) == "" || strings.TrimSpace(s.oidc.redirectURL) == "" {
+		fmt.Printf("OIDC disabled: missing issuer/client_id/redirect_url in config.\n")
+		s.oidc.enabled = false
+		return nil
+	}
+	// Use a discovery client with sane timeouts
+	discCtx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Timeout: 10 * time.Second})
+	p, err := oidc.NewProvider(discCtx, s.oidc.issuer)
 	if err != nil {
-		return err
+		fmt.Printf("OIDC disabled: discovery failed for issuer %s: %v\n", s.oidc.issuer, err)
+		s.oidc.enabled = false
+		return nil
 	}
 	s.oidc.provider = p
 	s.oidc.verifier = p.Verifier(&oidc.Config{ClientID: s.oidc.clientID})
+	// Build unique scopes
+	scopeMap := make(map[string]bool)
+	for _, s := range []string{"openid", "email", "profile"} {
+		scopeMap[s] = true
+	}
+	for _, s := range cfg.OAuth.Scopes {
+		scopeMap[s] = true
+	}
+	var scopes []string
+	for s := range scopeMap {
+		scopes = append(scopes, s)
+	}
+	// Use the provider endpoints as-is (some providers require trailing slashes)
+	ep := p.Endpoint()
+	// Allow explicit overrides from config if set
+	if strings.TrimSpace(cfg.OAuth.AuthURL) != "" {
+		ep.AuthURL = cfg.OAuth.AuthURL
+	}
+	if strings.TrimSpace(cfg.OAuth.TokenURL) != "" {
+		ep.TokenURL = cfg.OAuth.TokenURL
+	}
 	s.oidc.config = oauth2.Config{
 		ClientID:     s.oidc.clientID,
 		ClientSecret: s.oidc.clientSecret,
-		Endpoint:     p.Endpoint(),
+		Endpoint:     ep,
 		RedirectURL:  s.oidc.redirectURL,
-		Scopes:       append([]string{"openid", "email", "profile"}, cfg.OAuth.Scopes...),
+		Scopes:       scopes,
 	}
+	// Set client auth style: public clients must send client_id in params; confidential in header
+	if strings.TrimSpace(s.oidc.clientSecret) == "" {
+		s.oidc.config.Endpoint.AuthStyle = oauth2.AuthStyleInParams
+	} else {
+		s.oidc.config.Endpoint.AuthStyle = oauth2.AuthStyleInHeader
+	}
+	fmt.Printf("OIDC provider endpoints: auth=%s token=%s\n", ep.AuthURL, ep.TokenURL)
+	fmt.Printf("OAuth redirect URL configured: %s\n", s.oidc.redirectURL)
 	return nil
 }
 
@@ -110,7 +152,7 @@ func (s *Server) sign(b []byte) []byte {
 	// Use the server auth salt (config.Auth.Salt) as the HMAC key for session signing
 	cfg := s.settings.Get()
 	key := defaultIf(cfg.Auth.Salt, "changeme")
-	h := hmac.New(sha256.New, []byte(key))
+	h := hmac.New(sha256pkg.New, []byte(key))
 	h.Write(b)
 	return h.Sum(nil)
 }
@@ -128,9 +170,45 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		s.renderLoginForm(w, "", "")
 		return
 	}
-	state := "st"
-	url := s.oidc.config.AuthCodeURL(state)
+	// Generate a random state and PKCE verifier/challenge for this auth request.
+	state, err := randomToken(16)
+	if err != nil {
+		http.Error(w, "failed to create state", http.StatusInternalServerError)
+		return
+	}
+	verifier, challenge, err := generatePKCE()
+	if err != nil {
+		http.Error(w, "failed to create pkce", http.StatusInternalServerError)
+		return
+	}
+
+	// Store state and verifier in cookies so we can validate and send verifier on callback
+	http.SetCookie(w, &http.Cookie{Name: "oauth_state", Value: state, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	http.SetCookie(w, &http.Cookie{Name: "oauth_pkce", Value: verifier, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+
+	url := s.oidc.config.AuthCodeURL(state, oauth2.SetAuthURLParam("code_challenge", challenge), oauth2.SetAuthURLParam("code_challenge_method", "S256"))
+	fmt.Printf("OIDC auth URL: %s\n", url)
 	http.Redirect(w, r, url, http.StatusFound)
+}
+
+// randomToken returns a base64-url-encoded random token of n bytes.
+func randomToken(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// generatePKCE creates a code_verifier and its S256 code_challenge.
+func generatePKCE() (verifier string, challenge string, err error) {
+	v, err := randomToken(32)
+	if err != nil {
+		return "", "", err
+	}
+	sum := sha256pkg.Sum256([]byte(v))
+	c := base64.RawURLEncoding.EncodeToString(sum[:])
+	return v, c, nil
 }
 
 // renderLoginForm renders the local login page. If msg is non-empty it is shown above the form.
@@ -151,9 +229,85 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	code := r.URL.Query().Get("code")
-	oauth2Token, err := s.oidc.config.Exchange(r.Context(), code)
+	// Validate state to prevent CSRF
+	qstate := r.URL.Query().Get("state")
+	sc, err := r.Cookie("oauth_state")
+	if err != nil || sc.Value == "" || qstate == "" || sc.Value != qstate {
+		http.Error(w, "invalid state", http.StatusBadRequest)
+		return
+	}
+	// Read PKCE verifier from cookie (if present) and clear the cookie
+	var verifier string
+	if pc, err := r.Cookie("oauth_pkce"); err == nil && pc.Value != "" {
+		verifier = pc.Value
+		// clear cookie
+		http.SetCookie(w, &http.Cookie{Name: "oauth_pkce", Value: "", Path: "/", MaxAge: -1})
+	}
+	// clear state cookie as well
+	http.SetCookie(w, &http.Cookie{Name: "oauth_state", Value: "", Path: "/", MaxAge: -1})
+
+	// Pass code_verifier when using PKCE
+	var oauth2Token *oauth2.Token
+	opts := []oauth2.AuthCodeOption{}
+	if verifier != "" {
+		opts = append(opts, oauth2.SetAuthURLParam("code_verifier", verifier))
+	}
+	// Use an HTTP client that does not follow redirects so we can see if the provider issues a 30x
+	// (following a 302 might convert POST to GET, leading to 405 on /token endpoints)
+	ctx := r.Context()
+	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
+	// Wrap transport to log method and URL and a small peek of the body
+	base := http.DefaultTransport
+	client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		if strings.Contains(req.URL.Path, "/token") {
+			// Ensure common headers are present (some edge proxies/WAFs require them)
+			if req.Header.Get("User-Agent") == "" {
+				req.Header.Set("User-Agent", "curl/8.5.0")
+			}
+			if req.Header.Get("Accept") == "" {
+				req.Header.Set("Accept", "application/json")
+			}
+			var bodyCopy []byte
+			if req.Body != nil {
+				bodyCopy, _ = io.ReadAll(req.Body)
+				req.Body = io.NopCloser(bytes.NewReader(bodyCopy))
+			}
+			fmt.Printf("OAuth HTTP request: %s %s\n", req.Method, req.URL.String())
+			if len(bodyCopy) > 0 {
+				if len(bodyCopy) > 512 {
+					bodyCopy = bodyCopy[:512]
+				}
+				fmt.Printf("OAuth HTTP body: %s\n", string(bodyCopy))
+			}
+			if ct := req.Header.Get("Content-Type"); ct != "" {
+				fmt.Printf("OAuth HTTP content-type: %s\n", ct)
+			}
+		}
+		resp, err := base.RoundTrip(req)
+		if err == nil && resp != nil && strings.Contains(req.URL.Path, "/token") {
+			fmt.Printf("OAuth HTTP response: %s\n", resp.Status)
+			if a := resp.Header.Get("Allow"); a != "" {
+				fmt.Printf("OAuth HTTP Allow: %s\n", a)
+			}
+			if s := resp.Header.Get("Server"); s != "" {
+				fmt.Printf("OAuth HTTP Server: %s\n", s)
+			}
+		}
+		return resp, err
+	})
+	ctx = context.WithValue(ctx, oauth2.HTTPClient, client)
+	oauth2Token, err = s.oidc.config.Exchange(ctx, code, opts...)
 	if err != nil {
-		http.Error(w, "exchange: "+err.Error(), 500)
+		if re, ok := err.(*oauth2.RetrieveError); ok {
+			if re.Response != nil {
+				fmt.Printf("OIDC token exchange HTTP status: %s\n", re.Response.Status)
+				if loc := re.Response.Header.Get("Location"); loc != "" {
+					fmt.Printf("OIDC token exchange redirect location: %s\n", loc)
+				}
+			}
+			fmt.Printf("OIDC token exchange body: %s\n", string(re.Body))
+		}
+		http.Error(w, "exchange failed", http.StatusInternalServerError)
 		return
 	}
 	idToken, ok := oauth2Token.Extra("id_token").(string)
@@ -209,6 +363,8 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	s.setSession(w, sess)
 	http.Redirect(w, r, "/search", http.StatusFound)
 }
+
+// No manual token exchange; rely on oauth2 client
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: "scriptorum_session", Value: "", Path: "/", MaxAge: -1})
@@ -270,3 +426,8 @@ func (s *Server) comparePassword(hash, password, salt string) error {
 	}
 	return nil
 }
+
+// roundTripperFunc is a helper to build http.RoundTripper from a function
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

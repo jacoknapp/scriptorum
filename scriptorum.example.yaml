@@ -10,6 +10,9 @@ oauth:
   client_id: ""
   client_secret: ""
   redirect_url: "http://localhost:8080/oauth/callback"
+  # Optional overrides; normally discovery is used.
+  # auth_url: "https://your-auth.example.com/application/o/authorize/"
+  # token_url: "https://your-auth.example.com/application/o/token/"
   scopes: ["openid", "profile", "email"]
   allow_email_domains: []
   allow_emails: []
