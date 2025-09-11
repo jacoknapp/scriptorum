@@ -84,6 +84,8 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 		cur.OAuth.AllowEmails = parseCSV(r.FormValue("oauth_allow_emails"))
 		cur.OAuth.AutoCreateUsers = r.FormValue("oauth_autocreate") == "on"
 		_ = s.settings.Update(&cur)
+		// Propagate debug flag to provider packages that use package-level Debug variables
+		providers.Debug = cur.Debug
 		_ = s.initOIDC()
 		http.Redirect(w, r, "/settings", http.StatusFound)
 	}
