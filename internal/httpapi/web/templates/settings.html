@@ -33,7 +33,7 @@
 				<div class="grid md:grid-cols-2 gap-4">
 					<div class="border rounded p-3">
 						<h3 class="font-medium">eBooks</h3>
-						<input name="ra_ebooks_base" placeholder="Base URL" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.BaseURL }}">
+						<input name="ra_ebooks_base" placeholder="Base URL (include http:// or https://)" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.BaseURL }}">
 						<input type="password" name="ra_ebooks_key" placeholder="API Key" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.APIKey }}">
 						<div class="mt-2">
 							<label class="inline-flex items-center gap-2"><input type="radio" name="ra_ebooks_insecure" value="on" {{ if .Cfg.Readarr.Ebooks.InsecureSkipVerify }}checked{{ end }}> Yes</label>
@@ -51,7 +51,7 @@
 					</div>
 					<div class="border rounded p-3">
 						<h3 class="font-medium">Audiobooks</h3>
-						<input name="ra_audio_base" placeholder="Base URL" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.BaseURL }}">
+						<input name="ra_audio_base" placeholder="Base URL (include http:// or https://)" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.BaseURL }}">
 						<input type="password" name="ra_audio_key" placeholder="API Key" autocomplete="new-password" class="border rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.APIKey }}">
 						<div class="mt-2">
 							<label class="inline-flex items-center gap-2"><input type="radio" name="ra_audio_insecure" value="on" {{ if .Cfg.Readarr.Audiobooks.InsecureSkipVerify }}checked{{ end }}> Yes</label>

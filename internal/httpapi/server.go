@@ -75,6 +75,8 @@ func (s *Server) Router() http.Handler {
 
 func (s *Server) setupGate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// If the request is for the setup wizard itself, allow it when setup is needed,
+		// otherwise redirect back to root when setup already completed.
 		if strings.HasPrefix(r.URL.Path, "/setup") {
 			if !s.needsSetup() {
 				http.Redirect(w, r, "/", http.StatusFound)
@@ -83,15 +85,20 @@ func (s *Server) setupGate(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+
+		// Always allow health, static assets, oauth and auth endpoints to pass through.
 		if r.URL.Path == "/healthz" || strings.HasPrefix(r.URL.Path, "/static/") || strings.HasPrefix(r.URL.Path, "/oauth") || strings.HasPrefix(r.URL.Path, "/login") || strings.HasPrefix(r.URL.Path, "/logout") {
 			next.ServeHTTP(w, r)
 			return
 		}
-		// NOTE: Previously we forced a redirect to /setup when the app
-		// reported it needed setup. That made it impossible to visit other
-		// management pages while setup was marked incomplete. Allow normal
-		// routing to continue so admins can re-run the setup manually at
-		// /setup without being forcibly redirected there on every request.
+
+		// If setup is not completed, redirect all other requests to the setup wizard.
+		if s.needsSetup() {
+			http.Redirect(w, r, "/setup", http.StatusFound)
+			return
+		}
+
+		// Default: allow normal routing
 		next.ServeHTTP(w, r)
 	})
 }

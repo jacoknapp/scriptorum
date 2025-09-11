@@ -19,6 +19,8 @@ func (s *Server) mountSettings(r chi.Router) {
 		rt.Get("/settings", u.handleSettings(s))
 		rt.Post("/settings/save", u.handleSettingsSave(s))
 		rt.Get("/api/readarr/profiles", s.apiReadarrProfiles())
+		// Debug endpoint for admins to inspect runtime Readarr settings (API keys redacted)
+		rt.Get("/api/readarr/debug", s.apiReadarrDebug())
 	})
 }
 
@@ -128,6 +130,33 @@ func (s *Server) apiReadarrProfiles() http.HandlerFunc {
 		b, _ := json.Marshal(qps)
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write(b)
+	}
+}
+
+// apiReadarrDebug returns the effective Readarr configuration (API keys masked) so
+// admins can verify that InsecureSkipVerify and BaseURL are set as expected.
+func (s *Server) apiReadarrDebug() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cfg := s.settings.Get()
+		type inst struct {
+			BaseURL            string `json:"base_url"`
+			APIKeyMasked       string `json:"api_key_masked"`
+			InsecureSkipVerify bool   `json:"insecure_skip_verify"`
+		}
+		mask := func(k string) string {
+			if k == "" {
+				return ""
+			}
+			if len(k) <= 4 {
+				return strings.Repeat("*", len(k))
+			}
+			return k[:4] + strings.Repeat("*", len(k)-4)
+		}
+		out := map[string]any{
+			"ebooks":     inst{BaseURL: cfg.Readarr.Ebooks.BaseURL, APIKeyMasked: mask(cfg.Readarr.Ebooks.APIKey), InsecureSkipVerify: cfg.Readarr.Ebooks.InsecureSkipVerify},
+			"audiobooks": inst{BaseURL: cfg.Readarr.Audiobooks.BaseURL, APIKeyMasked: mask(cfg.Readarr.Audiobooks.APIKey), InsecureSkipVerify: cfg.Readarr.Audiobooks.InsecureSkipVerify},
+		}
+		writeJSON(w, out, http.StatusOK)
 	}
 }
 

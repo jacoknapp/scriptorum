@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"html/template"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 	"gitea.knapp/jacoknapp/scriptorum/internal/util"
@@ -95,10 +97,10 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 		var instE, instA providers.ReadarrInstance
 		if cfg != nil {
 			if strings.TrimSpace(cfg.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cfg.Readarr.Ebooks.APIKey) != "" {
-				instE = providers.ReadarrInstance{BaseURL: cfg.Readarr.Ebooks.BaseURL, APIKey: cfg.Readarr.Ebooks.APIKey, LookupEndpoint: cfg.Readarr.Ebooks.LookupEndpoint, AddEndpoint: cfg.Readarr.Ebooks.AddEndpoint, AddMethod: cfg.Readarr.Ebooks.AddMethod, AddPayloadTemplate: cfg.Readarr.Ebooks.AddPayloadTemplate, DefaultQualityProfileID: cfg.Readarr.Ebooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Ebooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Ebooks.DefaultTags}
+				instE = providers.ReadarrInstance{BaseURL: cfg.Readarr.Ebooks.BaseURL, APIKey: cfg.Readarr.Ebooks.APIKey, LookupEndpoint: cfg.Readarr.Ebooks.LookupEndpoint, AddEndpoint: cfg.Readarr.Ebooks.AddEndpoint, AddMethod: cfg.Readarr.Ebooks.AddMethod, AddPayloadTemplate: cfg.Readarr.Ebooks.AddPayloadTemplate, DefaultQualityProfileID: cfg.Readarr.Ebooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Ebooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Ebooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Ebooks.InsecureSkipVerify}
 			}
 			if strings.TrimSpace(cfg.Readarr.Audiobooks.BaseURL) != "" && strings.TrimSpace(cfg.Readarr.Audiobooks.APIKey) != "" {
-				instA = providers.ReadarrInstance{BaseURL: cfg.Readarr.Audiobooks.BaseURL, APIKey: cfg.Readarr.Audiobooks.APIKey, LookupEndpoint: cfg.Readarr.Audiobooks.LookupEndpoint, AddEndpoint: cfg.Readarr.Audiobooks.AddEndpoint, AddMethod: cfg.Readarr.Audiobooks.AddMethod, AddPayloadTemplate: cfg.Readarr.Audiobooks.AddPayloadTemplate, DefaultQualityProfileID: cfg.Readarr.Audiobooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Audiobooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Audiobooks.DefaultTags}
+				instA = providers.ReadarrInstance{BaseURL: cfg.Readarr.Audiobooks.BaseURL, APIKey: cfg.Readarr.Audiobooks.APIKey, LookupEndpoint: cfg.Readarr.Audiobooks.LookupEndpoint, AddEndpoint: cfg.Readarr.Audiobooks.AddEndpoint, AddMethod: cfg.Readarr.Audiobooks.AddMethod, AddPayloadTemplate: cfg.Readarr.Audiobooks.AddPayloadTemplate, DefaultQualityProfileID: cfg.Readarr.Audiobooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Audiobooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Audiobooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Audiobooks.InsecureSkipVerify}
 			}
 		}
 
@@ -230,6 +232,15 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 					if strings.HasPrefix(cover, "/") && strings.TrimSpace(instA.BaseURL) != "" {
 						cover = strings.TrimRight(instA.BaseURL, "/") + cover
 					}
+					// If this cover comes from the configured Readarr instance, route
+					// it through our local proxy so we can cache/stabilize the image URL.
+					if cover != "" && strings.HasPrefix(strings.TrimSpace(instA.BaseURL), "http") {
+						if u, err := url.Parse(cover); err == nil {
+							if strings.EqualFold(u.Host, urlHost(instA.BaseURL)) {
+								cover = "/ui/readarr-cover?u=" + url.QueryEscape(cover)
+							}
+						}
+					}
 					upsert(SearchItem{BookItem: providers.BookItem{Title: b.Title, Authors: []string{dispAuthor}, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-audiobook"}, false, string(cjson))
 				}
 			}
@@ -289,8 +300,26 @@ func (s *Server) serveReadarrCover() http.HandlerFunc {
 			http.Error(w, "invalid url", http.StatusBadRequest)
 			return
 		}
+		// Build HTTP client; if this URL targets a configured Readarr host that has
+		// InsecureSkipVerify enabled, use a client that skips TLS verification.
+		client := &http.Client{Timeout: 12 * time.Second}
+		cfg := s.settings.Get()
+		wantsInsecure := false
+		remoteHost := ru.Host
+		if cfg != nil {
+			if strings.EqualFold(remoteHost, urlHost(cfg.Readarr.Ebooks.BaseURL)) && cfg.Readarr.Ebooks.InsecureSkipVerify {
+				wantsInsecure = true
+			}
+			if strings.EqualFold(remoteHost, urlHost(cfg.Readarr.Audiobooks.BaseURL)) && cfg.Readarr.Audiobooks.InsecureSkipVerify {
+				wantsInsecure = true
+			}
+		}
+		if wantsInsecure && ru.Scheme == "https" {
+			tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+			client = &http.Client{Timeout: 12 * time.Second, Transport: tr}
+		}
 		// fetch remote fresh on every call
-		resp, err := http.Get(remote)
+		resp, err := client.Get(remote)
 		if err != nil {
 			http.Error(w, "fetch error", http.StatusBadGateway)
 			return
