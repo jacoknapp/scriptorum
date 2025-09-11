@@ -37,6 +37,8 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		cur := *s.settings.Get()
+		// General
+		cur.Debug = (r.FormValue("debug") == "on")
 		cur.Readarr.Ebooks.BaseURL = strings.TrimSpace(r.FormValue("ra_ebooks_base"))
 		cur.Readarr.Ebooks.APIKey = strings.TrimSpace(r.FormValue("ra_ebooks_key"))
 		cur.Readarr.Ebooks.InsecureSkipVerify = (r.FormValue("ra_ebooks_insecure") == "on")
@@ -153,6 +155,7 @@ func (s *Server) apiReadarrDebug() http.HandlerFunc {
 			return k[:4] + strings.Repeat("*", len(k)-4)
 		}
 		out := map[string]any{
+			"debug":      cfg.Debug,
 			"ebooks":     inst{BaseURL: cfg.Readarr.Ebooks.BaseURL, APIKeyMasked: mask(cfg.Readarr.Ebooks.APIKey), InsecureSkipVerify: cfg.Readarr.Ebooks.InsecureSkipVerify},
 			"audiobooks": inst{BaseURL: cfg.Readarr.Audiobooks.BaseURL, APIKeyMasked: mask(cfg.Readarr.Audiobooks.APIKey), InsecureSkipVerify: cfg.Readarr.Audiobooks.InsecureSkipVerify},
 		}

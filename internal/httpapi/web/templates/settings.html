@@ -3,6 +3,15 @@
 	<h1 class="text-xl font-semibold mb-4">Settings</h1>
 	<form method="post" action="/settings/save" class="grid gap-6">
     
+		<section>
+		<h2 class="font-semibold mb-2">General</h2>
+		<div class="border rounded p-3">
+			<label class="inline-flex items-center gap-2">
+				<input type="checkbox" name="debug" {{ if .Cfg.Debug }}checked{{ end }}> Enable debug logging
+			</label>
+			<div class="text-sm text-slate-600 ml-6">Prints verbose provider/API logs to server stdout (docker logs).</div>
+		</div>
+		</section>
 
 		<section>
 		<h2 class="font-semibold mb-2">Auth</h2>
