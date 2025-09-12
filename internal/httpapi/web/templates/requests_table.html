@@ -25,26 +25,45 @@
 			<td class="px-4 py-2">{{ .RequesterEmail }}</td>
 			<td class="px-4 py-2">{{ .Format }}</td>
 			<td class="px-4 py-2">
-				<div>{{ .Status }}</div>
+				<div class="flex items-center gap-2">
+					{{ if eq .Status "declined" }}
+					<span class="w-2 h-2 bg-red-500 rounded-full"></span>
+					{{ else if eq .Status "queued" }}
+					<span class="w-2 h-2 bg-green-500 rounded-full"></span>
+					{{ else if eq .Status "pending" }}
+					<span class="w-2 h-2 bg-yellow-500 rounded-full"></span>
+					{{ else }}
+					<span class="w-2 h-2 bg-gray-500 rounded-full"></span>
+					{{ end }}
+					<span>{{ if eq .Status "queued" }}requested{{ else }}{{ .Status }}{{ end }}</span>
+				</div>
 				{{ if .StatusReason }}
 				<div class="text-xs text-slate-400 max-w-xs truncate" title="{{ .StatusReason }}">{{ .StatusReason }}</div>
 				{{ end }}
 			</td>
 			<td class="px-4 py-2 text-right">
 				{{ if $.IsAdmin }}
-				<form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="this" hx-swap="none" style="display: inline;"
-						hx-on="htmx:responseError: this.querySelector('button').classList.add('bg-rose-600'); this.querySelector('button').textContent='Approve failed'; setTimeout(()=>{var b=this.querySelector('button'); b.textContent='Approve'; b.classList.remove('bg-rose-600');}, 2200)">
-					<button class="px-3 py-1 rounded {{ if not .ReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-500" {{ if not .ReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
-				</form>
-				{{ if not .ReadarrReq }}
-				<form hx-post="/api/v1/requests/{{ .ID }}/hydrate" hx-target="#req-table" hx-swap="innerHTML" style="display: inline; margin-left: 8px;"
-						hx-get="/ui/requests/table" hx-trigger="after-request" hx-target="#req-table" hx-swap="innerHTML">
-					<button class="px-3 py-1 rounded bg-amber-600 text-white hover:bg-amber-500" title="Attempt to attach a selection payload from Readarr">Attach selection</button>
-				</form>
-				{{ end }}
-				<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest tr" hx-swap="none" style="display: inline; margin-left: 8px;">
-					<button class="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-500">Decline</button>
-				</form>
+				<div class="flex items-center justify-end gap-2">
+					{{ if eq .Status "pending" }}
+					<form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="this" hx-swap="none"
+						  hx-on="htmx:responseError: this.querySelector('button').classList.add('bg-rose-600'); this.querySelector('button').textContent='Approve failed'; setTimeout(()=>{var b=this.querySelector('button'); b.textContent='Approve'; b.classList.remove('bg-rose-600');}, 2200)">
+						<button class="px-3 py-1 rounded {{ if not .ReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-500" {{ if not .ReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
+					</form>
+					{{ if not .ReadarrReq }}
+					<form hx-post="/api/v1/requests/{{ .ID }}/hydrate" hx-target="#req-table" hx-swap="innerHTML"
+						  hx-get="/ui/requests/table" hx-trigger="after-request" hx-target="#req-table" hx-swap="innerHTML">
+						<button class="px-3 py-1 rounded bg-amber-600 text-white hover:bg-amber-500" title="Attempt to attach a selection payload from Readarr">Attach selection</button>
+					</form>
+					{{ end }}
+					<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest tr" hx-swap="none">
+						<button class="px-3 py-1 rounded bg-orange-600 text-white hover:bg-orange-500">Decline</button>
+					</form>
+					{{ end }}
+					<form hx-delete="/api/v1/requests/{{ .ID }}" hx-target="closest tr" hx-swap="delete"
+						  hx-confirm="Are you sure you want to permanently delete this request?">
+						<button class="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-500">Delete</button>
+					</form>
+				</div>
 				{{ else }}
 				<span class="text-slate-500">-</span>
 				{{ end }}
@@ -70,13 +89,25 @@
 		<div class="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
 			<span class="px-2 py-0.5 rounded bg-night-700 ring-1 ring-white/10">{{ .RequesterEmail }}</span>
 			<span class="px-2 py-0.5 rounded bg-night-700 ring-1 ring-white/10">{{ .Format }}</span>
-			<span class="px-2 py-0.5 rounded bg-night-700 ring-1 ring-white/10">{{ .Status }}</span>
+			<span class="px-2 py-0.5 rounded bg-night-700 ring-1 ring-white/10 flex items-center gap-1">
+				{{ if eq .Status "declined" }}
+				<span class="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
+				{{ else if eq .Status "queued" }}
+				<span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+				{{ else if eq .Status "pending" }}
+				<span class="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
+				{{ else }}
+				<span class="w-1.5 h-1.5 bg-gray-500 rounded-full"></span>
+				{{ end }}
+				{{ if eq .Status "queued" }}requested{{ else }}{{ .Status }}{{ end }}
+			</span>
 		</div>
 		{{ if .StatusReason }}
 		<div class="mt-1 text-xs text-slate-400">{{ .StatusReason }}</div>
 		{{ end }}
 		<div class="mt-3 flex flex-wrap gap-2">
 			{{ if $.IsAdmin }}
+			{{ if eq .Status "pending" }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="this" hx-swap="none"
 				  hx-on="htmx:responseError: this.querySelector('button').classList.add('bg-rose-600'); this.querySelector('button').textContent='Approve failed'; setTimeout(()=>{var b=this.querySelector('button'); b.textContent='Approve'; b.classList.remove('bg-rose-600');}, 2200)">
 				<button class="px-3 py-1.5 rounded {{ if not .ReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-500" {{ if not .ReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
@@ -88,7 +119,12 @@
 			</form>
 			{{ end }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest div.rounded-xl" hx-swap="none">
-				<button class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-500">Decline</button>
+				<button class="px-3 py-1.5 rounded bg-orange-600 text-white hover:bg-orange-500">Decline</button>
+			</form>
+			{{ end }}
+			<form hx-delete="/api/v1/requests/{{ .ID }}" hx-target="closest div.rounded-xl" hx-swap="delete"
+				  hx-confirm="Are you sure you want to permanently delete this request?">
+				<button class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-500">Delete</button>
 			</form>
 			{{ else }}
 			<span class="text-slate-500">-</span>

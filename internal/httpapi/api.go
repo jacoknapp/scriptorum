@@ -33,6 +33,8 @@ func (s *Server) mountAPI(r chi.Router) {
 		rr.Post("/{id}/approve", s.requireAdmin(s.apiApproveRequest))
 		rr.Post("/{id}/hydrate", s.requireAdmin(s.apiHydrateRequest))
 		rr.Post("/{id}/decline", s.requireAdmin(s.apiDeclineRequest))
+		rr.Delete("/{id}", s.requireAdmin(s.apiDeleteRequest))
+		rr.Delete("/", s.requireAdmin(s.apiDeleteAllRequests))
 	})
 }
 
@@ -465,6 +467,26 @@ func (s *Server) apiDeclineRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	err = s.db.DeclineRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
+	if err != nil {
+		http.Error(w, "failed to decline request", 500)
+		return
+	}
+
+	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
+	writeJSON(w, map[string]string{"status": "declined"}, 200)
+}
+
+func (s *Server) apiDeleteRequest(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+
+	_, err := s.db.GetRequest(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+
 	err = s.db.DeleteRequest(r.Context(), id)
 	if err != nil {
 		http.Error(w, "failed to delete request", 500)
@@ -473,6 +495,17 @@ func (s *Server) apiDeclineRequest(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 	writeJSON(w, map[string]string{"status": "deleted"}, 200)
+}
+
+func (s *Server) apiDeleteAllRequests(w http.ResponseWriter, r *http.Request) {
+	err := s.db.DeleteAllRequests(r.Context())
+	if err != nil {
+		http.Error(w, "failed to delete all requests", 500)
+		return
+	}
+
+	w.Header().Set("HX-Trigger", `{"request:updated": {}}`)
+	writeJSON(w, map[string]string{"status": "all requests deleted"}, 200)
 }
 
 // apiHydrateRequest tries to populate the stored selection payload for a request by

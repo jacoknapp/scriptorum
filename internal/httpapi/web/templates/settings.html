@@ -78,6 +78,21 @@
 				</div>
 			</section>
 
+			<section>
+			<h2 class="font-semibold mb-2">Request Management</h2>
+			<div class="border border-white/10 rounded p-3">
+				<p class="text-sm text-slate-400 mb-3">Manage all user requests in the system.</p>
+				<button type="button" 
+						class="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-500"
+						hx-delete="/api/v1/requests"
+						hx-confirm="Are you sure you want to permanently delete ALL requests? This action cannot be undone."
+						hx-on="htmx:afterRequest: if(event.detail.successful) { alert('All requests have been deleted.'); } else { alert('Failed to delete requests.'); }">
+					Delete All Requests
+				</button>
+				<div class="text-xs text-slate-400 mt-2">This will permanently remove all requests (pending, approved, and declined) from the database.</div>
+			</div>
+			</section>
+
 			<div>
 				<button class="px-4 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500">Save</button>
 				<a class="ml-2 text-royal-300 hover:underline" href="/">Back</a>

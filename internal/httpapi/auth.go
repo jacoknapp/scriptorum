@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"html/template"
 	"io"
 	"net/http"
 	"net/url"
@@ -244,18 +245,58 @@ func (s *Server) sign(b []byte) []byte {
 }
 
 func (s *Server) mountAuth(r chi.Router) {
-	r.Get("/login", s.handleLogin)
+	funcMap := template.FuncMap{
+		"toJSON": func(v any) string { b, _ := json.Marshal(v); return string(b) },
+	}
+	authUI := struct{ tpl *template.Template }{
+		tpl: template.Must(template.New("tpl").Funcs(funcMap).ParseFS(tplFS, "web/templates/*.html")),
+	}
+
+	r.Get("/login", s.handleWelcome(authUI.tpl))
 	r.Post("/login", s.handleLocalLogin)
+	r.Get("/oauth/login", s.handleOAuthLogin)
 	r.Get("/oauth/callback", s.handleCallback)
 	r.Get("/logout", s.handleLogout)
 }
 
-func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+// handleWelcome shows the welcome page with login options
+func (s *Server) handleWelcome(tpl *template.Template) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Check if we're coming from logout (no auto-redirect to OAuth)
+		fromLogout := r.URL.Query().Get("from_logout") == "true"
+
+		// If OAuth is enabled and not coming from logout, and not forcing local login, redirect to OAuth
+		if s.oidc != nil && s.oidc.enabled && !fromLogout && r.FormValue("force_local") != "true" {
+			// Check if this is a natural visit (not from logout) - auto-redirect to OAuth
+			if r.URL.Query().Get("force_welcome") != "true" {
+				http.Redirect(w, r, "/oauth/login", http.StatusFound)
+				return
+			}
+		}
+
+		data := map[string]interface{}{
+			"OAuthEnabled": s.oidc != nil && s.oidc.enabled,
+			"LoginError":   r.URL.Query().Get("error"),
+			"Username":     r.URL.Query().Get("username"),
+			"CurrentYear":  time.Now().Year(),
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		if err := tpl.ExecuteTemplate(w, "welcome.html", data); err != nil {
+			http.Error(w, "template error", http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
+// handleOAuthLogin initiates OAuth login flow
+func (s *Server) handleOAuthLogin(w http.ResponseWriter, r *http.Request) {
 	if !s.oidc.enabled {
-		// Render a tiny login form
-		s.renderLoginForm(w, "", "")
+		// OAuth not enabled, redirect to welcome page
+		http.Redirect(w, r, "/login?error=OAuth+not+enabled", http.StatusFound)
 		return
 	}
+
 	// Generate a random state and PKCE verifier/challenge for this auth request.
 	state, err := randomToken(16)
 	if err != nil {
@@ -300,6 +341,11 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	url := s.oidc.config.AuthCodeURL(state, oauth2.SetAuthURLParam("code_challenge", challenge), oauth2.SetAuthURLParam("code_challenge_method", "S256"))
 	fmt.Printf("OIDC auth URL: %s\n", url)
 	http.Redirect(w, r, url, http.StatusFound)
+}
+
+func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
+	// This is the old handler - keeping for compatibility but it should redirect to welcome
+	http.Redirect(w, r, "/login?force_welcome=true", http.StatusFound)
 }
 
 // randomToken returns a base64-url-encoded random token of n bytes.
@@ -600,8 +646,18 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 // No manual token exchange; rely on oauth2 client
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: "scriptorum_session", Value: "", Path: "/", MaxAge: -1})
-	http.Redirect(w, r, "/login", http.StatusFound)
+	// Clear the main session cookie
+	sessionCookieName := "scriptorum_session"
+	if s.oidc != nil && s.oidc.cookieName != "" {
+		sessionCookieName = s.oidc.cookieName
+	}
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1})
+
+	// Clear OAuth-related cookies
+	http.SetCookie(w, &http.Cookie{Name: "oauth_state", Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: "oauth_pkce", Value: "", Path: "/", MaxAge: -1})
+
+	http.Redirect(w, r, "/login?from_logout=true", http.StatusFound)
 }
 
 func (s *Server) isAdminUsername(u string) bool {
@@ -615,24 +671,28 @@ func (s *Server) isAdminUsername(u string) bool {
 
 // Local auth
 func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
-	if s.oidc != nil && s.oidc.enabled {
-		http.Redirect(w, r, "/login", http.StatusFound)
+	// Check if we're forcing local login or if OAuth is disabled
+	forceLocal := r.FormValue("force_local") == "true"
+	if s.oidc != nil && s.oidc.enabled && !forceLocal {
+		// OAuth is enabled and not forcing local - redirect to welcome page
+		http.Redirect(w, r, "/login?force_welcome=true", http.StatusFound)
 		return
 	}
+
 	_ = r.ParseForm()
 	username := strings.TrimSpace(r.FormValue("username"))
 	password := r.FormValue("password")
 	if username == "" || password == "" {
-		s.renderLoginForm(w, username, "invalid information")
+		http.Redirect(w, r, "/login?error=Invalid+credentials&username="+url.QueryEscape(username)+"&force_welcome=true", http.StatusFound)
 		return
 	}
 	u, err := s.db.GetUserByUsername(r.Context(), username)
 	if err != nil {
-		s.renderLoginForm(w, username, "invalid information")
+		http.Redirect(w, r, "/login?error=Invalid+credentials&username="+url.QueryEscape(username)+"&force_welcome=true", http.StatusFound)
 		return
 	}
 	if err := s.comparePassword(u.Hash, password, s.settings.Get().Auth.Salt); err != nil {
-		s.renderLoginForm(w, username, "invalid information")
+		http.Redirect(w, r, "/login?error=Invalid+credentials&username="+url.QueryEscape(username)+"&force_welcome=true", http.StatusFound)
 		return
 	}
 

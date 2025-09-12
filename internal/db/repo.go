@@ -169,6 +169,22 @@ func (d *DB) DeleteRequest(ctx context.Context, id int64) error {
 	return err
 }
 
+func (d *DB) DeclineRequest(ctx context.Context, id int64, actor string) error {
+	now := time.Now().UTC()
+	_, err := d.sql.ExecContext(ctx, `
+UPDATE requests
+SET status='declined', status_reason='declined by admin', approver_email=?, updated_at=?
+WHERE id=?`,
+		strings.ToLower(actor), now.Format(time.RFC3339Nano), id,
+	)
+	return err
+}
+
+func (d *DB) DeleteAllRequests(ctx context.Context) error {
+	_, err := d.sql.ExecContext(ctx, `DELETE FROM requests`)
+	return err
+}
+
 func (d *DB) AddAudit(ctx context.Context, actor, event string, reqID int64, details string) error {
 	now := time.Now().UTC()
 	return d.Exec(ctx, `
