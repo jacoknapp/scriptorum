@@ -27,6 +27,29 @@
 	<link rel="manifest" href="/static/site.webmanifest" />
 	<meta name="theme-color" content="#0b0b13" />
 	<style>html,body{height:100%;}</style>
+	{{if .AutoRedirect}}
+	<script>
+		{{if .Debug}}
+		console.log('AutoRedirect is true, will redirect in 1 second');
+		{{end}}
+		// Wait 1 second then redirect to OAuth for proper URL loading in social media
+		setTimeout(function() {
+			{{if .Debug}}
+			console.log('Redirecting to OAuth...');
+			{{end}}
+			window.location.href = '/oauth/login';
+		}, 1000);
+	</script>
+	{{else}}
+	{{if .Debug}}
+	<script>
+		console.log('AutoRedirect is false');
+		console.log('OAuthEnabled: {{.OAuthEnabled}}');
+		console.log('FromLogout: {{.FromLogout}}');
+		console.log('ForceLocal: {{.ForceLocal}}');
+	</script>
+	{{end}}
+	{{end}}
 </head>
 <body class="min-h-screen bg-night-900 text-slate-100">
 <div class="min-h-screen bg-gradient-to-br from-night-900 via-surface-100 to-night-800 flex items-center justify-center px-4">

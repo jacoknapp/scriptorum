@@ -273,21 +273,17 @@ func (s *Server) handleWelcome(tpl *template.Template) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Check if we're coming from logout (no auto-redirect to OAuth)
 		fromLogout := r.URL.Query().Get("from_logout") == "true"
-
-		// If OAuth is enabled and not coming from logout, and not forcing local login, redirect to OAuth
-		if s.oidc != nil && s.oidc.enabled && !fromLogout && r.FormValue("force_local") != "true" {
-			// Check if this is a natural visit (not from logout) - auto-redirect to OAuth
-			if r.URL.Query().Get("force_welcome") != "true" {
-				http.Redirect(w, r, "/oauth/login", http.StatusFound)
-				return
-			}
-		}
+		forceLocal := r.FormValue("force_local") == "true"
 
 		data := map[string]interface{}{
 			"OAuthEnabled": s.oidc != nil && s.oidc.enabled,
 			"LoginError":   r.URL.Query().Get("error"),
 			"Username":     r.URL.Query().Get("username"),
 			"CurrentYear":  time.Now().Year(),
+			"FromLogout":   fromLogout,
+			"ForceLocal":   forceLocal,
+			"AutoRedirect": s.oidc != nil && s.oidc.enabled && !fromLogout && !forceLocal,
+			"Debug":        s.cfg.Debug,
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -348,7 +344,9 @@ func (s *Server) handleOAuthLogin(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, pkceCookie)
 
 	url := s.oidc.config.AuthCodeURL(state, oauth2.SetAuthURLParam("code_challenge", challenge), oauth2.SetAuthURLParam("code_challenge_method", "S256"))
-	fmt.Printf("OIDC auth URL: %s\n", url)
+	if s.cfg.Debug {
+		fmt.Printf("OIDC auth URL: %s\n", url)
+	}
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
