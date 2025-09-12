@@ -97,10 +97,10 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 		var instE, instA providers.ReadarrInstance
 		if cfg != nil {
 			if strings.TrimSpace(cfg.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cfg.Readarr.Ebooks.APIKey) != "" {
-				instE = providers.ReadarrInstance{BaseURL: cfg.Readarr.Ebooks.BaseURL, APIKey: cfg.Readarr.Ebooks.APIKey, LookupEndpoint: cfg.Readarr.Ebooks.LookupEndpoint, AddEndpoint: cfg.Readarr.Ebooks.AddEndpoint, AddMethod: cfg.Readarr.Ebooks.AddMethod, AddPayloadTemplate: cfg.Readarr.Ebooks.AddPayloadTemplate, DefaultQualityProfileID: cfg.Readarr.Ebooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Ebooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Ebooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Ebooks.InsecureSkipVerify}
+				instE = providers.ReadarrInstance{BaseURL: cfg.Readarr.Ebooks.BaseURL, APIKey: cfg.Readarr.Ebooks.APIKey, DefaultQualityProfileID: cfg.Readarr.Ebooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Ebooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Ebooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Ebooks.InsecureSkipVerify}
 			}
 			if strings.TrimSpace(cfg.Readarr.Audiobooks.BaseURL) != "" && strings.TrimSpace(cfg.Readarr.Audiobooks.APIKey) != "" {
-				instA = providers.ReadarrInstance{BaseURL: cfg.Readarr.Audiobooks.BaseURL, APIKey: cfg.Readarr.Audiobooks.APIKey, LookupEndpoint: cfg.Readarr.Audiobooks.LookupEndpoint, AddEndpoint: cfg.Readarr.Audiobooks.AddEndpoint, AddMethod: cfg.Readarr.Audiobooks.AddMethod, AddPayloadTemplate: cfg.Readarr.Audiobooks.AddPayloadTemplate, DefaultQualityProfileID: cfg.Readarr.Audiobooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Audiobooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Audiobooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Audiobooks.InsecureSkipVerify}
+				instA = providers.ReadarrInstance{BaseURL: cfg.Readarr.Audiobooks.BaseURL, APIKey: cfg.Readarr.Audiobooks.APIKey, DefaultQualityProfileID: cfg.Readarr.Audiobooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Audiobooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Audiobooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Audiobooks.InsecureSkipVerify}
 			}
 		}
 

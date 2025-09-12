@@ -54,7 +54,7 @@ func defaultConfig(dbPath string) *config.Config {
 
 	// Mirror data/scriptorum.yaml defaults
 	c.Debug = false
-	c.HTTP.Listen = ":8080"
+	c.HTTP.Listen = ":8491"
 	c.DB.Path = dbPath
 	// Mark setup as not completed so the initial-run setup wizard is shown
 	// when the application creates the default config for the first time.
@@ -98,15 +98,6 @@ func defaultConfig(dbPath string) *config.Config {
 	c.Readarr.Audiobooks.DefaultQualityProfileID = 2
 	c.Readarr.Audiobooks.DefaultRootFolderPath = "/books/audiobooks"
 	c.Readarr.Audiobooks.DefaultTags = []string{}
-
-	// Automations (match your YAML)
-	c.Automations.PreferISBN13 = false
-	c.Automations.AutoSearchForMissing = false
-	c.Automations.TagRequester = false
-	c.Automations.CreateAuthorIfMissing = false
-	c.Automations.SeriesLinking = false
-	c.Automations.RequireApproval = false
-	c.Automations.AutoCompleteOnImport = false
 
 	return c
 }

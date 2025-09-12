@@ -19,6 +19,49 @@ import (
 	"gitea.knapp/jacoknapp/scriptorum/internal/util"
 )
 
+const (
+	readarrLookupEndpoint     = "/api/v1/book/lookup"
+	readarrAddEndpoint        = "/api/v1/book"
+	readarrAddMethod          = "POST"
+	readarrAddPayloadTemplate = `{
+				"id": {{ if (index .Candidate "id") }}{{ toJSON (index .Candidate "id") }}{{ else }}0{{ end }},
+				"title": {{ toJSON (index .Candidate "title") }},
+				"authorTitle": {{ toJSON (index .Candidate "authorTitle") }},
+				"seriesTitle": {{ toJSON (index .Candidate "seriesTitle") }},
+				"disambiguation": {{ toJSON (index .Candidate "disambiguation") }},
+				"overview": {{ toJSON (index .Candidate "overview") }},
+				"authorId": {{ toJSON (index .Candidate "authorId") }},
+				"foreignBookId": {{ toJSON (index .Candidate "foreignBookId") }},
+				"foreignEditionId": {{ toJSON (index .Candidate "foreignEditionId") }},
+				"titleSlug": {{ toJSON (index .Candidate "titleSlug") }},
+				"monitored": {{ if (index .Candidate "monitored") }}{{ toJSON (index .Candidate "monitored") }}{{ else }}true{{ end }},
+				"anyEditionOk": {{ if (index .Candidate "anyEditionOk") }}{{ toJSON (index .Candidate "anyEditionOk") }}{{ else }}true{{ end }},
+				"ratings": {{ if (index .Candidate "ratings") }}{{ toJSON (index .Candidate "ratings") }}{{ else }}{"votes":0,"value":0}{{ end }},
+				"releaseDate": {{ toJSON (index .Candidate "releaseDate") }},
+				"pageCount": {{ if (index .Candidate "pageCount") }}{{ toJSON (index .Candidate "pageCount") }}{{ else }}0{{ end }},
+				"genres": {{ if (index .Candidate "genres") }}{{ toJSON (index .Candidate "genres") }}{{ else }}[]{{ end }},
+				"author": {{ toJSON (index .Candidate "author") }},
+				"images": {{ if (index .Candidate "images") }}{{ toJSON (index .Candidate "images") }}{{ else }}[]{{ end }},
+				"links": {{ if (index .Candidate "links") }}{{ toJSON (index .Candidate "links") }}{{ else }}[]{{ end }},
+				"statistics": {{ if (index .Candidate "statistics") }}{{ toJSON (index .Candidate "statistics") }}{{ else }}{"bookFileCount":0,"bookCount":0,"totalBookCount":0,"sizeOnDisk":0}{{ end }},
+				"added": {{ toJSON (index .Candidate "added") }},
+				"addOptions": {
+					"addType": {{ if (index (index .Candidate "addOptions") "addType") }}{{ toJSON (index (index .Candidate "addOptions") "addType") }}{{ else }}"automatic"{{ end }},
+					"searchForNewBook": {{ if (index (index .Candidate "addOptions") "searchForNewBook") }}{{ toJSON (index (index .Candidate "addOptions") "searchForNewBook") }}{{ else }}true{{ end }},
+					"monitor": "all",
+					"monitored": true,
+					"booksToMonitor": [],
+					"searchForMissingBooks": {{ if .Opts.SearchForMissing }}true{{ else }}false{{ end }}
+				},
+				"remoteCover": {{ toJSON (index .Candidate "remoteCover") }},
+				"lastSearchTime": {{ toJSON (index .Candidate "lastSearchTime") }},
+				"editions": {{ if (index .Candidate "editions") }}{{ toJSON (index .Candidate "editions") }}{{ else }}[]{{ end }},
+				"qualityProfileId": {{ if .Opts.QualityProfileID }}{{ .Opts.QualityProfileID }}{{ else }}{{ .Inst.DefaultQualityProfileID }}{{ end }},
+				"rootFolderPath": "{{ .Opts.RootFolderPath }}",
+				"tags": {{ toJSON .Opts.Tags }}
+			}`
+)
+
 const apiVersionPrefix = "/api/v1"
 
 type LookupBook struct {
@@ -48,10 +91,6 @@ type LookupBook struct {
 type ReadarrInstance struct {
 	BaseURL                 string
 	APIKey                  string
-	LookupEndpoint          string
-	AddEndpoint             string
-	AddMethod               string
-	AddPayloadTemplate      string
 	DefaultQualityProfileID int
 	DefaultRootFolderPath   string
 	DefaultTags             []string
@@ -465,21 +504,12 @@ func normalize(i ReadarrInstance) ReadarrInstance {
 		i.BaseURL = "http://" + i.BaseURL
 	}
 	i.BaseURL = strings.TrimRight(i.BaseURL, "/")
-	if !strings.Contains(i.LookupEndpoint, apiVersionPrefix) {
-		i.LookupEndpoint = apiVersionPrefix + "/book/lookup"
-	}
-	if !strings.Contains(i.AddEndpoint, apiVersionPrefix) {
-		i.AddEndpoint = apiVersionPrefix + "/book"
-	}
-	if strings.TrimSpace(i.AddMethod) == "" {
-		i.AddMethod = http.MethodPost
-	}
 	return i
 }
 
 func (r *Readarr) PingLookup(ctx context.Context) error {
 	// Include apikey in query to be resilient to proxies that strip X-Api-Key
-	u := r.inst.BaseURL + r.inst.LookupEndpoint + "?term=" + url.QueryEscape("test") + "&apikey=" + url.QueryEscape(r.inst.APIKey)
+	u := r.inst.BaseURL + readarrLookupEndpoint + "?term=" + url.QueryEscape("test") + "&apikey=" + url.QueryEscape(r.inst.APIKey)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	req.Header.Set("X-Api-Key", r.inst.APIKey)
 	req.Header.Set("User-Agent", "Scriptorum/1.0")
@@ -635,7 +665,7 @@ func (r *Readarr) ImportAuthor(ctx context.Context, foreignID string) (int, erro
 func (r *Readarr) AddBook(ctx context.Context, candidate Candidate, opts AddOpts) ([]byte, []byte, error) {
 	tpl, err := template.New("payload").Funcs(template.FuncMap{
 		"toJSON": func(v any) string { b, _ := json.Marshal(v); return string(b) },
-	}).Parse(r.inst.AddPayloadTemplate)
+	}).Parse(readarrAddPayloadTemplate)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -655,14 +685,14 @@ func (r *Readarr) AddBook(ctx context.Context, candidate Candidate, opts AddOpts
 		}
 	}
 	// Include apikey in query to be resilient to proxies that strip X-Api-Key
-	u := r.inst.BaseURL + r.inst.AddEndpoint
+	u := r.inst.BaseURL + readarrAddEndpoint
 	// Ensure includeAllAuthorBooks=false so Readarr doesn't return unrelated author books
 	if strings.Contains(u, "?") {
 		u += "&includeAllAuthorBooks=false&apikey=" + url.QueryEscape(r.inst.APIKey)
 	} else {
 		u += "?includeAllAuthorBooks=false&apikey=" + url.QueryEscape(r.inst.APIKey)
 	}
-	req, _ := http.NewRequestWithContext(ctx, r.inst.AddMethod, u, bytes.NewReader(payload))
+	req, _ := http.NewRequestWithContext(ctx, readarrAddMethod, u, bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Api-Key", r.inst.APIKey)
 	req.Header.Set("User-Agent", "Scriptorum/1.0")
@@ -699,13 +729,13 @@ func (r *Readarr) AddBookRaw(ctx context.Context, raw json.RawMessage) ([]byte, 
 		}
 	}
 
-	u := r.inst.BaseURL + r.inst.AddEndpoint
+	u := r.inst.BaseURL + readarrAddEndpoint
 	if strings.Contains(u, "?") {
 		u += "&apikey=" + url.QueryEscape(r.inst.APIKey)
 	} else {
 		u += "?apikey=" + url.QueryEscape(r.inst.APIKey)
 	}
-	req, _ := http.NewRequestWithContext(ctx, r.inst.AddMethod, u, bytes.NewReader(payload))
+	req, _ := http.NewRequestWithContext(ctx, readarrAddMethod, u, bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Api-Key", r.inst.APIKey)
 	req.Header.Set("User-Agent", "Scriptorum/1.0")
@@ -732,7 +762,7 @@ func (r *Readarr) AddBookRaw(ctx context.Context, raw json.RawMessage) ([]byte, 
 // existing book when the payload matches an already-added entity. Returns the
 // Readarr book id when found and the raw response body.
 func (r *Readarr) GetBookByAddPayload(ctx context.Context, payload []byte) (int, []byte, error) {
-	u := r.inst.BaseURL + r.inst.AddEndpoint
+	u := r.inst.BaseURL + readarrAddEndpoint
 	// Ensure includeAllAuthorBooks=false so Readarr doesn't return unrelated author books
 	if strings.Contains(u, "?") {
 		u += "&includeAllAuthorBooks=false&apikey=" + url.QueryEscape(r.inst.APIKey)
@@ -899,7 +929,7 @@ func (r *Readarr) LookupByTerm(ctx context.Context, term string) ([]LookupBook, 
 	}
 
 	// Include apikey in query to be resilient to proxies that strip X-Api-Key
-	u := r.inst.BaseURL + r.inst.LookupEndpoint + "?term=" + url.QueryEscape(term) + "&apikey=" + url.QueryEscape(r.inst.APIKey)
+	u := r.inst.BaseURL + readarrLookupEndpoint + "?term=" + url.QueryEscape(term) + "&apikey=" + url.QueryEscape(r.inst.APIKey)
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	req.Header.Set("X-Api-Key", r.inst.APIKey)
 	req.Header.Set("User-Agent", "Scriptorum/1.0")

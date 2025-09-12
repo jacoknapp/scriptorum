@@ -26,25 +26,15 @@ readarr:
   ebooks:
     base_url: "http://readarr-ebooks:8787"
     api_key: ""
-    lookup_endpoint: "/api/v1/book/lookup"
     default_quality_profile_id: 1
     default_root_folder_path: "/books/ebooks"
-  default_tags: []
+    default_tags: []
   audiobooks:
     base_url: "http://readarr-audio:8787"
     api_key: ""
-    lookup_endpoint: "/api/v1/book/lookup"
     default_quality_profile_id: 2
     default_root_folder_path: "/books/audiobooks"
-  default_tags: ["audiobook"]
+    default_tags: ["audiobook"]
 admins:
     usernames:
         - admin
-automations:
-  prefer_isbn13: true
-  auto_search_for_missing: true
-  tag_requester: true
-  create_author_if_missing: false
-  series_linking: false
-  require_approval: false
-  auto_complete_on_import: false

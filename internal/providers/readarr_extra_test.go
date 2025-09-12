@@ -10,8 +10,9 @@ import (
 
 func TestReadarrNormalizeDefaults(t *testing.T) {
 	r := NewReadarr(ReadarrInstance{BaseURL: "http://r"})
-	if !strings.Contains(r.inst.LookupEndpoint, "/api/v1/") || !strings.Contains(r.inst.AddEndpoint, "/api/v1/") {
-		t.Fatalf("endpoints not normalized: %s %s", r.inst.LookupEndpoint, r.inst.AddEndpoint)
+	// Test that the base URL is normalized correctly
+	if r.inst.BaseURL != "http://r" {
+		t.Fatalf("base URL not normalized correctly: %s", r.inst.BaseURL)
 	}
 }
 

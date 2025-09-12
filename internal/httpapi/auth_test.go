@@ -36,7 +36,7 @@ func TestLocalLoginFormWhenOAuthDisabled(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/login", nil)
 	rec := httptest.NewRecorder()
 	s.Router().ServeHTTP(rec, req)
-	if rec.Code != 200 || !strings.Contains(rec.Body.String(), "Login") {
+	if rec.Code != 200 || (!strings.Contains(rec.Body.String(), "Welcome to") && !strings.Contains(rec.Body.String(), "Username")) {
 		t.Fatalf("expected local login page, got code=%d body=%q", rec.Code, rec.Body.String())
 	}
 }
