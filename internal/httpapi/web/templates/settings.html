@@ -45,12 +45,12 @@
 						<h3 class="font-medium">eBooks</h3>
 						<input name="ra_ebooks_base" placeholder="Base URL (include http:// or https://)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.BaseURL }}">
 						<input type="password" name="ra_ebooks_key" placeholder="API Key" autocomplete="new-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.APIKey }}">
-						<div class="mt-2">
-							<label class="inline-flex items-center gap-2"><input type="radio" name="ra_ebooks_insecure" value="on" {{ if .Cfg.Readarr.Ebooks.InsecureSkipVerify }}checked{{ end }}> Yes</label>
-							<label class="inline-flex items-center gap-2 ml-3"><input type="radio" name="ra_ebooks_insecure" value="off" {{ if not .Cfg.Readarr.Ebooks.InsecureSkipVerify }}checked{{ end }}> No</label>
-							<div class="text-sm text-slate-400 ml-2">Skip TLS verification (trust self-signed cert)</div>
+						<div class="mt-2 flex items-center flex-wrap gap-x-4 gap-y-1">
+							<label class="inline-flex items-center gap-2 text-white"><input type="radio" name="ra_ebooks_insecure" value="on" {{ if .Cfg.Readarr.Ebooks.InsecureSkipVerify }}checked{{ end }}> Yes</label>
+							<label class="inline-flex items-center gap-2 text-white"><input type="radio" name="ra_ebooks_insecure" value="off" {{ if not .Cfg.Readarr.Ebooks.InsecureSkipVerify }}checked{{ end }}> No</label>
+							<span class="text-sm text-white">Skip TLS verification (trust self-signed cert)</span>
 						</div>
-						<label class="block mt-2 text-sm text-slate-400">Quality Profile</label>
+						<label class="block mt-2 text-sm text-white">Quality Profile</label>
 						<select id="ra_ebooks_qp" name="ra_ebooks_qp" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" data-server-default="{{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }}">
 							<option value="">(server: {{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }})</option>
 						</select>
@@ -63,12 +63,12 @@
 						<h3 class="font-medium">Audiobooks</h3>
 						<input name="ra_audio_base" placeholder="Base URL (include http:// or https://)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.BaseURL }}">
 						<input type="password" name="ra_audio_key" placeholder="API Key" autocomplete="new-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.APIKey }}">
-						<div class="mt-2">
-							<label class="inline-flex items-center gap-2"><input type="radio" name="ra_audio_insecure" value="on" {{ if .Cfg.Readarr.Audiobooks.InsecureSkipVerify }}checked{{ end }}> Yes</label>
-							<label class="inline-flex items-center gap-2 ml-3"><input type="radio" name="ra_audio_insecure" value="off" {{ if not .Cfg.Readarr.Audiobooks.InsecureSkipVerify }}checked{{ end }}> No</label>
-							<div class="text-sm text-slate-400 ml-2">Skip TLS verification (trust self-signed cert)</div>
+						<div class="mt-2 flex items-center flex-wrap gap-x-4 gap-y-1">
+							<label class="inline-flex items-center gap-2 text-white"><input type="radio" name="ra_audio_insecure" value="on" {{ if .Cfg.Readarr.Audiobooks.InsecureSkipVerify }}checked{{ end }}> Yes</label>
+							<label class="inline-flex items-center gap-2 text-white"><input type="radio" name="ra_audio_insecure" value="off" {{ if not .Cfg.Readarr.Audiobooks.InsecureSkipVerify }}checked{{ end }}> No</label>
+							<span class="text-sm text-white">Skip TLS verification (trust self-signed cert)</span>
 						</div>
-						<label class="block mt-2 text-sm text-slate-400">Quality Profile</label>
+						<label class="block mt-2 text-sm text-white">Quality Profile</label>
 						<select id="ra_audio_qp" name="ra_audio_qp" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" data-server-default="{{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }}">
 							<option value="">(server: {{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }})</option>
 						</select>
