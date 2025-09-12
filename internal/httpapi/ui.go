@@ -26,21 +26,16 @@ func (s *Server) mountUI(r chi.Router) {
 		})
 		rt.Get("/dashboard", s.requireLogin(u.handleDashboard(s)))
 		rt.Get("/search", s.requireLogin(u.handleHome(s)))
-		rt.Get("/requests", s.requireLogin(func(w http.ResponseWriter, r *http.Request) {
-			ses, _ := r.Context().Value(ctxUser).(*session)
-			mine := ""
-			if ses == nil || !ses.Admin {
-				mine = s.userEmail(r)
-			}
-			items, _ := s.db.ListRequests(r.Context(), mine, 200)
-			fallbackAll := false
-			if len(items) == 0 {
-				items, _ = s.db.ListRequests(r.Context(), "", 200)
-				fallbackAll = mine != ""
-			}
-			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": fallbackAll}
-			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
-		}))
+		r.Get("/", s.requireLogin(func(w http.ResponseWriter, r *http.Request) {
+		ses := r.Context().Value(ctxUser).(*session)
+		mine := ""
+		if ses == nil || !ses.Admin {
+			mine = s.userEmail(r)
+		}
+		items, _ := s.db.ListRequests(r.Context(), mine, 200)
+		data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": false}
+		_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
+	}))
 		rt.HandleFunc("/users", s.requireAdmin(u.handleUsers(s)))
 	})
 	r.Get("/ui/requests/table", s.requireLogin(u.handleRequestsTable(s)))
@@ -50,6 +45,27 @@ func (s *Server) mountUI(r chi.Router) {
 			if id := r.URL.Query().Get("id"); id != "" {
 				if n, err := strconv.ParseInt(id, 10, 64); err == nil {
 					_ = s.db.DeleteUser(r.Context(), n)
+				}
+			}
+			http.Redirect(w, r, "/users", http.StatusFound)
+		})
+		rt.Post("/users/edit", func(w http.ResponseWriter, r *http.Request) {
+			_ = r.ParseForm()
+			idStr := r.FormValue("user_id")
+			password := r.FormValue("password")
+			confirmPassword := r.FormValue("confirm_password")
+			admin := r.FormValue("is_admin") == "on"
+
+			if idStr != "" {
+				if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
+					// Update admin status
+					_ = s.db.SetUserAdmin(r.Context(), id, admin)
+					
+					// Update password if provided and confirmed
+					if password != "" && password == confirmPassword {
+						hash, _ := s.hashPassword(password, s.settings.Get().Auth.Salt)
+						_ = s.db.UpdateUserPassword(r.Context(), id, hash)
+					}
 				}
 			}
 			http.Redirect(w, r, "/users", http.StatusFound)
@@ -100,12 +116,7 @@ func (u *ui) handleRequestsTable(s *Server) http.HandlerFunc {
 			mine = s.userEmail(r)
 		}
 		items, _ := s.db.ListRequests(r.Context(), mine, 200)
-		fallbackAll := false
-		if len(items) == 0 {
-			items, _ = s.db.ListRequests(r.Context(), "", 200)
-			fallbackAll = mine != ""
-		}
-		data := map[string]any{"Items": items, "IsAdmin": ses != nil && ses.Admin, "FallbackAll": fallbackAll}
+		data := map[string]any{"Items": items, "IsAdmin": ses != nil && ses.Admin, "FallbackAll": false}
 		_ = u.tpl.ExecuteTemplate(w, "requests_table", data)
 	}
 }

@@ -11,7 +11,7 @@
 				<th class="text-left p-2">ID</th>
 				<th class="text-left p-2">Username</th>
 				<th class="text-left p-2">Admin</th>
-				<th class="text-left p-2"></th>
+				<th class="text-left p-2">Actions</th>
 			</tr>
 		</thead>
 		<tbody>
@@ -21,9 +21,8 @@
 				<td class="p-2">{{ .Username }}</td>
 				<td class="p-2">{{ if .IsAdmin }}yes{{ else }}no{{ end }}</td>
 				<td class="p-2">
-					<a class="text-royal-300 hover:underline" href="/users/delete?id={{ .ID }}">Delete</a>
-					·
-					<a class="text-royal-300 hover:underline" href="/users/toggle?id={{ .ID }}">Toggle Admin</a>
+					<button onclick="openEditModal({{ .ID }}, '{{ .Username }}', {{ .IsAdmin }})" class="text-blue-400 hover:text-blue-300 mr-2">Edit</button>
+					<button onclick="openDeleteModal({{ .ID }}, '{{ .Username }}')" class="text-red-400 hover:text-red-300">Delete</button>
 				</td>
 			</tr>
 			{{ else }}
@@ -73,8 +72,86 @@
 		</div>
 	</div>
 
+	<!-- Modal: Edit User -->
+	<div id="editUserModal" class="hidden fixed inset-0 z-40 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="editUserTitle">
+		<!-- overlay -->
+		<div id="editUserOverlay" class="absolute inset-0 bg-black opacity-60"></div>
+
+		<!-- dialog -->
+		<div class="relative bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6 max-w-md w-full z-10">
+			<div class="flex items-center justify-between mb-4">
+				<h2 id="editUserTitle" class="text-lg font-semibold">Edit User</h2>
+				<button id="closeEditUser" aria-label="Close" class="text-slate-400 hover:text-slate-200">✕</button>
+			</div>
+
+			<form method="post" action="/users/edit" class="grid gap-3">
+				<input type="hidden" name="user_id" id="editUserId">
+				<div>
+					<label class="block text-sm font-medium mb-1">Username</label>
+					<div id="editUserName" class="px-3 py-2 bg-night-900 border border-white/10 rounded text-slate-300"></div>
+				</div>
+				<label class="grid gap-1">
+					<span>New Password (leave blank to keep current)</span>
+					<input type="password" name="password" id="editUserPassword" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2">
+				</label>
+				<label class="grid gap-1">
+					<span>Confirm New Password</span>
+					<input type="password" name="confirm_password" id="editUserConfirmPassword" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2">
+				</label>
+				<label class="inline-flex items-center gap-2">
+					<input type="checkbox" name="is_admin" id="editUserAdmin">
+					<span>Admin</span>
+				</label>
+				<div class="flex items-center justify-end gap-2 mt-2">
+					<button type="button" id="cancelEditUser" class="px-3 py-2 rounded border border-white/10 bg-night-900">Cancel</button>
+					<button class="px-4 py-2 rounded bg-blue-600 hover:bg-blue-500 text-white">Update User</button>
+				</div>
+			</form>
+		</div>
+	</div>
+
+	<!-- Modal: Delete User Confirmation -->
+	<div id="deleteUserModal" class="hidden fixed inset-0 z-40 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="deleteUserTitle">
+		<!-- overlay -->
+		<div id="deleteUserOverlay" class="absolute inset-0 bg-black opacity-60"></div>
+
+		<!-- dialog -->
+		<div class="relative bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6 max-w-md w-full z-10">
+			<div class="flex items-center justify-between mb-4">
+				<h2 id="deleteUserTitle" class="text-lg font-semibold">Delete User</h2>
+				<button id="closeDeleteUser" aria-label="Close" class="text-slate-400 hover:text-slate-200">✕</button>
+			</div>
+
+			<div class="mb-4">
+				<p>Are you sure you want to delete the user <strong id="deleteUserName"></strong>?</p>
+				<p class="text-sm text-slate-400 mt-2">This action cannot be undone.</p>
+			</div>
+
+			<div class="flex items-center justify-end gap-2">
+				<button type="button" id="cancelDeleteUser" class="px-3 py-2 rounded border border-white/10 bg-night-900">Cancel</button>
+				<a id="confirmDeleteUser" href="#" class="px-4 py-2 rounded bg-red-600 hover:bg-red-500 text-white">Delete User</a>
+			</div>
+		</div>
+	</div>
+
 	<script>
-	// Modal open/close logic
+	// Global modal functions
+	function openEditModal(userId, username, isAdmin) {
+		document.getElementById('editUserId').value = userId;
+		document.getElementById('editUserName').textContent = username;
+		document.getElementById('editUserAdmin').checked = isAdmin;
+		document.getElementById('editUserPassword').value = '';
+		document.getElementById('editUserConfirmPassword').value = '';
+		document.getElementById('editUserModal').classList.remove('hidden');
+	}
+
+	function openDeleteModal(userId, username) {
+		document.getElementById('deleteUserName').textContent = username;
+		document.getElementById('confirmDeleteUser').href = '/users/delete?id=' + userId;
+		document.getElementById('deleteUserModal').classList.remove('hidden');
+	}
+
+	// Create User Modal
 	(function(){
 		var openBtn = document.getElementById('openCreateUser');
 		var modal = document.getElementById('createUserModal');
@@ -93,11 +170,64 @@
 		if (closeBtn) closeBtn.addEventListener('click', hide);
 		if (cancelBtn) cancelBtn.addEventListener('click', hide);
 		if (overlay) overlay.addEventListener('click', hide);
-
-		document.addEventListener('keydown', function(e){
-			if (e.key === 'Escape') hide();
-		});
 	})();
+
+	// Edit User Modal
+	(function(){
+		var modal = document.getElementById('editUserModal');
+		var overlay = document.getElementById('editUserOverlay');
+		var closeBtn = document.getElementById('closeEditUser');
+		var cancelBtn = document.getElementById('cancelEditUser');
+
+		function hide() {
+			modal.classList.add('hidden');
+		}
+
+		if (closeBtn) closeBtn.addEventListener('click', hide);
+		if (cancelBtn) cancelBtn.addEventListener('click', hide);
+		if (overlay) overlay.addEventListener('click', hide);
+	})();
+
+	// Delete User Modal
+	(function(){
+		var modal = document.getElementById('deleteUserModal');
+		var overlay = document.getElementById('deleteUserOverlay');
+		var closeBtn = document.getElementById('closeDeleteUser');
+		var cancelBtn = document.getElementById('cancelDeleteUser');
+
+		function hide() {
+			modal.classList.add('hidden');
+		}
+
+		if (closeBtn) closeBtn.addEventListener('click', hide);
+		if (cancelBtn) cancelBtn.addEventListener('click', hide);
+		if (overlay) overlay.addEventListener('click', hide);
+	})();
+
+	// Global ESC key handler for all modals
+	document.addEventListener('keydown', function(e){
+		if (e.key === 'Escape') {
+			document.getElementById('createUserModal').classList.add('hidden');
+			document.getElementById('editUserModal').classList.add('hidden');
+			document.getElementById('deleteUserModal').classList.add('hidden');
+		}
+	});
+
+	// Password confirmation validation
+	document.addEventListener('DOMContentLoaded', function() {
+		var form = document.querySelector('#editUserModal form');
+		if (form) {
+			form.addEventListener('submit', function(e) {
+				var password = document.getElementById('editUserPassword').value;
+				var confirmPassword = document.getElementById('editUserConfirmPassword').value;
+				
+				if (password && password !== confirmPassword) {
+					e.preventDefault();
+					alert('Passwords do not match!');
+				}
+			});
+		}
+	});
 	</script>
 </div>
 {{ template "footer" . }}

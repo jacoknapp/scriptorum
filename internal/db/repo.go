@@ -268,6 +268,11 @@ func (d *DB) SetUserAdmin(ctx context.Context, id int64, isAdmin bool) error {
 	return err
 }
 
+func (d *DB) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
+	_, err := d.sql.ExecContext(ctx, `UPDATE users SET password_hash=? WHERE id=?`, passwordHash, id)
+	return err
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1
