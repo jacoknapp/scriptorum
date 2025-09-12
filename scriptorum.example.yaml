@@ -38,7 +38,8 @@ readarr:
     default_root_folder_path: "/books/audiobooks"
   default_tags: ["audiobook"]
 admins:
-  emails: ["you@example.com"]
+    usernames:
+        - admin
 automations:
   prefer_isbn13: true
   auto_search_for_missing: true

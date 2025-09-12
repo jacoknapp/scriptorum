@@ -83,11 +83,15 @@ func (s *Server) initOIDC() error {
 	if err != nil {
 		// Try with trailing slash if the first attempt failed
 		if !strings.HasSuffix(issuer, "/") {
-			fmt.Printf("OIDC discovery failed for %s, trying with trailing slash: %v\n", issuer, err)
+			if s.cfg.Debug {
+				fmt.Printf("OIDC discovery failed for %s, trying with trailing slash: %v\n", issuer, err)
+			}
 			altIssuer := issuer + "/"
 			p, err = oidc.NewProvider(discCtx, altIssuer)
 			if err == nil {
-				fmt.Printf("OIDC discovery succeeded with trailing slash, updating issuer to: %s\n", altIssuer)
+				if s.cfg.Debug {
+					fmt.Printf("OIDC discovery succeeded with trailing slash, updating issuer to: %s\n", altIssuer)
+				}
 				s.oidc.issuer = altIssuer
 				issuer = altIssuer
 			}
@@ -131,11 +135,15 @@ func (s *Server) initOIDC() error {
 
 	// Allow explicit overrides from config if set (use with caution)
 	if strings.TrimSpace(cfg.OAuth.AuthURL) != "" {
-		fmt.Printf("Using config override for auth URL: %s\n", cfg.OAuth.AuthURL)
+		if s.cfg.Debug {
+			fmt.Printf("Using config override for auth URL: %s\n", cfg.OAuth.AuthURL)
+		}
 		ep.AuthURL = cfg.OAuth.AuthURL
 	}
 	if strings.TrimSpace(cfg.OAuth.TokenURL) != "" {
-		fmt.Printf("Using config override for token URL: %s\n", cfg.OAuth.TokenURL)
+		if s.cfg.Debug {
+			fmt.Printf("Using config override for token URL: %s\n", cfg.OAuth.TokenURL)
+		}
 		ep.TokenURL = cfg.OAuth.TokenURL
 	}
 
@@ -152,8 +160,10 @@ func (s *Server) initOIDC() error {
 	} else {
 		s.oidc.config.Endpoint.AuthStyle = oauth2.AuthStyleInHeader
 	}
-	fmt.Printf("OIDC provider endpoints: auth=%s token=%s\n", ep.AuthURL, ep.TokenURL)
-	fmt.Printf("OAuth redirect URL configured: %s\n", s.oidc.redirectURL)
+	if s.cfg.Debug {
+		fmt.Printf("OIDC provider endpoints: auth=%s token=%s\n", ep.AuthURL, ep.TokenURL)
+		fmt.Printf("OAuth redirect URL configured: %s\n", s.oidc.redirectURL)
+	}
 	return nil
 }
 

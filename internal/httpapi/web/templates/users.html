@@ -1,11 +1,10 @@
 {{ template "header" . }}
 <div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6">
-	<div class="flex items-center justify-between">
+	<div class="flex items-center justify-between mb-6">
 		<h1 class="text-xl font-semibold">Users</h1>
-		<a href="/search" class="text-royal-300 hover:underline">Back</a>
 	</div>
 
-	<div class="mt-4 overflow-x-auto">
+	<div class="overflow-x-auto">
 	<table class="w-full text-sm min-w-[540px]">
 		<thead>
 			<tr>
@@ -17,7 +16,7 @@
 		</thead>
 		<tbody>
 			{{ range .Users }}
-			<tr class="border-t border-white/10">
+			<tr class="border-t border-white/5">
 				<td class="p-2">{{ .ID }}</td>
 				<td class="p-2">{{ .Username }}</td>
 				<td class="p-2">{{ if .IsAdmin }}yes{{ else }}no{{ end }}</td>
@@ -36,10 +35,10 @@
 	</table>
 	</div>
 
-	<hr class="my-4">
-
-	<!-- Create user button (bottom-right) -->
-	<button id="openCreateUser" aria-haspopup="dialog" class="fixed bottom-6 right-6 z-50 px-4 py-3 bg-royal-600 text-white rounded-full shadow-lg hover:bg-royal-500">Create user</button>
+	<!-- Create user button (bottom-right within card) -->
+	<div class="flex justify-end mt-6">
+		<button id="openCreateUser" aria-haspopup="dialog" class="px-4 py-2 bg-royal-600 text-white rounded-lg shadow-lg hover:bg-royal-500">Create User</button>
+	</div>
 
 	<!-- Modal: Create User -->
 	<div id="createUserModal" class="hidden fixed inset-0 z-40 flex items-center justify-center" role="dialog" aria-modal="true" aria-labelledby="createUserTitle">

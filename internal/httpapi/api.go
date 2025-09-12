@@ -35,6 +35,7 @@ func (s *Server) mountAPI(r chi.Router) {
 		rr.Post("/{id}/decline", s.requireAdmin(s.apiDeclineRequest))
 		rr.Delete("/{id}", s.requireAdmin(s.apiDeleteRequest))
 		rr.Delete("/", s.requireAdmin(s.apiDeleteAllRequests))
+		rr.Post("/approve-all", s.requireAdmin(s.apiApproveAllRequests))
 	})
 }
 
@@ -506,6 +507,41 @@ func (s *Server) apiDeleteAllRequests(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("HX-Trigger", `{"request:updated": {}}`)
 	writeJSON(w, map[string]string{"status": "all requests deleted"}, 200)
+}
+
+func (s *Server) apiApproveAllRequests(w http.ResponseWriter, r *http.Request) {
+	// Get all pending requests
+	allRequests, err := s.db.ListRequests(r.Context(), "", 1000) // Get up to 1000 requests
+	if err != nil {
+		http.Error(w, "failed to fetch requests", 500)
+		return
+	}
+
+	// Filter to only pending requests
+	var pendingRequests []int64
+	for _, req := range allRequests {
+		if req.Status == "pending" {
+			pendingRequests = append(pendingRequests, req.ID)
+		}
+	}
+
+	if len(pendingRequests) == 0 {
+		writeJSON(w, map[string]string{"status": "no pending requests to approve"}, 200)
+		return
+	}
+
+	// Approve each pending request by updating status to "queued"
+	username := r.Context().Value(ctxUser).(*session).Username
+	for _, reqID := range pendingRequests {
+		err := s.db.UpdateRequestStatus(r.Context(), reqID, "queued", "bulk approved", username, nil, nil)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("failed to approve request %d", reqID), 500)
+			return
+		}
+	}
+
+	w.Header().Set("HX-Trigger", `{"request:updated": {}}`)
+	writeJSON(w, map[string]string{"status": fmt.Sprintf("approved %d requests", len(pendingRequests))}, 200)
 }
 
 // apiHydrateRequest tries to populate the stored selection payload for a request by
