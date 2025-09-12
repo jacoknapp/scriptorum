@@ -26,4 +26,4 @@ docker-build:
 	docker build -t $(APP):dev .
 
 docker-run: docker-build
-	docker run --rm -p 8080:8080 -v $(PWD)/data:/data $(APP):dev
+	docker run --rm -p 8491:8491 -v $(PWD)/data:/data $(APP):dev
