@@ -94,69 +94,6 @@ func TestToTitleCaseSpecialChars(t *testing.T) {
 	}
 }
 
-// Test ParseAuthorNameFromTitle with comma-separated format (actual implementation)
-func TestParseAuthorNameFromTitleBasic(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"Fitzgerald, F. Scott The Great Gatsby", "F. Fitzgerald"}, // Takes first two words only
-		{"Orwell, George 1984", "George Orwell"},
-		{"Lee, Harper To Kill a Mockingbird", "Harper Lee"},
-		{"Rowling, J.K. Harry Potter", "J.k. Rowling"}, // ToTitleCase lowercases everything first
-		{"Smith, John Book Title", "John Smith"},
-	}
-
-	for _, test := range tests {
-		result := ParseAuthorNameFromTitle(test.input)
-		if result != test.expected {
-			t.Errorf("ParseAuthorNameFromTitle(%q) = %q, expected %q", test.input, result, test.expected)
-		}
-	}
-}
-
-// Test ParseAuthorNameFromTitle with non-comma format (falls back to title case)
-func TestParseAuthorNameFromTitleNoAuthor(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"Just a Title", "A Just"},      // Takes first two words, makes "firstname lastname"
-		{"No Author Here", "Author No"}, // Takes first two words
-		{"Single", "Single"},            // Single word gets title cased
-		{"", ""},                        // Empty string
-	}
-
-	for _, test := range tests {
-		result := ParseAuthorNameFromTitle(test.input)
-		if result != test.expected {
-			t.Errorf("ParseAuthorNameFromTitle(%q) = %q, expected %q", test.input, result, test.expected)
-		}
-	}
-}
-
-// Test ParseAuthorNameFromTitle edge cases
-func TestParseAuthorNameFromTitleEdgeCases(t *testing.T) {
-	tests := []struct {
-		input    string
-		expected string
-	}{
-		{"LastName,", "Lastname,"},          // Single word with comma, gets title cased
-		{"Last, First", "First Last"},       // Standard format works
-		{"  Last,  First  Extra  ", "Last"}, // TrimSpace is applied, but it still processes as single words
-		{"Last, ", "Last,"},                 // Last name with comma and space, gets title cased as single word
-		{",", ","},                          // Just comma, gets title cased
-		{"OnlyOneWord", "Onlyoneword"},      // Single word gets title cased
-	}
-
-	for _, test := range tests {
-		result := ParseAuthorNameFromTitle(test.input)
-		if result != test.expected {
-			t.Errorf("ParseAuthorNameFromTitle(%q) = %q, expected %q", test.input, result, test.expected)
-		}
-	}
-}
-
 // Test with empty inputs
 func TestEmptyInputs(t *testing.T) {
 	if FirstNonEmpty("") != "" {
@@ -165,10 +102,6 @@ func TestEmptyInputs(t *testing.T) {
 
 	if ToTitleCase("") != "" {
 		t.Error("ToTitleCase with empty string should return empty")
-	}
-
-	if ParseAuthorNameFromTitle("") != "" {
-		t.Error("ParseAuthorNameFromTitle with empty string should return empty")
 	}
 }
 
@@ -185,11 +118,6 @@ func TestLongStrings(t *testing.T) {
 	if len(result) != 1000 {
 		t.Errorf("Expected result length 1000, got %d", len(result))
 	}
-
-	result = ParseAuthorNameFromTitle(longStr)
-	if result == "" {
-		t.Error("ParseAuthorNameFromTitle should not return empty for long string")
-	}
 }
 
 // Benchmark tests
@@ -202,11 +130,5 @@ func BenchmarkFirstNonEmpty(b *testing.B) {
 func BenchmarkToTitleCase(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		ToTitleCase("hello world this is a test string")
-	}
-}
-
-func BenchmarkParseAuthorNameFromTitle(b *testing.B) {
-	for i := 0; i < b.N; i++ {
-		ParseAuthorNameFromTitle("Lastname, Firstname Book Title Here")
 	}
 }

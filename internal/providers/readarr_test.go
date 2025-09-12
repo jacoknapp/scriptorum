@@ -6,7 +6,7 @@ import (
 )
 
 func TestSanitizeAuthorAddOptionsMonitor(t *testing.T) {
-	r := NewReadarr(ReadarrInstance{})
+	r := NewReadarrWithDB(ReadarrInstance{}, nil)
 	// Build a payload with an author but without addOptions
 	pmap := map[string]any{
 		"author": map[string]any{"name": "Test Author"},

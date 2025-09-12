@@ -9,7 +9,7 @@ import (
 )
 
 func TestReadarrNormalizeDefaults(t *testing.T) {
-	r := NewReadarr(ReadarrInstance{BaseURL: "http://r"})
+	r := NewReadarrWithDB(ReadarrInstance{BaseURL: "http://r"}, nil)
 	// Test that the base URL is normalized correctly
 	if r.inst.BaseURL != "http://r" {
 		t.Fatalf("base URL not normalized correctly: %s", r.inst.BaseURL)
@@ -17,7 +17,7 @@ func TestReadarrNormalizeDefaults(t *testing.T) {
 }
 
 func TestReadarrPingLookupStatusError(t *testing.T) {
-	r := NewReadarr(ReadarrInstance{BaseURL: "http://r"})
+	r := NewReadarrWithDB(ReadarrInstance{BaseURL: "http://r"}, nil)
 	r.cl.Transport = rtFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: 500, Body: io.NopCloser(strings.NewReader("")), Header: make(http.Header)}, nil
 	})

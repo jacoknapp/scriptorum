@@ -24,12 +24,3 @@ func TestToTitleCase(t *testing.T) {
 		}
 	}
 }
-
-func TestParseAuthorNameFromTitle(t *testing.T) {
-	if got := ParseAuthorNameFromTitle("doe, john Book Title"); got != "John Doe" {
-		t.Fatalf("parse author failed: %q", got)
-	}
-	if got := ParseAuthorNameFromTitle("singleword"); got != "Singleword" {
-		t.Fatalf("fallback title-case failed: %q", got)
-	}
-}

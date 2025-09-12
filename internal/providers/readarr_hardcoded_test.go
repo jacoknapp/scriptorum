@@ -128,10 +128,10 @@ func TestReadarrConstructor(t *testing.T) {
 		APIKey:  "test-api-key",
 	}
 
-	readarr := NewReadarr(instance)
+	readarr := NewReadarrWithDB(instance, nil)
 
 	if readarr == nil {
-		t.Fatal("NewReadarr returned nil")
+		t.Fatal("NewReadarrWithDB returned nil")
 	}
 
 	if readarr.inst.BaseURL != "http://test-readarr:8787" {
@@ -147,10 +147,10 @@ func TestReadarrConstructor(t *testing.T) {
 func TestReadarrPingLookupUsesCorrectEndpoint(t *testing.T) {
 	var capturedURL string
 
-	readarr := NewReadarr(ReadarrInstance{
+	readarr := NewReadarrWithDB(ReadarrInstance{
 		BaseURL: "http://test-readarr:8787",
 		APIKey:  "test-key",
-	})
+	}, nil)
 
 	readarr.cl.Transport = rtFunc(func(req *http.Request) (*http.Response, error) {
 		capturedURL = req.URL.Path
@@ -176,10 +176,10 @@ func TestReadarrLookupByTermUsesCorrectEndpoint(t *testing.T) {
 	var capturedURL string
 	var capturedQuery string
 
-	readarr := NewReadarr(ReadarrInstance{
+	readarr := NewReadarrWithDB(ReadarrInstance{
 		BaseURL: "http://test-readarr:8787",
 		APIKey:  "test-key",
-	})
+	}, nil)
 
 	readarr.cl.Transport = rtFunc(func(req *http.Request) (*http.Response, error) {
 		capturedURL = req.URL.Path
@@ -211,10 +211,10 @@ func TestReadarrAddBookUsesCorrectEndpointAndMethod(t *testing.T) {
 	var capturedMethod string
 	var capturedBody []byte
 
-	readarr := NewReadarr(ReadarrInstance{
+	readarr := NewReadarrWithDB(ReadarrInstance{
 		BaseURL: "http://test-readarr:8787",
 		APIKey:  "test-key",
-	})
+	}, nil)
 
 	readarr.cl.Transport = rtFunc(func(req *http.Request) (*http.Response, error) {
 		capturedURL = req.URL.Path
@@ -279,10 +279,10 @@ func TestReadarrAddBookUsesCorrectEndpointAndMethod(t *testing.T) {
 
 // Test error handling when endpoints return non-200 status
 func TestReadarrErrorHandling(t *testing.T) {
-	readarr := NewReadarr(ReadarrInstance{
+	readarr := NewReadarrWithDB(ReadarrInstance{
 		BaseURL: "http://test-readarr:8787",
 		APIKey:  "test-key",
-	})
+	}, nil)
 
 	// Test 404 error
 	readarr.cl.Transport = rtFunc(func(req *http.Request) (*http.Response, error) {

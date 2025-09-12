@@ -185,15 +185,6 @@ func (d *DB) DeleteAllRequests(ctx context.Context) error {
 	return err
 }
 
-func (d *DB) AddAudit(ctx context.Context, actor, event string, reqID int64, details string) error {
-	now := time.Now().UTC()
-	return d.Exec(ctx, `
-INSERT INTO audit_events (ts, actor_email, event_type, request_id, details)
-VALUES (?, ?, ?, ?, ?)`,
-		now.Format(time.RFC3339Nano), strings.ToLower(actor), event, reqID, details,
-	)
-}
-
 // Users
 type User struct {
 	ID       int64

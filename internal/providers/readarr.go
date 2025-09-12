@@ -15,8 +15,6 @@ import (
 	"strings"
 	"text/template"
 	"time"
-
-	"gitea.knapp/jacoknapp/scriptorum/internal/util"
 )
 
 const (
@@ -476,15 +474,6 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 	return pmap
 }
 
-func NewReadarr(i ReadarrInstance) *Readarr {
-	r := &Readarr{inst: normalize(i), cl: &http.Client{Timeout: 12 * time.Second}, db: nil}
-	if r.inst.InsecureSkipVerify {
-		tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
-		r.cl = &http.Client{Timeout: 12 * time.Second, Transport: tr}
-	}
-	return r
-}
-
 func NewReadarrWithDB(i ReadarrInstance, db *sql.DB) *Readarr {
 	r := &Readarr{inst: normalize(i), cl: &http.Client{Timeout: 12 * time.Second}, db: db}
 	if r.inst.InsecureSkipVerify {
@@ -537,15 +526,6 @@ type AddOpts struct {
 	RootFolderPath   string
 	SearchForMissing bool
 	Tags             any
-}
-
-// LookupForeignAuthorID queries Readarr author lookup endpoint and returns the foreignAuthorId as int (0 when not found)
-func (r *Readarr) LookupForeignAuthorID(ctx context.Context, name string) int {
-	// Use FindAuthorIDByName which queries the Readarr author lookup endpoint.
-	// Legacy helper lookupForeignAuthorID was removed — keep behavior by returning
-	// the found author id (0 when not found).
-	id, _ := r.FindAuthorIDByName(ctx, name)
-	return id
 }
 
 // LookupForeignAuthorIDString queries Readarr author lookup endpoint and returns the foreignAuthorId string (empty when not found)
@@ -1067,23 +1047,6 @@ func (r *Readarr) FindAuthorIDByName(ctx context.Context, name string) (int, err
 	return 0, nil
 }
 
-// CreateAuthor does not create authors via the Readarr API; authors are created when adding books.
-// This helper only looks up an existing author and returns its id if present, or 0 if not found.
-func (r *Readarr) CreateAuthor(ctx context.Context, name string) (int, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return 0, nil
-	}
-	id, err := r.FindAuthorIDByName(ctx, name)
-	if err != nil {
-		return 0, err
-	}
-	if id > 0 {
-		r.setCachedAuthor(name, id)
-	}
-	return id, nil
-}
-
 // redactAPIKey hides apikey query param values from logs/errors
 func redactAPIKey(u string) string {
 	if u == "" {
@@ -1273,84 +1236,9 @@ func (r *Readarr) getValidRootFolderPath(ctx context.Context, override string) s
 	return ""
 }
 
-// GetQualityProfiles is an exported wrapper for fetching quality profiles.
-func (r *Readarr) GetQualityProfiles(ctx context.Context) (map[int]string, error) {
-	return r.fetchQualityProfiles(ctx)
-}
-
-// GetRootFolders is an exported wrapper for fetching root folders.
-func (r *Readarr) GetRootFolders(ctx context.Context) ([]string, error) {
-	return r.fetchRootFolders(ctx)
-}
-
 var nonDigit = regexp.MustCompile(`[^0-9Xx]`)
 
-func cleanISBN(s string) string { return strings.ToUpper(nonDigit.ReplaceAllString(s, "")) }
-func cleanASIN(s string) string { return strings.ToUpper(strings.TrimSpace(s)) }
-
-func hasIdent(b LookupBook, kind, value string) bool {
-	v := strings.ToUpper(value)
-	for _, id := range b.Identifiers {
-		kt, _ := id["identifierType"].(string)
-		vv, _ := id["value"].(string)
-		if strings.EqualFold(kt, kind) && strings.ToUpper(vv) == v {
-			return true
-		}
-	}
-	return false
-}
-
 // use util.ParseAuthorNameFromTitle from util package
-
-func (r *Readarr) SelectCandidate(list []LookupBook, isbn13, isbn10, asin string) (Candidate, bool) {
-	c13 := cleanISBN(isbn13)
-	c10 := cleanISBN(isbn10)
-	ca := cleanASIN(asin)
-
-	pick := func(test func(LookupBook) bool) (Candidate, bool) {
-		for _, b := range list {
-			if !test(b) {
-				continue
-			}
-
-			// Prefer a single `author` object if present, otherwise fall back to the first
-			// entry in an `authors` array. If no author object, check AuthorId or AuthorTitle.
-			var author map[string]any
-			if b.Author != nil {
-				author = b.Author
-			} else if len(b.Authors) > 0 {
-				author = b.Authors[0]
-			} else if b.AuthorId > 0 {
-				author = map[string]any{"id": b.AuthorId}
-			} else if b.AuthorTitle != "" {
-				name := util.ParseAuthorNameFromTitle(b.AuthorTitle)
-				author = map[string]any{"name": name}
-			}
-			// Always return the candidate when the identifier test passes. The
-			// author may be nil for identifier-only matches; the caller can
-			// enrich the author later if needed.
-			return Candidate{"title": b.Title, "titleSlug": b.TitleSlug, "author": author, "editions": b.Editions}, true
-		}
-		return nil, false
-	}
-
-	if c13 != "" {
-		if cand, ok := pick(func(b LookupBook) bool { return hasIdent(b, "ISBN13", c13) }); ok {
-			return cand, true
-		}
-	}
-	if c10 != "" {
-		if cand, ok := pick(func(b LookupBook) bool { return hasIdent(b, "ISBN10", c10) }); ok {
-			return cand, true
-		}
-	}
-	if ca != "" {
-		if cand, ok := pick(func(b LookupBook) bool { return hasIdent(b, "ASIN", ca) }); ok {
-			return cand, true
-		}
-	}
-	return nil, false
-}
 
 // ----- Database caching methods -----
 

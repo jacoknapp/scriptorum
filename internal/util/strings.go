@@ -35,16 +35,3 @@ func ToTitleCase(s string) string {
 	}
 	return string(out)
 }
-
-// ParseAuthorNameFromTitle extracts an author name from a string like
-// "lastname, firstname Rest Of Title" into "Firstname Lastname".
-// Falls back to title-casing the whole string when not in that format.
-func ParseAuthorNameFromTitle(title string) string {
-	parts := strings.Split(strings.TrimSpace(title), " ")
-	if len(parts) >= 2 {
-		last := strings.Trim(parts[0], ",")
-		first := parts[1]
-		return ToTitleCase(first + " " + last)
-	}
-	return ToTitleCase(strings.TrimSpace(title))
-}

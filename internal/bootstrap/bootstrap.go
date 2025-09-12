@@ -100,19 +100,3 @@ func defaultConfig(dbPath string) *config.Config {
 
 	return c
 }
-
-func defaultAddTemplate() string {
-	return `{
-  "monitored": true,
-  "qualityProfileId": {{ .Opts.QualityProfileID }},
-  "rootFolderPath": "{{ .Opts.RootFolderPath }}",
-  "addOptions": { "searchForMissingBooks": {{ if .Opts.SearchForMissing }}true{{ else }}false{{ end }} },
-  "tags": {{ toJSON .Opts.Tags }},
-  "title": {{ toJSON (index .Candidate "title") }},
-  "titleSlug": {{ toJSON (index .Candidate "titleSlug") }},
-	"foreignBookId": {{ toJSON (index .Candidate "foreignBookId") }},
-	"foreignEditionId": {{ toJSON (index .Candidate "foreignEditionId") }},
-  "author": {{ toJSON (index .Candidate "author") }},
-  "editions": {{ toJSON (index .Candidate "editions") }}
-}`
-}

@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html"
 	"html/template"
 	"io"
 	"net/http"
@@ -353,11 +352,6 @@ func (s *Server) handleOAuthLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
-func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	// This is the old handler - keeping for compatibility but it should redirect to welcome
-	http.Redirect(w, r, "/login?force_welcome=true", http.StatusFound)
-}
-
 // randomToken returns a base64-url-encoded random token of n bytes.
 func randomToken(n int) (string, error) {
 	b := make([]byte, n)
@@ -376,18 +370,6 @@ func generatePKCE() (verifier string, challenge string, err error) {
 	sum := sha256pkg.Sum256([]byte(v))
 	c := base64.RawURLEncoding.EncodeToString(sum[:])
 	return v, c, nil
-}
-
-// renderLoginForm renders the local login page. If msg is non-empty it is shown above the form.
-func (s *Server) renderLoginForm(w http.ResponseWriter, username, msg string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(200)
-	escUser := html.EscapeString(username)
-	msgHTML := ""
-	if strings.TrimSpace(msg) != "" {
-		msgHTML = fmt.Sprintf("<p style=\"color:red\">%s</p>", html.EscapeString(msg))
-	}
-	w.Write([]byte(`<!doctype html><html><head><title>Login</title><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css"></head><body><main class="container"><h3>Login</h3>` + msgHTML + `<form method="post" action="/login"><label>Username<input name="username" required value="` + escUser + `"></label><label>Password<input type="password" name="password" required></label><button type="submit">Sign in</button></form></main></body></html>`))
 }
 
 func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
@@ -462,75 +444,77 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 			if req.Header.Get("Accept") == "" {
 				req.Header.Set("Accept", "application/json")
 			}
-			// Read body for logging (body may have been modified above for PKCE/public client)
-			var bodyCopy []byte
-			if req.Body != nil {
-				bodyCopy, _ = io.ReadAll(req.Body)
-				req.Body = io.NopCloser(bytes.NewReader(bodyCopy))
-			}
-			// Full request dump
-			fmt.Printf("OAuth HTTP request: %s %s\n", req.Method, req.URL.String())
-			fmt.Printf("OAuth HTTP proto: %s\n", req.Proto)
-			if req.Host != "" {
-				fmt.Printf("OAuth HTTP host: %s\n", req.Host)
-			}
-			if req.ContentLength >= 0 {
-				fmt.Printf("OAuth HTTP content-length: %d\n", req.ContentLength)
-			}
-			// Headers (sorted for stable output)
-			keys := make([]string, 0, len(req.Header))
-			for k := range req.Header {
-				keys = append(keys, k)
-			}
-			sort.Strings(keys)
-			for _, k := range keys {
-				// join multiple values with "; "
-				fmt.Printf("OAuth HTTP header: %s: %s\n", k, strings.Join(req.Header[k], "; "))
-			}
-			if len(bodyCopy) > 0 {
-				fmt.Printf("OAuth HTTP body (len %d): %s\n", len(bodyCopy), string(bodyCopy))
-				// If it's form-encoded, also print parsed keys for clarity
-				if strings.Contains(strings.ToLower(req.Header.Get("Content-Type")), "application/x-www-form-urlencoded") {
-					if vals, err := url.ParseQuery(string(bodyCopy)); err == nil {
-						b := &bytes.Buffer{}
-						for _, k := range func() []string {
-							ks := make([]string, 0, len(vals))
-							for k := range vals {
-								ks = append(ks, k)
-							}
-							sort.Strings(ks)
-							return ks
-						}() {
-							for _, v := range vals[k] {
-								sv := v
-								if len(sv) > 512 {
-									sv = sv[:512] + "…"
+			if s.cfg.Debug {
+				// Read body for logging (body may have been modified above for PKCE/public client)
+				var bodyCopy []byte
+				if req.Body != nil {
+					bodyCopy, _ = io.ReadAll(req.Body)
+					req.Body = io.NopCloser(bytes.NewReader(bodyCopy))
+				}
+				// Full request dump
+				fmt.Printf("OAuth HTTP request: %s %s\n", req.Method, req.URL.String())
+				fmt.Printf("OAuth HTTP proto: %s\n", req.Proto)
+				if req.Host != "" {
+					fmt.Printf("OAuth HTTP host: %s\n", req.Host)
+				}
+				if req.ContentLength >= 0 {
+					fmt.Printf("OAuth HTTP content-length: %d\n", req.ContentLength)
+				}
+				// Headers (sorted for stable output)
+				keys := make([]string, 0, len(req.Header))
+				for k := range req.Header {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				for _, k := range keys {
+					// join multiple values with "; "
+					fmt.Printf("OAuth HTTP header: %s: %s\n", k, strings.Join(req.Header[k], "; "))
+				}
+				if len(bodyCopy) > 0 {
+					fmt.Printf("OAuth HTTP body (len %d): %s\n", len(bodyCopy), string(bodyCopy))
+					// If it's form-encoded, also print parsed keys for clarity
+					if strings.Contains(strings.ToLower(req.Header.Get("Content-Type")), "application/x-www-form-urlencoded") {
+						if vals, err := url.ParseQuery(string(bodyCopy)); err == nil {
+							b := &bytes.Buffer{}
+							for _, k := range func() []string {
+								ks := make([]string, 0, len(vals))
+								for k := range vals {
+									ks = append(ks, k)
 								}
-								fmt.Fprintf(b, "%s=%s\n", k, sv)
+								sort.Strings(ks)
+								return ks
+							}() {
+								for _, v := range vals[k] {
+									sv := v
+									if len(sv) > 512 {
+										sv = sv[:512] + "…"
+									}
+									fmt.Fprintf(b, "%s=%s\n", k, sv)
+								}
 							}
+							fmt.Printf("OAuth HTTP body (parsed):\n%s", b.String())
 						}
-						fmt.Printf("OAuth HTTP body (parsed):\n%s", b.String())
 					}
 				}
-			}
-			// Helpful curl reproduction
-			curl := &bytes.Buffer{}
-			fmt.Fprintf(curl, "curl -i -X %s '%s'", req.Method, req.URL.String())
-			for _, k := range keys {
-				for _, v := range req.Header[k] {
-					// Quote single quotes inside value
-					vv := strings.ReplaceAll(v, "'", "'\\''")
-					fmt.Fprintf(curl, " -H '%s: %s'", k, vv)
+				// Helpful curl reproduction
+				curl := &bytes.Buffer{}
+				fmt.Fprintf(curl, "curl -i -X %s '%s'", req.Method, req.URL.String())
+				for _, k := range keys {
+					for _, v := range req.Header[k] {
+						// Quote single quotes inside value
+						vv := strings.ReplaceAll(v, "'", "'\\''")
+						fmt.Fprintf(curl, " -H '%s: %s'", k, vv)
+					}
 				}
+				if len(bodyCopy) > 0 {
+					b := strings.ReplaceAll(string(bodyCopy), "'", "'\\''")
+					fmt.Fprintf(curl, " --data '%s'", b)
+				}
+				fmt.Printf("OAuth HTTP curl: %s\n", curl.String())
 			}
-			if len(bodyCopy) > 0 {
-				b := strings.ReplaceAll(string(bodyCopy), "'", "'\\''")
-				fmt.Fprintf(curl, " --data '%s'", b)
-			}
-			fmt.Printf("OAuth HTTP curl: %s\n", curl.String())
 		}
 		resp, err := base.RoundTrip(req)
-		if err == nil && resp != nil && strings.Contains(req.URL.Path, "/token") {
+		if err == nil && resp != nil && strings.Contains(req.URL.Path, "/token") && s.cfg.Debug {
 			fmt.Printf("OAuth HTTP response: %s\n", resp.Status)
 			// Dump all response headers
 			rkeys := make([]string, 0, len(resp.Header))
