@@ -13,6 +13,8 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"net/url"
+	"sort"
 	"strings"
 	"time"
 
@@ -28,11 +30,13 @@ type oidcMgr struct {
 	clientID     string
 	clientSecret string
 	redirectURL  string
-	// cookieName is intentionally not configurable via user settings; server controls session cookie name
-	cookieName string
-	provider   *oidc.Provider
-	verifier   *oidc.IDTokenVerifier
-	config     oauth2.Config
+	cookieName   string
+	cookieDomain string
+	cookieSecure bool
+	cookieSecret string
+	provider     *oidc.Provider
+	verifier     *oidc.IDTokenVerifier
+	config       oauth2.Config
 }
 
 func (s *Server) initOIDC() error {
@@ -43,27 +47,64 @@ func (s *Server) initOIDC() error {
 		clientID:     cfg.OAuth.ClientID,
 		clientSecret: cfg.OAuth.ClientSecret,
 		redirectURL:  cfg.OAuth.RedirectURL,
-		cookieName:   "scriptorum_session",
+		cookieName:   defaultIf(cfg.OAuth.CookieName, "scriptorum_session"),
+		cookieDomain: cfg.OAuth.CookieDomain,
+		cookieSecure: cfg.OAuth.CookieSecure,
+		cookieSecret: defaultIf(cfg.OAuth.CookieSecret, cfg.Auth.Salt),
 	}
 	if !s.oidc.enabled {
 		return nil
 	}
+
+	// Normalize issuer URL to handle common misconfigurations
+	issuer := strings.TrimSpace(s.oidc.issuer)
+	if issuer == "" {
+		fmt.Printf("OIDC disabled: missing issuer in config.\n")
+		s.oidc.enabled = false
+		return nil
+	}
+
+	// Remove trailing slash from issuer to avoid issuer mismatch errors
+	issuer = strings.TrimSuffix(issuer, "/")
+	s.oidc.issuer = issuer
+
 	// Basic validation
-	if strings.TrimSpace(s.oidc.issuer) == "" || strings.TrimSpace(s.oidc.clientID) == "" || strings.TrimSpace(s.oidc.redirectURL) == "" {
-		fmt.Printf("OIDC disabled: missing issuer/client_id/redirect_url in config.\n")
+	if strings.TrimSpace(s.oidc.clientID) == "" || strings.TrimSpace(s.oidc.redirectURL) == "" {
+		fmt.Printf("OIDC disabled: missing client_id/redirect_url in config.\n")
 		s.oidc.enabled = false
 		return nil
 	}
 	// Use a discovery client with sane timeouts
 	discCtx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Timeout: 10 * time.Second})
-	p, err := oidc.NewProvider(discCtx, s.oidc.issuer)
+
+	// Attempt OIDC discovery with issuer normalization
+	p, err := oidc.NewProvider(discCtx, issuer)
 	if err != nil {
-		fmt.Printf("OIDC disabled: discovery failed for issuer %s: %v\n", s.oidc.issuer, err)
-		s.oidc.enabled = false
-		return nil
+		// Try with trailing slash if the first attempt failed
+		if !strings.HasSuffix(issuer, "/") {
+			fmt.Printf("OIDC discovery failed for %s, trying with trailing slash: %v\n", issuer, err)
+			altIssuer := issuer + "/"
+			p, err = oidc.NewProvider(discCtx, altIssuer)
+			if err == nil {
+				fmt.Printf("OIDC discovery succeeded with trailing slash, updating issuer to: %s\n", altIssuer)
+				s.oidc.issuer = altIssuer
+				issuer = altIssuer
+			}
+		}
+
+		if err != nil {
+			fmt.Printf("OIDC disabled: discovery failed for issuer %s: %v\n", issuer, err)
+			s.oidc.enabled = false
+			return nil
+		}
 	}
 	s.oidc.provider = p
-	s.oidc.verifier = p.Verifier(&oidc.Config{ClientID: s.oidc.clientID})
+	// Create verifier with flexible issuer checking to handle common mismatch issues
+	s.oidc.verifier = p.Verifier(&oidc.Config{
+		ClientID:             s.oidc.clientID,
+		SkipIssuerCheck:      false,                               // We'll handle issuer normalization during discovery instead
+		SupportedSigningAlgs: []string{"RS256", "ES256", "PS256"}, // Common signing algorithms
+	})
 	// Build unique scopes
 	scopeMap := make(map[string]bool)
 	for _, s := range []string{"openid", "email", "profile"} {
@@ -76,15 +117,27 @@ func (s *Server) initOIDC() error {
 	for s := range scopeMap {
 		scopes = append(scopes, s)
 	}
-	// Use the provider endpoints as-is (some providers require trailing slashes)
+	// Use provider endpoints from discovery (preferred) with optional overrides
 	ep := p.Endpoint()
-	// Allow explicit overrides from config if set
+
+	// Validate discovered endpoints are using HTTPS in production
+	if !strings.HasPrefix(ep.AuthURL, "https://") && !strings.Contains(s.oidc.redirectURL, "localhost") {
+		fmt.Printf("Warning: OAuth authorization URL is not HTTPS in production: %s\n", ep.AuthURL)
+	}
+	if !strings.HasPrefix(ep.TokenURL, "https://") && !strings.Contains(s.oidc.redirectURL, "localhost") {
+		fmt.Printf("Warning: OAuth token URL is not HTTPS in production: %s\n", ep.TokenURL)
+	}
+
+	// Allow explicit overrides from config if set (use with caution)
 	if strings.TrimSpace(cfg.OAuth.AuthURL) != "" {
+		fmt.Printf("Using config override for auth URL: %s\n", cfg.OAuth.AuthURL)
 		ep.AuthURL = cfg.OAuth.AuthURL
 	}
 	if strings.TrimSpace(cfg.OAuth.TokenURL) != "" {
+		fmt.Printf("Using config override for token URL: %s\n", cfg.OAuth.TokenURL)
 		ep.TokenURL = cfg.OAuth.TokenURL
 	}
+
 	s.oidc.config = oauth2.Config{
 		ClientID:     s.oidc.clientID,
 		ClientSecret: s.oidc.clientSecret,
@@ -121,7 +174,28 @@ func (s *Server) setSession(w http.ResponseWriter, sess *session) {
 	b, _ := json.Marshal(sess)
 	sig := s.sign(b)
 	cookie := base64.RawURLEncoding.EncodeToString(b) + "." + base64.RawURLEncoding.EncodeToString(sig)
-	http.SetCookie(w, &http.Cookie{Name: "scriptorum_session", Value: cookie, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+
+	// Configure cookie with production-ready settings
+	cookieName := defaultIf(s.oidc.cookieName, "scriptorum_session")
+	httpCookie := &http.Cookie{
+		Name:     cookieName,
+		Value:    cookie,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	// Apply production cookie settings if configured
+	if s.oidc != nil {
+		if s.oidc.cookieDomain != "" {
+			httpCookie.Domain = s.oidc.cookieDomain
+		}
+		if s.oidc.cookieSecure {
+			httpCookie.Secure = true
+		}
+	}
+
+	http.SetCookie(w, httpCookie)
 }
 
 func (s *Server) getSession(r *http.Request) *session {
@@ -145,13 +219,25 @@ func (s *Server) getSession(r *http.Request) *session {
 	if time.Now().Unix() > sess.Exp {
 		return nil
 	}
+
+	// Debug logging for session retrieval (only log occasionally to avoid spam)
+	cfg := s.settings.Get()
+	if cfg.Debug && time.Now().Unix()%30 == 0 { // Log every ~30 seconds when accessed
+		fmt.Printf("DEBUG: Session active - username: %s, admin: %t\n", sess.Username, sess.Admin)
+	}
+
 	return &sess
 }
 
 func (s *Server) sign(b []byte) []byte {
-	// Use the server auth salt (config.Auth.Salt) as the HMAC key for session signing
-	cfg := s.settings.Get()
-	key := defaultIf(cfg.Auth.Salt, "changeme")
+	// Use the configured cookie secret if available, otherwise fall back to auth salt
+	var key string
+	if s.oidc != nil && s.oidc.cookieSecret != "" {
+		key = s.oidc.cookieSecret
+	} else {
+		cfg := s.settings.Get()
+		key = defaultIf(cfg.Auth.Salt, "changeme")
+	}
 	h := hmac.New(sha256pkg.New, []byte(key))
 	h.Write(b)
 	return h.Sum(nil)
@@ -183,8 +269,33 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Store state and verifier in cookies so we can validate and send verifier on callback
-	http.SetCookie(w, &http.Cookie{Name: "oauth_state", Value: state, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
-	http.SetCookie(w, &http.Cookie{Name: "oauth_pkce", Value: verifier, Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
+	stateCookie := &http.Cookie{
+		Name:     "oauth_state",
+		Value:    state,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+	pkceCookie := &http.Cookie{
+		Name:     "oauth_pkce",
+		Value:    verifier,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	}
+
+	// Apply production cookie settings if configured
+	if s.oidc.cookieDomain != "" {
+		stateCookie.Domain = s.oidc.cookieDomain
+		pkceCookie.Domain = s.oidc.cookieDomain
+	}
+	if s.oidc.cookieSecure {
+		stateCookie.Secure = true
+		pkceCookie.Secure = true
+	}
+
+	http.SetCookie(w, stateCookie)
+	http.SetCookie(w, pkceCookie)
 
 	url := s.oidc.config.AuthCodeURL(state, oauth2.SetAuthURLParam("code_challenge", challenge), oauth2.SetAuthURLParam("code_challenge_method", "S256"))
 	fmt.Printf("OIDC auth URL: %s\n", url)
@@ -248,17 +359,45 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Pass code_verifier when using PKCE
 	var oauth2Token *oauth2.Token
-	opts := []oauth2.AuthCodeOption{}
-	if verifier != "" {
-		opts = append(opts, oauth2.SetAuthURLParam("code_verifier", verifier))
-	}
-	// Use an HTTP client that does not follow redirects so we can see if the provider issues a 30x
-	// (following a 302 might convert POST to GET, leading to 405 on /token endpoints)
+
+	// Use an HTTP client that does not follow redirects and can modify token requests for PKCE
 	ctx := r.Context()
 	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
-	// Wrap transport to log method and URL and a small peek of the body
+	// Wrap transport to add PKCE parameters and log requests
 	base := http.DefaultTransport
 	client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		// For token exchange requests, add PKCE code_verifier if present
+		if strings.Contains(req.URL.Path, "/token") && req.Method == "POST" {
+			// Read existing body
+			var bodyBytes []byte
+			if req.Body != nil {
+				bodyBytes, _ = io.ReadAll(req.Body)
+				req.Body.Close()
+			}
+
+			// Parse form data and modify as needed
+			values, err := url.ParseQuery(string(bodyBytes))
+			if err == nil {
+				// Add PKCE code_verifier if present
+				if verifier != "" {
+					values.Set("code_verifier", verifier)
+				}
+
+				// For public clients (no client_secret), ensure client_secret is not sent
+				cfg := s.settings.Get()
+				if strings.TrimSpace(cfg.OAuth.ClientSecret) == "" {
+					values.Del("client_secret")
+					// Ensure client_id is present for public clients
+					if clientID := strings.TrimSpace(cfg.OAuth.ClientID); clientID != "" {
+						values.Set("client_id", clientID)
+					}
+				}
+
+				newBody := values.Encode()
+				req.Body = io.NopCloser(strings.NewReader(newBody))
+				req.ContentLength = int64(len(newBody))
+			}
+		}
 		if strings.Contains(req.URL.Path, "/token") {
 			// Ensure common headers are present (some edge proxies/WAFs require them)
 			if req.Header.Get("User-Agent") == "" {
@@ -267,36 +406,107 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 			if req.Header.Get("Accept") == "" {
 				req.Header.Set("Accept", "application/json")
 			}
+			// Read body for logging (body may have been modified above for PKCE/public client)
 			var bodyCopy []byte
 			if req.Body != nil {
 				bodyCopy, _ = io.ReadAll(req.Body)
 				req.Body = io.NopCloser(bytes.NewReader(bodyCopy))
 			}
+			// Full request dump
 			fmt.Printf("OAuth HTTP request: %s %s\n", req.Method, req.URL.String())
+			fmt.Printf("OAuth HTTP proto: %s\n", req.Proto)
+			if req.Host != "" {
+				fmt.Printf("OAuth HTTP host: %s\n", req.Host)
+			}
+			if req.ContentLength >= 0 {
+				fmt.Printf("OAuth HTTP content-length: %d\n", req.ContentLength)
+			}
+			// Headers (sorted for stable output)
+			keys := make([]string, 0, len(req.Header))
+			for k := range req.Header {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				// join multiple values with "; "
+				fmt.Printf("OAuth HTTP header: %s: %s\n", k, strings.Join(req.Header[k], "; "))
+			}
 			if len(bodyCopy) > 0 {
-				if len(bodyCopy) > 512 {
-					bodyCopy = bodyCopy[:512]
+				fmt.Printf("OAuth HTTP body (len %d): %s\n", len(bodyCopy), string(bodyCopy))
+				// If it's form-encoded, also print parsed keys for clarity
+				if strings.Contains(strings.ToLower(req.Header.Get("Content-Type")), "application/x-www-form-urlencoded") {
+					if vals, err := url.ParseQuery(string(bodyCopy)); err == nil {
+						b := &bytes.Buffer{}
+						for _, k := range func() []string {
+							ks := make([]string, 0, len(vals))
+							for k := range vals {
+								ks = append(ks, k)
+							}
+							sort.Strings(ks)
+							return ks
+						}() {
+							for _, v := range vals[k] {
+								sv := v
+								if len(sv) > 512 {
+									sv = sv[:512] + "…"
+								}
+								fmt.Fprintf(b, "%s=%s\n", k, sv)
+							}
+						}
+						fmt.Printf("OAuth HTTP body (parsed):\n%s", b.String())
+					}
 				}
-				fmt.Printf("OAuth HTTP body: %s\n", string(bodyCopy))
 			}
-			if ct := req.Header.Get("Content-Type"); ct != "" {
-				fmt.Printf("OAuth HTTP content-type: %s\n", ct)
+			// Helpful curl reproduction
+			curl := &bytes.Buffer{}
+			fmt.Fprintf(curl, "curl -i -X %s '%s'", req.Method, req.URL.String())
+			for _, k := range keys {
+				for _, v := range req.Header[k] {
+					// Quote single quotes inside value
+					vv := strings.ReplaceAll(v, "'", "'\\''")
+					fmt.Fprintf(curl, " -H '%s: %s'", k, vv)
+				}
 			}
+			if len(bodyCopy) > 0 {
+				b := strings.ReplaceAll(string(bodyCopy), "'", "'\\''")
+				fmt.Fprintf(curl, " --data '%s'", b)
+			}
+			fmt.Printf("OAuth HTTP curl: %s\n", curl.String())
 		}
 		resp, err := base.RoundTrip(req)
 		if err == nil && resp != nil && strings.Contains(req.URL.Path, "/token") {
 			fmt.Printf("OAuth HTTP response: %s\n", resp.Status)
-			if a := resp.Header.Get("Allow"); a != "" {
-				fmt.Printf("OAuth HTTP Allow: %s\n", a)
+			// Dump all response headers
+			rkeys := make([]string, 0, len(resp.Header))
+			for k := range resp.Header {
+				rkeys = append(rkeys, k)
 			}
-			if s := resp.Header.Get("Server"); s != "" {
-				fmt.Printf("OAuth HTTP Server: %s\n", s)
+			sort.Strings(rkeys)
+			for _, k := range rkeys {
+				fmt.Printf("OAuth HTTP resp header: %s: %s\n", k, strings.Join(resp.Header[k], "; "))
+			}
+			// Peek at response body (without consuming it) up to 4KB
+			if resp.Body != nil {
+				var snip []byte
+				snip, err = io.ReadAll(io.LimitReader(resp.Body, 4096))
+				if err == nil {
+					rest, _ := io.ReadAll(resp.Body) // likely empty, but ensure drain
+					// restore body
+					combined := append(append([]byte{}, snip...), rest...)
+					resp.Body = io.NopCloser(bytes.NewReader(combined))
+					if len(combined) > 0 {
+						fmt.Printf("OAuth HTTP resp body (len %d; first 4KB): %s\n", len(combined), string(snip))
+					}
+				} else {
+					// restore to non-nil empty
+					resp.Body = io.NopCloser(bytes.NewReader(nil))
+				}
 			}
 		}
 		return resp, err
 	})
 	ctx = context.WithValue(ctx, oauth2.HTTPClient, client)
-	oauth2Token, err = s.oidc.config.Exchange(ctx, code, opts...)
+	oauth2Token, err = s.oidc.config.Exchange(ctx, code)
 	if err != nil {
 		if re, ok := err.(*oauth2.RetrieveError); ok {
 			if re.Response != nil {
@@ -360,6 +570,13 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(disp) == "" {
 		disp = username
 	}
+
+	// Debug logging for OAuth authentication
+	if cfg.Debug {
+		fmt.Printf("DEBUG: OAuth user authenticated - username: %s, display_name: %s, admin: %t\n",
+			username, disp, s.isAdminUsername(username))
+	}
+
 	sess := &session{Username: username, Name: disp, Admin: s.isAdminUsername(username), Exp: time.Now().Add(24 * time.Hour).Unix()}
 	s.setSession(w, sess)
 	http.Redirect(w, r, "/search", http.StatusFound)
@@ -403,6 +620,13 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 		s.renderLoginForm(w, username, "invalid information")
 		return
 	}
+
+	// Debug logging for local authentication
+	cfg := s.settings.Get()
+	if cfg.Debug {
+		fmt.Printf("DEBUG: Local user authenticated - username: %s, admin: %t\n", u.Username, u.IsAdmin)
+	}
+
 	sess := &session{Username: u.Username, Name: u.Username, Admin: u.IsAdmin, Exp: time.Now().Add(24 * time.Hour).Unix()}
 	s.setSession(w, sess)
 	http.Redirect(w, r, "/search", http.StatusFound)

@@ -85,7 +85,11 @@ type Config struct {
 		// Legacy allowlists retained for backward-compatibility; not used anymore.
 		AllowDomains []string `yaml:"allow_email_domains,omitempty"`
 		AllowEmails  []string `yaml:"allow_emails,omitempty"`
-		// Cookie-related settings are managed by the server and not exposed to user config
+		// Cookie configuration for production environments
+		CookieName   string `yaml:"cookie_name,omitempty"`
+		CookieDomain string `yaml:"cookie_domain,omitempty"`
+		CookieSecure bool   `yaml:"cookie_secure,omitempty"`
+		CookieSecret string `yaml:"cookie_secret,omitempty"`
 		// AutoCreateUsers will create a local user record on first OAuth login
 		// using the OIDC email as the username. Password is random/unusable.
 		AutoCreateUsers bool `yaml:"auto_create_users"`

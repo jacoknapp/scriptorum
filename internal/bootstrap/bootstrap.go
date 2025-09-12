@@ -77,6 +77,11 @@ func defaultConfig(dbPath string) *config.Config {
 	c.OAuth.UsernameClaim = "preferred_username"
 	c.OAuth.AllowDomains = []string{}
 	c.OAuth.AllowEmails = []string{}
+	c.OAuth.CookieName = "scriptorum_session"
+	c.OAuth.CookieDomain = ""
+	c.OAuth.CookieSecure = false
+	c.OAuth.CookieSecret = ""
+	c.OAuth.AutoCreateUsers = false
 	// Cookie handling (name/secret/etc.) is managed by the server and not stored in user config.
 
 	c.AmazonPublic.Enabled = true
