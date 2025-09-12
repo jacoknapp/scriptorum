@@ -142,6 +142,10 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 							dispAuthor = n
 						}
 					}
+					var authors []string
+					if dispAuthor != "" {
+						authors = []string{dispAuthor}
+					}
 					// Derive cover URL if available. Prefer remote/absolute URLs so
 					// the browser can reliably fetch images. If Readarr returned a
 					// proxy-relative path (e.g. /MediaCover/...), convert it to an
@@ -171,7 +175,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 							}
 						}
 					}
-					upsert(SearchItem{BookItem: providers.BookItem{Title: b.Title, Authors: []string{dispAuthor}, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-ebook"}, true, string(cjson))
+					upsert(SearchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-ebook"}, true, string(cjson))
 				}
 			}
 		}
@@ -212,6 +216,10 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 							dispAuthor = n
 						}
 					}
+					var authors []string
+					if dispAuthor != "" {
+						authors = []string{dispAuthor}
+					}
 					// Derive cover URL if available. Prefer remote/absolute URLs so
 					// the browser can reliably fetch images. If Readarr returned a
 					// proxy-relative path (e.g. /MediaCover/...), convert it to an
@@ -241,7 +249,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 							}
 						}
 					}
-					upsert(SearchItem{BookItem: providers.BookItem{Title: b.Title, Authors: []string{dispAuthor}, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-audiobook"}, false, string(cjson))
+					upsert(SearchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-audiobook"}, false, string(cjson))
 				}
 			}
 		}

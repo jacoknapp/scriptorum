@@ -4,7 +4,39 @@
 		<h1 class="text-xl font-semibold">Users</h1>
 	</div>
 
-	<div class="overflow-x-auto">
+	<!-- Mobile list (small screens) -->
+	<div class="md:hidden">
+		<ul class="divide-y divide-white/5">
+			{{ range .Users }}
+			<li class="py-3">
+				<div class="flex items-start justify-between gap-3">
+					<div class="min-w-0">
+						<div class="font-medium">{{ .Username }}</div>
+						<div class="text-xs text-slate-400">ID {{ .ID }} • Admin: {{ if .IsAdmin }}yes{{ else }}no{{ end }}</div>
+					</div>
+					<div class="flex gap-3 shrink-0">
+						<button
+							data-id="{{ .ID }}"
+							data-username="{{ .Username }}"
+							data-isadmin="{{ .IsAdmin }}"
+							onclick="openEditModal(parseInt(this.dataset.id), this.dataset.username, this.dataset.isadmin === 'true')"
+							class="text-blue-400 hover:text-blue-300">Edit</button>
+						<button
+							data-id="{{ .ID }}"
+							data-username="{{ .Username }}"
+							onclick="openDeleteModal(parseInt(this.dataset.id), this.dataset.username)"
+							class="text-red-400 hover:text-red-300">Delete</button>
+					</div>
+				</div>
+			</li>
+			{{ else }}
+			<li class="p-4 text-slate-400">No users</li>
+			{{ end }}
+		</ul>
+	</div>
+
+	<!-- Desktop/tablet table (md and up) -->
+	<div class="overflow-x-auto hidden md:block">
 	<table class="w-full text-sm min-w-[540px]">
 		<thead>
 			<tr>
@@ -21,8 +53,17 @@
 				<td class="p-2">{{ .Username }}</td>
 				<td class="p-2">{{ if .IsAdmin }}yes{{ else }}no{{ end }}</td>
 				<td class="p-2">
-					<button onclick="openEditModal({{ .ID }}, '{{ .Username }}', {{ .IsAdmin }})" class="text-blue-400 hover:text-blue-300 mr-2">Edit</button>
-					<button onclick="openDeleteModal({{ .ID }}, '{{ .Username }}')" class="text-red-400 hover:text-red-300">Delete</button>
+					<button
+						data-id="{{ .ID }}"
+						data-username="{{ .Username }}"
+						data-isadmin="{{ .IsAdmin }}"
+						onclick="openEditModal(parseInt(this.dataset.id), this.dataset.username, this.dataset.isadmin === 'true')"
+						class="text-blue-400 hover:text-blue-300 mr-2">Edit</button>
+					<button
+						data-id="{{ .ID }}"
+						data-username="{{ .Username }}"
+						onclick="openDeleteModal(parseInt(this.dataset.id), this.dataset.username)"
+						class="text-red-400 hover:text-red-300">Delete</button>
 				</td>
 			</tr>
 			{{ else }}
