@@ -17,16 +17,19 @@ func (s *Server) mountUI(r chi.Router) {
 	u := &ui{tpl: template.Must(template.New("tpl").Funcs(funcMap).ParseFS(tplFS, "web/templates/*.html"))}
 	r.Group(func(rt chi.Router) {
 		rt.Use(s.withUser)
-		rt.Get("/", func(w http.ResponseWriter, r *http.Request) {
-			if ses := s.getSession(r); ses == nil {
-				http.Redirect(w, r, "/login", http.StatusFound)
-				return
+		rt.Get("/", s.requireLogin(func(w http.ResponseWriter, r *http.Request) {
+			ses := r.Context().Value(ctxUser).(*session)
+			mine := ""
+			if ses == nil || !ses.Admin {
+				mine = s.userEmail(r)
 			}
-			http.Redirect(w, r, "/search", http.StatusFound)
-		})
+			items, _ := s.db.ListRequests(r.Context(), mine, 200)
+			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": false}
+			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
+		}))
 		rt.Get("/dashboard", s.requireLogin(u.handleDashboard(s)))
 		rt.Get("/search", s.requireLogin(u.handleHome(s)))
-		r.Get("/", s.requireLogin(func(w http.ResponseWriter, r *http.Request) {
+		rt.Get("/requests", s.requireLogin(func(w http.ResponseWriter, r *http.Request) {
 			ses := r.Context().Value(ctxUser).(*session)
 			mine := ""
 			if ses == nil || !ses.Admin {
