@@ -27,15 +27,15 @@ func (s *Server) mountUI(r chi.Router) {
 		rt.Get("/dashboard", s.requireLogin(u.handleDashboard(s)))
 		rt.Get("/search", s.requireLogin(u.handleHome(s)))
 		r.Get("/", s.requireLogin(func(w http.ResponseWriter, r *http.Request) {
-		ses := r.Context().Value(ctxUser).(*session)
-		mine := ""
-		if ses == nil || !ses.Admin {
-			mine = s.userEmail(r)
-		}
-		items, _ := s.db.ListRequests(r.Context(), mine, 200)
-		data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": false}
-		_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
-	}))
+			ses := r.Context().Value(ctxUser).(*session)
+			mine := ""
+			if ses == nil || !ses.Admin {
+				mine = s.userEmail(r)
+			}
+			items, _ := s.db.ListRequests(r.Context(), mine, 200)
+			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": false}
+			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
+		}))
 		rt.HandleFunc("/users", s.requireAdmin(u.handleUsers(s)))
 	})
 	r.Get("/ui/requests/table", s.requireLogin(u.handleRequestsTable(s)))
@@ -60,7 +60,7 @@ func (s *Server) mountUI(r chi.Router) {
 				if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
 					// Update admin status
 					_ = s.db.SetUserAdmin(r.Context(), id, admin)
-					
+
 					// Update password if provided and confirmed
 					if password != "" && password == confirmPassword {
 						hash, _ := s.hashPassword(password, s.settings.Get().Auth.Salt)

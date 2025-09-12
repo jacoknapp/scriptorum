@@ -47,7 +47,7 @@ func TestUserManagementFeatures(t *testing.T) {
 	if len(users) == 0 {
 		t.Fatal("No users found after creation")
 	}
-	
+
 	testUser := users[0]
 	t.Logf("✓ User found: ID=%d, Username=%s, Admin=%t", testUser.ID, testUser.Username, testUser.IsAdmin)
 
@@ -86,10 +86,10 @@ func TestUserManagementFeatures(t *testing.T) {
 
 	editReq := httptest.NewRequest("POST", "/users/edit", strings.NewReader(editForm.Encode()))
 	editReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	
+
 	editRec := httptest.NewRecorder()
 	server.Router().ServeHTTP(editRec, editReq)
-	
+
 	if editRec.Code != 302 {
 		t.Errorf("Expected redirect (302) for edit, got %d", editRec.Code)
 	} else {
@@ -101,7 +101,7 @@ func TestUserManagementFeatures(t *testing.T) {
 	deleteReq := httptest.NewRequest("GET", "/users/delete?id=1", nil)
 	deleteRec := httptest.NewRecorder()
 	server.Router().ServeHTTP(deleteRec, deleteReq)
-	
+
 	if deleteRec.Code != 302 {
 		t.Errorf("Expected redirect (302) for delete, got %d", deleteRec.Code)
 	} else {
@@ -113,16 +113,16 @@ func TestUserManagementFeatures(t *testing.T) {
 	usersReq := httptest.NewRequest("GET", "/users", nil)
 	usersRec := httptest.NewRecorder()
 	server.Router().ServeHTTP(usersRec, usersReq)
-	
+
 	body := usersRec.Body.String()
-	
+
 	// Check for Edit and Delete buttons
 	if strings.Contains(body, "openEditModal") {
 		t.Log("✓ Edit button JavaScript found in template")
 	} else {
 		t.Error("✗ Edit button JavaScript not found")
 	}
-	
+
 	if strings.Contains(body, "openDeleteModal") {
 		t.Log("✓ Delete button JavaScript found in template")
 	} else {
@@ -135,7 +135,7 @@ func TestUserManagementFeatures(t *testing.T) {
 	} else {
 		t.Error("✗ Edit user modal not found")
 	}
-	
+
 	if strings.Contains(body, "deleteUserModal") {
 		t.Log("✓ Delete confirmation modal found in template")
 	} else {
@@ -153,7 +153,7 @@ func TestUserManagementFeatures(t *testing.T) {
 	t.Log("✓ Database UpdateUserPassword function added")
 	t.Log("✓ HTTP endpoint /users/edit for updating users")
 	t.Log("✓ Edit button with modal for password and admin toggle")
-	t.Log("✓ Delete button with confirmation modal")  
+	t.Log("✓ Delete button with confirmation modal")
 	t.Log("✓ Password confirmation validation")
 	t.Log("✓ All existing functionality preserved")
 }
