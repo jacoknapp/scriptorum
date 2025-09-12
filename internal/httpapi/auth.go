@@ -532,7 +532,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	var claims map[string]any
 	_ = token.Claims(&claims)
-	
+
 	// Debug logging for OAuth claims when debug is enabled
 	tempCfg := s.settings.Get()
 	if tempCfg.Debug {
@@ -543,7 +543,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	
+
 	// Choose a stable username from OIDC claims; use configured claim if present, else preferred_username, else sanitized name
 	cfg := s.settings.Get()
 	var username string
