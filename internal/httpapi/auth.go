@@ -532,6 +532,18 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	var claims map[string]any
 	_ = token.Claims(&claims)
+	
+	// Debug logging for OAuth claims when debug is enabled
+	tempCfg := s.settings.Get()
+	if tempCfg.Debug {
+		fmt.Printf("DEBUG: OAuth claims received:\n")
+		for k, v := range claims {
+			if k == "preferred_username" || k == "email" || k == "name" || k == tempCfg.OAuth.UsernameClaim {
+				fmt.Printf("  %s: %v\n", k, v)
+			}
+		}
+	}
+	
 	// Choose a stable username from OIDC claims; use configured claim if present, else preferred_username, else sanitized name
 	cfg := s.settings.Get()
 	var username string
@@ -573,8 +585,11 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	// Debug logging for OAuth authentication
 	if cfg.Debug {
+		isAdmin := s.isAdminUsername(username)
+		adminUsernames := s.settings.Get().Admins.Usernames
 		fmt.Printf("DEBUG: OAuth user authenticated - username: %s, display_name: %s, admin: %t\n",
-			username, disp, s.isAdminUsername(username))
+			username, disp, isAdmin)
+		fmt.Printf("DEBUG: Admin usernames configured: %v\n", adminUsernames)
 	}
 
 	sess := &session{Username: username, Name: disp, Admin: s.isAdminUsername(username), Exp: time.Now().Add(24 * time.Hour).Unix()}
