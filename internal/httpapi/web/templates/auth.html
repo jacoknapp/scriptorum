@@ -17,9 +17,8 @@
           </div>
           <div class="grid md:grid-cols-2 gap-3 mt-3">
             <input name="oauth_issuer" placeholder="Issuer" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.Issuer }}">
-            <input name="oauth_redirect" placeholder="Redirect URL" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.RedirectURL }}">
             <input name="oauth_client_id" placeholder="Client ID" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.ClientID }}">
-            <input type="password" name="oauth_client_secret" placeholder="Client Secret" autocomplete="new-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.ClientSecret }}">
+            <input name="oauth_redirect" placeholder="Redirect URL" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full md:col-span-2" value="{{ .Cfg.OAuth.RedirectURL }}">
             <!-- cookie options are server-managed -->
           </div>
           <div class="grid md:grid-cols-2 gap-3 mt-3">

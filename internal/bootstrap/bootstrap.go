@@ -71,7 +71,6 @@ func defaultConfig(dbPath string) *config.Config {
 	c.OAuth.Enabled = false
 	c.OAuth.Issuer = ""
 	c.OAuth.ClientID = ""
-	c.OAuth.ClientSecret = ""
 	c.OAuth.RedirectURL = ""
 	c.OAuth.Scopes = []string{"openid", "profile"}
 	c.OAuth.UsernameClaim = "preferred_username"

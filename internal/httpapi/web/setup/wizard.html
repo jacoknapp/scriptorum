@@ -97,7 +97,7 @@
           fetch('/setup/can-advance/' + step).then(r => r.json()).then(j => { if (j.ok) loadStep(step + 1); });
         } else {
           fetch('/setup/finish',{method:'POST'}).then(async r => {
-            if (r.ok) location.href = '/';
+            if (r.ok) location.href = '/login';
             else alert(await r.text());
           });
         }

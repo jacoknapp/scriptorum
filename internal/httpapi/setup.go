@@ -58,6 +58,10 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 			hash, err := s.hashPassword(adminPass, cur.Auth.Salt)
 			if err == nil {
 				_, _ = s.db.CreateUser(r.Context(), adminUser, hash, true)
+				// Also add the username to admins.usernames list for OAuth compatibility
+				if !containsInsensitive(cur.Admins.Usernames, adminUser) {
+					cur.Admins.Usernames = append(cur.Admins.Usernames, adminUser)
+				}
 			}
 		}
 		cur.OAuth.Enabled = r.FormValue("oauth_enabled") == "on"
@@ -65,6 +69,31 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		cur.OAuth.ClientID = r.FormValue("oauth_client_id")
 		cur.OAuth.ClientSecret = r.FormValue("oauth_client_secret")
 		cur.OAuth.RedirectURL = r.FormValue("oauth_redirect")
+
+		// Process additional OAuth fields regardless of enabled state (so they're saved for later)
+		if strings.TrimSpace(r.FormValue("oauth_auth_url")) != "" {
+			cur.OAuth.AuthURL = r.FormValue("oauth_auth_url")
+		}
+		if strings.TrimSpace(r.FormValue("oauth_token_url")) != "" {
+			cur.OAuth.TokenURL = r.FormValue("oauth_token_url")
+		}
+		if strings.TrimSpace(r.FormValue("oauth_scopes")) != "" {
+			cur.OAuth.Scopes = strings.Split(strings.ReplaceAll(r.FormValue("oauth_scopes"), " ", ""), ",")
+		} else {
+			// Set default scopes if none provided and we have OAuth configured
+			if cur.OAuth.Issuer != "" && len(cur.OAuth.Scopes) == 0 {
+				cur.OAuth.Scopes = []string{"openid", "profile", "email"}
+			}
+		}
+		if strings.TrimSpace(r.FormValue("oauth_username_claim")) != "" {
+			cur.OAuth.UsernameClaim = r.FormValue("oauth_username_claim")
+		} else {
+			// Set default username claim if none provided and we have OAuth configured
+			if cur.OAuth.Issuer != "" && cur.OAuth.UsernameClaim == "" {
+				cur.OAuth.UsernameClaim = "preferred_username"
+			}
+		}
+		cur.OAuth.AutoCreateUsers = r.FormValue("oauth_auto_create") == "on"
 		cur.Readarr.Ebooks.BaseURL = r.FormValue("ra_ebooks_base")
 		cur.Readarr.Ebooks.APIKey = r.FormValue("ra_ebooks_key")
 		cur.Readarr.Ebooks.InsecureSkipVerify = r.FormValue("ra_ebooks_insecure") == "on"
@@ -72,12 +101,18 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		cur.Readarr.Audiobooks.APIKey = r.FormValue("ra_audio_key")
 		cur.Readarr.Audiobooks.InsecureSkipVerify = r.FormValue("ra_audio_insecure") == "on"
 		_ = s.settings.Update(&cur)
+
 		// Admin step satisfied if at least one local admin user exists
 		if n, err := s.db.CountAdmins(r.Context()); err == nil && n > 0 {
 			stepFlags["admin"] = true
 		} else {
 			stepFlags["admin"] = false
 		}
+
+		// Set Readarr step flags based on whether configurations are saved
+		stepFlags["rebooks"] = (strings.TrimSpace(cur.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cur.Readarr.Ebooks.APIKey) != "")
+		stepFlags["raudio"] = (strings.TrimSpace(cur.Readarr.Audiobooks.BaseURL) != "" && strings.TrimSpace(cur.Readarr.Audiobooks.APIKey) != "")
+
 		// HTMX: trigger a refresh of gating and reload the current step; no content body
 		w.Header().Set("HX-Trigger", "setup-saved")
 		w.WriteHeader(http.StatusNoContent)
@@ -160,10 +195,11 @@ func (u *setupUI) handleSetupFinish(s *Server) http.HandlerFunc {
 				return
 			}
 		}
-		if cur.OAuth.Enabled && (cur.OAuth.Issuer == "" || cur.OAuth.ClientID == "" || cur.OAuth.ClientSecret == "" || cur.OAuth.RedirectURL == "") {
+		if cur.OAuth.Enabled && (cur.OAuth.Issuer == "" || cur.OAuth.ClientID == "") {
 			http.Error(w, "oauth incomplete", 400)
 			return
 		}
+		// Readarr instances are optional - no validation required
 		cur.Setup.Completed = true
 		_ = s.settings.Update(&cur)
 		http.Redirect(w, r, "/login", http.StatusFound)
@@ -190,7 +226,7 @@ func (u *setupUI) handleCanAdvance(s *Server) http.HandlerFunc {
 		case "2":
 			ok = stepFlags["oauth"] || !s.settings.Get().OAuth.Enabled
 		case "3":
-			ok = stepFlags["rebooks"] && stepFlags["raudio"]
+			ok = true // Readarr configuration is completely optional
 		case "4":
 			ok = true
 		}
