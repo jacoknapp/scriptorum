@@ -41,7 +41,9 @@
 				<div class="flex items-center justify-end gap-1 min-w-0">
 					{{ if eq .Status "pending" }}
 					<form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="this" hx-swap="none"
-						  hx-on="htmx:responseError: this.querySelector('button').classList.add('bg-rose-600'); this.querySelector('button').textContent='Approve failed'; setTimeout(()=>{var b=this.querySelector('button'); b.textContent='Approve'; b.classList.remove('bg-rose-600');}, 2200)">
+						  hx-on="htmx:beforeRequest: this.querySelector('button').classList.add('opacity-50'); this.querySelector('button').textContent='Approving...';"
+						  hx-on="htmx:afterRequest: this.querySelector('button').classList.remove('opacity-50');"
+						  hx-on="htmx:responseError: this.querySelector('button').classList.add('bg-rose-600'); this.querySelector('button').textContent='Approve failed'; setTimeout(()=>{var b=this.querySelector('button'); b.textContent='Approve'; b.classList.remove('bg-rose-600', 'opacity-50');}, 2200)">
 						<button class="px-2 py-1 text-xs rounded {{ if not .ReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-500 whitespace-nowrap" {{ if not .ReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
 					</form>
 					{{ if not .ReadarrReq }}
@@ -101,7 +103,9 @@
 			{{ if $.IsAdmin }}
 			{{ if eq .Status "pending" }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="this" hx-swap="none"
-				  hx-on="htmx:responseError: this.querySelector('button').classList.add('bg-rose-600'); this.querySelector('button').textContent='Approve failed'; setTimeout(()=>{var b=this.querySelector('button'); b.textContent='Approve'; b.classList.remove('bg-rose-600');}, 2200)">
+				  hx-on="htmx:beforeRequest: this.querySelector('button').classList.add('opacity-50'); this.querySelector('button').textContent='Approving...';"
+				  hx-on="htmx:afterRequest: this.querySelector('button').classList.remove('opacity-50');"
+				  hx-on="htmx:responseError: this.querySelector('button').classList.add('bg-rose-600'); this.querySelector('button').textContent='Approve failed'; setTimeout(()=>{var b=this.querySelector('button'); b.textContent='Approve'; b.classList.remove('bg-rose-600', 'opacity-50');}, 2200)">
 				<button class="px-3 py-1.5 rounded {{ if not .ReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-500" {{ if not .ReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
 			</form>
 			{{ if not .ReadarrReq }}
