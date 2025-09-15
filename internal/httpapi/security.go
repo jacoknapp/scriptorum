@@ -144,14 +144,17 @@ func (s *Server) csrfProtection(next http.Handler) http.Handler {
 			return
 		}
 
-		// Validate CSRF token for regular form submissions
-		if token == "" || !s.csrf.validateToken(token) {
+		// Validate and consume CSRF token for regular form submissions
+		if token == "" {
+			http.Error(w, "CSRF token invalid or missing", http.StatusForbidden)
+			return
+		}
+		
+		if !s.csrf.validateToken(token) {
 			http.Error(w, "CSRF token invalid or missing", http.StatusForbidden)
 			return
 		}
 
-		// Consume the token (one-time use)
-		s.csrf.consumeToken(token)
 		next.ServeHTTP(w, r)
 	})
 }

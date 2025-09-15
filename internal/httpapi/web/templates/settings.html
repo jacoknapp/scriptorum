@@ -26,13 +26,28 @@
 				<label class="inline-flex items-center gap-2 ml-4"><input type="radio" name="oauth_enabled" value="false" checked> Disable</label>
 				{{end}}
 				<div class="grid md:grid-cols-2 gap-3 mt-3">
-					<input name="oauth_issuer" placeholder="Issuer" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.Issuer }}">
-					<input name="oauth_client_id" placeholder="Client ID" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.ClientID }}">
-					<input name="oauth_redirect" placeholder="Redirect URL" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full md:col-span-2" value="{{ .Cfg.OAuth.RedirectURL }}">
+					<div>
+						<label class="block text-sm font-medium text-slate-200 mb-1">Issuer URL</label>
+						<input name="oauth_issuer" placeholder="https://auth.example.com/application/o/app/" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.Issuer }}">
+					</div>
+					<div>
+						<label class="block text-sm font-medium text-slate-200 mb-1">Client ID</label>
+						<input name="oauth_client_id" placeholder="Your OAuth client identifier" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.ClientID }}">
+					</div>
+					<div class="md:col-span-2">
+						<label class="block text-sm font-medium text-slate-200 mb-1">Redirect URL</label>
+						<input name="oauth_redirect" placeholder="http://localhost:8080/oauth/callback" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.RedirectURL }}">
+					</div>
 				</div>
 				<div class="grid md:grid-cols-2 gap-3 mt-3">
-					<input name="oauth_scopes" placeholder="Scopes (comma-separated)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ range $i, $s := .Cfg.OAuth.Scopes }}{{ if $i }}, {{ end }}{{$s}}{{ end }}">
-					<input name="oauth_username_claim" placeholder="Username claim (e.g. preferred_username)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.UsernameClaim }}">
+					<div>
+						<label class="block text-sm font-medium text-slate-200 mb-1">OAuth Scopes</label>
+						<input name="oauth_scopes" placeholder="openid, profile, email" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ range $i, $s := .Cfg.OAuth.Scopes }}{{ if $i }}, {{ end }}{{$s}}{{ end }}">
+					</div>
+					<div>
+						<label class="block text-sm font-medium text-slate-200 mb-1">Username Claim</label>
+						<input name="oauth_username_claim" placeholder="preferred_username" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.UsernameClaim }}">
+					</div>
 				</div>
 				<div class="mt-3"><label class="inline-flex items-center gap-2"><input type="checkbox" name="oauth_autocreate" {{if .Cfg.OAuth.AutoCreateUsers}}checked{{end}}> Auto-create users on first OAuth login</label></div>
 			</div>
