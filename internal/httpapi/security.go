@@ -149,7 +149,7 @@ func (s *Server) csrfProtection(next http.Handler) http.Handler {
 			http.Error(w, "CSRF token invalid or missing", http.StatusForbidden)
 			return
 		}
-		
+
 		if !s.csrf.validateToken(token) {
 			http.Error(w, "CSRF token invalid or missing", http.StatusForbidden)
 			return
