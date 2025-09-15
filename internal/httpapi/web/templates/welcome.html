@@ -88,6 +88,7 @@
           </div>
           {{end}}
           <form method="post" action="/login">
+            <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
             <div class="space-y-3">
               <div>
                 <label for="username" class="block text-sm font-medium text-slate-200 mb-1">Username</label>

@@ -255,7 +255,8 @@ func (s *Server) sign(b []byte) []byte {
 
 func (s *Server) mountAuth(r chi.Router) {
 	funcMap := template.FuncMap{
-		"toJSON": func(v any) string { b, _ := json.Marshal(v); return string(b) },
+		"toJSON":    func(v any) string { b, _ := json.Marshal(v); return string(b) },
+		"csrfToken": func(r *http.Request) string { return s.getCSRFToken(r) },
 	}
 	authUI := struct{ tpl *template.Template }{
 		tpl: template.Must(template.New("tpl").Funcs(funcMap).ParseFS(tplFS, "web/templates/*.html")),
@@ -284,6 +285,8 @@ func (s *Server) handleWelcome(tpl *template.Template) http.HandlerFunc {
 			"ForceLocal":   forceLocal,
 			"AutoRedirect": s.oidc != nil && s.oidc.enabled && !fromLogout && !forceLocal,
 			"Debug":        s.cfg.Debug,
+			"CSRFToken":    s.getCSRFToken(r),
+			"Request":      r,
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")

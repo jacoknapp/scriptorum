@@ -25,24 +25,39 @@ var tplFS embed.FS
 var setupFS embed.FS
 
 type Server struct {
-	cfg      *config.Config
-	db       *db.DB
-	cfgPath  string
-	settings *settings.Store
-	chi      *chi.Mux
-	oidc     *oidcMgr
+	cfg         *config.Config
+	db          *db.DB
+	cfgPath     string
+	settings    *settings.Store
+	chi         *chi.Mux
+	oidc        *oidcMgr
+	csrf        *csrfManager
+	rateLimiter *rateLimiter
 }
 
 func NewServer(cfg *config.Config, database *db.DB, cfgPath string) *Server {
-	s := &Server{cfg: cfg, db: database, cfgPath: cfgPath, settings: settings.New(cfgPath, cfg), chi: chi.NewRouter()}
+	s := &Server{
+		cfg:         cfg,
+		db:          database,
+		cfgPath:     cfgPath,
+		settings:    settings.New(cfgPath, cfg),
+		chi:         chi.NewRouter(),
+		csrf:        newCSRFManager(),
+		rateLimiter: newRateLimiter(),
+	}
 	_ = s.initOIDC()
 	return s
 }
 
 func (s *Server) Router() http.Handler {
 	r := s.chi
+
+	// Add security middleware first
+	r.Use(s.securityHeaders)
+	r.Use(s.rateLimiting)
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
 	r.Use(s.withUser)
+	r.Use(s.csrfProtection)
 
 	s.mountAuth(r)
 	s.mountSetup(r)
