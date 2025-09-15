@@ -153,6 +153,140 @@
 				btn.classList.remove('opacity-60','pointer-events-none');
 			}
 		}
+		
+		// Helper functions for HTMX request buttons
+		window.buildRequestPayload = function(btn, format) {
+			var form = btn.closest('form');
+			if (!form) return {};
+			
+			var fd = new FormData(form);
+			var ds = form.dataset || {};
+			var authors = fd.getAll('authors');
+			if ((!authors || authors.length === 0) && ds.author) { authors = [ds.author]; }
+			
+			var payload = {
+				title: (fd.get('title')||ds.title||'').toString(),
+				authors: authors,
+				isbn10: (fd.get('isbn10')||ds.isbn10||'').toString(),
+				isbn13: (fd.get('isbn13')||ds.isbn13||'').toString(),
+				asin: (fd.get('asin')||ds.asin||'').toString(),
+				format: (format||'ebook'),
+				provider: (fd.get('provider')||ds.provider||'').toString()
+			};
+			
+			// Handle format-specific provider payload
+			var ppe = (fd.get('provider_payload_ebook')||ds.provider_payload_ebook||'').toString();
+			var ppa = (fd.get('provider_payload_audiobook')||ds.provider_payload_audiobook||'').toString();
+			var pp = (fd.get('provider_payload')||ds.provider_payload||'').toString();
+			if (ppe || ppa || pp) {
+				if ((format||'ebook') === 'ebook' && ppe) { payload.provider_payload = ppe; }
+				else if ((format||'ebook') === 'audiobook' && ppa) { payload.provider_payload = ppa; }
+				else if (pp) { payload.provider_payload = pp; }
+			}
+			
+			return payload;
+		}
+		
+		window.handleRequestResponse = function(event, btn, format) {
+			var li = btn.closest('li');
+			var ind = li && li.querySelector('.req-ind');
+			if (ind) ind.style.display = 'none';
+			
+			if (event.detail.xhr.status >= 200 && event.detail.xhr.status < 300) {
+				// Success
+				btn.textContent = 'Requested ✓';
+				btn.classList.add('bg-emerald-600');
+				btn.classList.remove('hover:bg-royal-700','hover:bg-royal-600');
+				scriptorumShowToast('Request submitted. Open Requests to view.');
+				// Trigger refresh of requests table
+				var reqTable = document.querySelector('#req-table');
+				if (reqTable && window.htmx) {
+					htmx.trigger(reqTable, 'refresh');
+				}
+			} else if (event.detail.xhr.status === 302 || event.detail.xhr.status === 401) {
+				scriptorumShowToast('Not signed in. Please log in.', 'bg-amber-50 text-amber-800 ring-1 ring-amber-200');
+				btn.classList.remove('opacity-60','pointer-events-none');
+			} else {
+				var txt = event.detail.xhr.responseText || event.detail.xhr.status;
+				scriptorumShowToast('Error: ' + txt, 'bg-rose-50 text-rose-800 ring-1 ring-rose-200');
+				btn.classList.remove('opacity-60','pointer-events-none');
+			}
+		}
+		window.scriptorumRequestHtmx = async function(btn, format){
+			// Use HTMX for better integration, but fall back to fetch if needed
+			console.log('scriptorumRequestHtmx called with format:', format);
+			if (!window.htmx) {
+				console.log('HTMX not available, falling back to fetch');
+				return scriptorumRequestFallback(btn, format);
+			}
+			
+			try{
+				var li = btn.closest('li');
+				var form = btn.closest('form');
+				if (!form) { scriptorumShowToast('No form found for request', 'bg-rose-50 text-rose-800 ring-1 ring-rose-200'); return; }
+				var ind = li && li.querySelector('.req-ind'); if (ind) ind.style.display = 'inline';
+				btn.classList.add('opacity-60','pointer-events-none');
+				
+				// Build the same payload as the fallback function
+				var fd = new FormData(form);
+				var ds = form.dataset || {};
+				var authors = fd.getAll('authors');
+				if ((!authors || authors.length === 0) && ds.author) { authors = [ds.author]; }
+				var payload = {
+					title: (fd.get('title')||ds.title||'').toString(),
+					authors: authors,
+					isbn10: (fd.get('isbn10')||ds.isbn10||'').toString(),
+					isbn13: (fd.get('isbn13')||ds.isbn13||'').toString(),
+					asin: (fd.get('asin')||ds.asin||'').toString(),
+					format: (format||'ebook'),
+					provider: (fd.get('provider')||ds.provider||'').toString()
+				};
+				// Attach provider_payload if present (do not require a provider label)
+				var ppe = (fd.get('provider_payload_ebook')||ds.provider_payload_ebook||'').toString();
+				var ppa = (fd.get('provider_payload_audiobook')||ds.provider_payload_audiobook||'').toString();
+				var pp = (fd.get('provider_payload')||ds.provider_payload||'').toString();
+				if (ppe || ppa || pp) {
+					if ((format||'ebook') === 'ebook' && ppe) { payload.provider_payload = ppe; }
+					else if ((format||'ebook') === 'audiobook' && ppa) { payload.provider_payload = ppa; }
+					else if (pp) { payload.provider_payload = pp; }
+				}
+
+				// Use fetch but with HTMX headers for better integration
+				var resp = await fetch('/api/v1/requests', { 
+					method: 'POST', 
+					body: JSON.stringify(payload), 
+					headers: { 
+						'HX-Request': 'true', 
+						'Content-Type': 'application/json' 
+					}, 
+					credentials: 'same-origin' 
+				});
+				
+				if (ind) ind.style.display = 'none';
+				if (resp.ok) {
+					btn.textContent = 'Requested ✓';
+					btn.classList.add('bg-emerald-600');
+					btn.classList.remove('hover:bg-royal-700','hover:bg-royal-600');
+					scriptorumShowToast('Request submitted. Open Requests to view.');
+					// Trigger HTMX refresh of requests table if it exists
+					var reqTable = document.querySelector('#req-table');
+					if (reqTable && window.htmx) {
+						htmx.trigger(reqTable, 'refresh');
+					}
+				} else if (resp.status === 302 || resp.redirected) {
+					scriptorumShowToast('Not signed in. Please log in.', 'bg-amber-50 text-amber-800 ring-1 ring-amber-200');
+					btn.classList.remove('opacity-60','pointer-events-none');
+				} else {
+					var txt = await resp.text();
+					scriptorumShowToast('Error: ' + (txt||resp.status), 'bg-rose-50 text-rose-800 ring-1 ring-rose-200');
+					btn.classList.remove('opacity-60','pointer-events-none');
+				}
+			}catch(err){
+				if (ind) ind.style.display = 'none';
+				scriptorumShowToast('Network error submitting request', 'bg-rose-50 text-rose-800 ring-1 ring-rose-200');
+				btn.classList.remove('opacity-60','pointer-events-none');
+			}
+		}
 	</script>
 </head>
 <body class="min-h-screen bg-night-900 text-slate-100">
