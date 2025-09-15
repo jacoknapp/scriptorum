@@ -65,24 +65,12 @@
         <!-- Use the same purple and fixed width for both buttons so layout doesn't shift -->
         <button type="button" name="format" value="ebook"
                 class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500 w-full sm:w-44"
-                hx-post="/api/v1/requests"
-                hx-trigger="click"
-                hx-vals="js:buildRequestPayload(this, 'ebook')"
-                hx-headers='{"Content-Type": "application/json"}'
-                hx-indicator="closest li .req-ind"
-                hx-on::after-request="handleRequestResponse(event, this, 'ebook')"
-                onclick="if(!window.htmx) scriptorumRequestFallback(this,'ebook')">
+                onclick="scriptorumRequestFallback(this, 'ebook')">
           Request eBook
         </button>
         <button type="button" name="format" value="audiobook"
                 class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500 w-full sm:w-44"
-                hx-post="/api/v1/requests"
-                hx-trigger="click"
-                hx-vals="js:buildRequestPayload(this, 'audiobook')"
-                hx-headers='{"Content-Type": "application/json"}'
-                hx-indicator="closest li .req-ind"
-                hx-on::after-request="handleRequestResponse(event, this, 'audiobook')"
-                onclick="if(!window.htmx) scriptorumRequestFallback(this,'audiobook')">
+                onclick="scriptorumRequestFallback(this, 'audiobook')">
           Request Audiobook
         </button>
       </form>
