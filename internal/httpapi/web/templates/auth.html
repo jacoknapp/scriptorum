@@ -3,6 +3,7 @@
   <h1 class="text-2xl font-semibold mb-6 text-white">Authentication Settings</h1>
   
   <form method="post" action="/settings/save" class="space-y-8">
+    <input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
     <!-- OAuth Configuration Section -->
     <div class="bg-night-900 rounded-lg p-6 border border-white/10">
       <div class="mb-6">
@@ -130,84 +131,6 @@
       <button type="submit" class="px-6 py-2 bg-royal-600 text-white rounded-lg hover:bg-royal-500 focus:ring-2 focus:ring-royal-500 focus:ring-offset-2 focus:ring-offset-night-800 transition-colors font-medium">
         Save Settings
       </button>
-    </div>
-  </form>
-</div>
-{{ template "footer" . }}
-            <input name="oauth_redirect" 
-                   placeholder="http://localhost:8080/oauth/callback" 
-                   class="border border-white/10 bg-night-800 text-slate-100 rounded px-3 py-2 w-full focus:ring-2 focus:ring-royal-500" 
-                   value="{{ .Cfg.OAuth.RedirectURL }}">
-            <p class="text-xs text-slate-500 mt-1">Configure this URL in your OAuth provider's application settings</p>
-          </div>
-        </div>
-
-        <!-- Advanced Settings -->
-        <div class="mb-6">
-          <h3 class="font-medium text-white mb-3">Advanced Settings</h3>
-          <div class="grid md:grid-cols-2 gap-4">
-            <div>
-              <label class="block text-sm font-medium text-slate-300 mb-1">OAuth Scopes</label>
-              <input name="oauth_scopes" 
-                     placeholder="openid, profile, email" 
-                     class="border border-white/10 bg-night-800 text-slate-100 rounded px-3 py-2 w-full focus:ring-2 focus:ring-royal-500" 
-                     value="{{ range $i, $s := .Cfg.OAuth.Scopes }}{{ if $i }}, {{ end }}{{$s}}{{ end }}">
-              <p class="text-xs text-slate-500 mt-1">Comma-separated list of OAuth scopes to request</p>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-slate-300 mb-1">Username Claim</label>
-              <input name="oauth_username_claim" 
-                     placeholder="preferred_username" 
-                     class="border border-white/10 bg-night-800 text-slate-100 rounded px-3 py-2 w-full focus:ring-2 focus:ring-royal-500" 
-                     value="{{ .Cfg.OAuth.UsernameClaim }}">
-              <p class="text-xs text-slate-500 mt-1">JWT claim field to use as username</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- User Management -->
-        <div class="mb-4">
-          <h3 class="font-medium text-white mb-3">User Management</h3>
-          <div class="flex items-center gap-2">
-            <label class="inline-flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" 
-                     name="oauth_autocreate" 
-                     class="text-royal-600 focus:ring-royal-500 rounded"
-                     {{if .Cfg.OAuth.AutoCreateUsers}}checked{{end}}> 
-              <span class="text-slate-300">Auto-create users on first OAuth login</span>
-            </label>
-          </div>
-          <p class="text-xs text-slate-500 mt-1">When enabled, new users will be automatically created when they first log in via OAuth</p>
-        </div>
-      </div>
-
-      <!-- Common Provider Examples -->
-      <div class="mt-6 p-4 bg-slate-900 rounded-lg border border-slate-700">
-        <h3 class="font-medium text-white mb-3">Common Provider Examples</h3>
-        <div class="grid md:grid-cols-2 gap-4 text-xs">
-          <div>
-            <h4 class="font-semibold text-slate-300 mb-1">Authentik</h4>
-            <div class="text-slate-400 space-y-1">
-              <div>Issuer: <code class="text-slate-200">https://auth.domain.com/application/o/app/</code></div>
-              <div>Scopes: <code class="text-slate-200">openid, profile, email</code></div>
-              <div>Username Claim: <code class="text-slate-200">preferred_username</code></div>
-            </div>
-          </div>
-          <div>
-            <h4 class="font-semibold text-slate-300 mb-1">Keycloak</h4>
-            <div class="text-slate-400 space-y-1">
-              <div>Issuer: <code class="text-slate-200">https://keycloak.domain.com/realms/realm</code></div>
-              <div>Scopes: <code class="text-slate-200">openid, profile, email</code></div>
-              <div>Username Claim: <code class="text-slate-200">preferred_username</code></div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <div class="flex justify-end gap-2">
-      <a class="px-3 py-2 text-royal-300 hover:underline" href="/settings">Back</a>
-      <button class="px-4 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500 focus:ring-2 focus:ring-royal-500">Save Settings</button>
     </div>
   </form>
 </div>
