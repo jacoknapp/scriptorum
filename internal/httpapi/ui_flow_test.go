@@ -28,7 +28,9 @@ func newServerForLoginTest(t *testing.T) (*Server, *db.DB, string) {
 	cfg.OAuth.Enabled = false
 	cfg.Auth.Salt = "testsalt"
 	_ = config.Save(cfgPath, cfg)
-	return NewServer(cfg, database, cfgPath), database, cfgPath
+	s := NewServer(cfg, database, cfgPath)
+	s.disableCSRF = true // Disable CSRF for tests
+	return s, database, cfgPath
 }
 
 func TestLocalLoginAndDashboard(t *testing.T) {

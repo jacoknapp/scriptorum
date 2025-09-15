@@ -1,31 +1,15 @@
 package httpapi
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"testing"
-
-	"gitea.knapp/jacoknapp/scriptorum/internal/bootstrap"
-	"gitea.knapp/jacoknapp/scriptorum/internal/config"
 )
 
 func TestAuthPageAndSave(t *testing.T) {
-	tdir := t.TempDir()
-	cfgPath := filepath.Join(tdir, "config.yaml")
-	dbPath := filepath.Join(tdir, "scriptorum.db")
-	cfg, database, err := bootstrap.EnsureFirstRun(context.Background(), cfgPath, dbPath)
-	if err != nil {
-		t.Fatalf("bootstrap: %v", err)
-	}
-	t.Cleanup(func() { _ = database.Close() })
-	cfg.Admins.Usernames = []string{"admin"}
-	cfg.Setup.Completed = true
-	_ = config.Save(cfgPath, cfg)
-	s := NewServer(cfg, database, cfgPath)
+	s := newServerForTest(t)
 	r := s.Router()
 
 	// GET page (require admin)

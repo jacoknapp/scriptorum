@@ -33,6 +33,7 @@ type Server struct {
 	oidc        *oidcMgr
 	csrf        *csrfManager
 	rateLimiter *rateLimiter
+	disableCSRF bool // For testing purposes
 }
 
 func NewServer(cfg *config.Config, database *db.DB, cfgPath string) *Server {
@@ -57,7 +58,9 @@ func (s *Server) Router() http.Handler {
 	r.Use(s.rateLimiting)
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
 	r.Use(s.withUser)
-	r.Use(s.csrfProtection)
+	if !s.disableCSRF {
+		r.Use(s.csrfProtection)
+	}
 
 	s.mountAuth(r)
 	s.mountSetup(r)

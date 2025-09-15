@@ -29,7 +29,9 @@ func newServerForTest(t *testing.T) *Server {
 	cfg.Admins.Usernames = []string{"admin"}
 	cfg.Setup.Completed = true
 	_ = config.Save(cfgPath, cfg)
-	return NewServer(cfg, database, cfgPath)
+	s := NewServer(cfg, database, cfgPath)
+	s.disableCSRF = true // Disable CSRF for tests
+	return s
 }
 
 func makeCookie(t *testing.T, s *Server, username string, admin bool) *http.Cookie {

@@ -134,7 +134,7 @@
 				if (resp.ok) {
 					btn.textContent = 'Requested ✓';
 					btn.classList.add('bg-emerald-600');
-					btn.classList.remove('hover:bg-royal-700','hover:bg-royal-600');
+					btn.classList.remove('bg-royal-600','hover:bg-royal-700','hover:bg-royal-600','hover:bg-royal-500','pointer-events-none');
 					scriptorumShowToast('Request submitted. Open Requests to view.');
 					var tbl = document.querySelector('#req-table');
 					if (tbl) {
@@ -196,7 +196,7 @@
 				// Success
 				btn.textContent = 'Requested ✓';
 				btn.classList.add('bg-emerald-600');
-				btn.classList.remove('hover:bg-royal-700','hover:bg-royal-600');
+				btn.classList.remove('bg-royal-600','hover:bg-royal-700','hover:bg-royal-600','hover:bg-royal-500','pointer-events-none');
 				scriptorumShowToast('Request submitted. Open Requests to view.');
 				// Trigger refresh of requests table
 				var reqTable = document.querySelector('#req-table');
@@ -294,10 +294,10 @@
 		<div class="absolute inset-0 bg-gradient-to-r from-royal-900 via-royal-800 to-royal-700"></div>
 		<div class="relative max-w-6xl mx-auto px-4 py-4">
 			<div class="flex items-center justify-between">
-				<div class="flex items-center gap-3">
+				<a href="/search" class="flex items-center gap-3 hover:opacity-80 transition-opacity">
 					<img src="/static/icon.svg" class="w-9 h-9 rounded-xl2 bg-white/10 ring-1 ring-white/15 shadow-card" alt="Scriptorum Icon" />
 					<div class="font-semibold tracking-wide">Scriptorum</div>
-				</div>
+				</a>
 				<!-- Desktop inline nav -->
 				<div class="hidden md:flex items-center gap-3 text-sm whitespace-nowrap">
 					<a href="/search" class="block px-2 py-1.5 rounded hover:bg-white/10">Search</a>
