@@ -52,6 +52,7 @@ func (s *Server) generateApprovalToken(requestID int64) string {
 	}
 	s.tokenMutex.Unlock()
 
+	fmt.Printf("DEBUG: Generated approval token %s for request %d\n", token, requestID)
 	return token
 }
 
@@ -89,6 +90,8 @@ func (s *Server) handleApprovalToken(w http.ResponseWriter, r *http.Request) {
 	s.tokenMutex.RUnlock()
 
 	if !exists {
+		// Log for debugging
+		fmt.Printf("DEBUG: Token not found: %s. Available tokens: %d\n", token, len(s.approvalTokens))
 		http.Error(w, "Invalid approval token", 404)
 		return
 	}
@@ -97,6 +100,7 @@ func (s *Server) handleApprovalToken(w http.ResponseWriter, r *http.Request) {
 		s.tokenMutex.Lock()
 		delete(s.approvalTokens, token)
 		s.tokenMutex.Unlock()
+		fmt.Printf("DEBUG: Token expired: %s\n", token)
 		http.Error(w, "Approval token has expired", http.StatusGone)
 		return
 	}
@@ -807,6 +811,9 @@ func (s *Server) SendRequestNotification(requestID int64, username, title string
 
 // sendRequestNotificationNtfy sends ntfy notification for new requests
 func (s *Server) sendRequestNotificationNtfy(cfg *config.Config, requestID int64, username, title, authorsStr string) {
+	// Always get fresh configuration to ensure server_url is current
+	currentCfg := s.settings.Get()
+
 	message := fmt.Sprintf("📖 **%s**", title)
 	if authorsStr != "" {
 		message += fmt.Sprintf("\n👤 *by %s*", authorsStr)
@@ -818,7 +825,6 @@ func (s *Server) sendRequestNotificationNtfy(cfg *config.Config, requestID int64
 	// Create action buttons with individual request approval and decline
 	approvalToken := s.generateApprovalToken(requestID)
 	declineToken := s.generateDeclineToken(requestID)
-	currentCfg := s.settings.Get()
 	actions := []map[string]string{
 		{
 			"action": "view",
@@ -839,10 +845,10 @@ func (s *Server) sendRequestNotificationNtfy(cfg *config.Config, requestID int64
 
 	go func() {
 		_ = s.sendNtfyNotificationWithActions(
-			cfg.Notifications.Ntfy.Server,
-			cfg.Notifications.Ntfy.Topic,
-			cfg.Notifications.Ntfy.Username,
-			cfg.Notifications.Ntfy.Password,
+			currentCfg.Notifications.Ntfy.Server,
+			currentCfg.Notifications.Ntfy.Topic,
+			currentCfg.Notifications.Ntfy.Username,
+			currentCfg.Notifications.Ntfy.Password,
 			"📚 New Book Request",
 			message,
 			"default",
@@ -854,6 +860,8 @@ func (s *Server) sendRequestNotificationNtfy(cfg *config.Config, requestID int64
 // sendRequestNotificationSMTP sends email notification for new requests
 func (s *Server) sendRequestNotificationSMTP(cfg *config.Config, requestID int64, username, title, authorsStr string) {
 	currentCfg := s.settings.Get()
+	approvalToken := s.generateApprovalToken(requestID)
+	declineToken := s.generateDeclineToken(requestID)
 	subject := "📚 New Book Request - Scriptorum"
 
 	// HTML email content
@@ -901,7 +909,7 @@ func (s *Server) sendRequestNotificationSMTP(cfg *config.Config, requestID int64
 			}
 			return ""
 		}(),
-		username, requestID, currentCfg.ServerURL, s.generateApprovalToken(requestID), currentCfg.ServerURL, s.generateDeclineToken(requestID), currentCfg.ServerURL)
+		username, requestID, currentCfg.ServerURL, approvalToken, currentCfg.ServerURL, declineToken, currentCfg.ServerURL)
 
 	// Plain text content
 	textBody := fmt.Sprintf(`📚 New Book Request - Scriptorum
@@ -921,7 +929,7 @@ Actions:
 			}
 			return ""
 		}(),
-		username, requestID, currentCfg.ServerURL, s.generateApprovalToken(requestID), currentCfg.ServerURL, s.generateDeclineToken(requestID), currentCfg.ServerURL)
+		username, requestID, currentCfg.ServerURL, approvalToken, currentCfg.ServerURL, declineToken, currentCfg.ServerURL)
 
 	go func() {
 		_ = s.sendSMTPNotification(cfg.Notifications.SMTP, subject, htmlBody, textBody)
@@ -931,6 +939,8 @@ Actions:
 // sendRequestNotificationDiscord sends Discord notification for new requests
 func (s *Server) sendRequestNotificationDiscord(cfg *config.Config, requestID int64, username, title, authorsStr string) {
 	currentCfg := s.settings.Get()
+	approvalToken := s.generateApprovalToken(requestID)
+	declineToken := s.generateDeclineToken(requestID)
 	embedTitle := "📚 New Book Request"
 	message := fmt.Sprintf("📖 **%s**", title)
 	if authorsStr != "" {
@@ -939,7 +949,7 @@ func (s *Server) sendRequestNotificationDiscord(cfg *config.Config, requestID in
 	message += fmt.Sprintf("\n🙋 **Requested by:** %s", username)
 	message += fmt.Sprintf("\n🆔 **Request ID:** #%d", requestID)
 	message += fmt.Sprintf("\n\n[✅ Approve Request](%s/approve/%s) | [❌ Decline Request](%s/approve/%s) | [📋 View All Requests](%s/requests)",
-		currentCfg.ServerURL, s.generateApprovalToken(requestID), currentCfg.ServerURL, s.generateDeclineToken(requestID), currentCfg.ServerURL)
+		currentCfg.ServerURL, approvalToken, currentCfg.ServerURL, declineToken, currentCfg.ServerURL)
 
 	color := 0x3b82f6 // Blue color for new requests
 
