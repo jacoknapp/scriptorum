@@ -2,7 +2,7 @@ package providers
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -18,7 +18,7 @@ func TestAmazonPublicGetByASIN(t *testing.T) {
 
 	a := NewAmazonPublic("www.amazon.com")
 	a.client.Transport = rtFunc(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 200, Body: ioutil.NopCloser(strings.NewReader(html)), Header: make(http.Header)}, nil
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(html)), Header: make(http.Header)}, nil
 	})
 	b, err := a.GetByASIN(context.Background(), "B012345678")
 	if err != nil {
@@ -43,7 +43,7 @@ func TestAmazonPublicSearchBooks(t *testing.T) {
 	</body></html>`
 	a := NewAmazonPublic("www.amazon.com")
 	a.client.Transport = rtFunc(func(r *http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: 200, Body: ioutil.NopCloser(strings.NewReader(html)), Header: make(http.Header)}, nil
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(html)), Header: make(http.Header)}, nil
 	})
 	items, err := a.SearchBooks(context.Background(), "keyword", 1, 10)
 	if err != nil {

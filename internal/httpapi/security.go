@@ -95,26 +95,6 @@ func (c *csrfManager) validateToken(token string) bool {
 	return true
 }
 
-func (c *csrfManager) consumeToken(token string) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	created, exists := c.tokens[token]
-	if !exists {
-		return false
-	}
-
-	// Check if token is expired (1 hour)
-	if time.Since(created) > time.Hour {
-		delete(c.tokens, token)
-		return false
-	}
-
-	// Remove token after use (one-time use)
-	delete(c.tokens, token)
-	return true
-}
-
 // CSRF middleware
 func (s *Server) csrfProtection(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

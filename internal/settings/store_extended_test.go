@@ -27,7 +27,8 @@ func TestStoreInitialization(t *testing.T) {
 	// Test Get method
 	retrievedCfg := store.Get()
 	if retrievedCfg == nil {
-		t.Error("Expected config to be non-nil")
+		t.Fatal("Expected config to be non-nil")
+		return
 	}
 
 	if retrievedCfg.HTTP.Listen != ":8080" {

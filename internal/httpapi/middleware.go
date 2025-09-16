@@ -37,7 +37,7 @@ func (s *Server) requireAdmin(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		u, _ := r.Context().Value(ctxUser).(*session)
 		if u == nil || !u.Admin {
-			http.Error(w, "forbidden", 403)
+			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
 		next(w, r)

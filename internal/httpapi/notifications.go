@@ -694,7 +694,7 @@ func (s *Server) apiTestSMTP() http.HandlerFunc {
 // sendDiscordNotification sends a notification via Discord webhook
 func (s *Server) sendDiscordNotification(webhookURL, username, title, message string, color int) error {
 	if webhookURL == "" {
-		return fmt.Errorf("Discord webhook URL is required")
+		return fmt.Errorf("discord webhook URL is required")
 	}
 
 	embed := map[string]any{
@@ -734,7 +734,7 @@ func (s *Server) sendDiscordNotification(webhookURL, username, title, message st
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		return fmt.Errorf("Discord webhook returned error: %d", resp.StatusCode)
+		return fmt.Errorf("discord webhook returned error: %d", resp.StatusCode)
 	}
 
 	return nil
@@ -754,7 +754,7 @@ func (s *Server) apiTestDiscord() http.HandlerFunc {
 		}
 
 		if req.WebhookURL == "" {
-			writeJSON(w, map[string]any{"success": false, "error": "Webhook URL is required"}, 400)
+			writeJSON(w, map[string]any{"success": false, "error": "webhook URL is required"}, 400)
 			return
 		}
 

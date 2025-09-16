@@ -600,53 +600,6 @@ func (r *Readarr) GetAuthorByID(ctx context.Context, id int) (map[string]any, er
 	return out, nil
 }
 
-// ImportAuthor attempts to create/import an author by foreignAuthorId and returns the newly created readarr id or an error.
-func (r *Readarr) ImportAuthor(ctx context.Context, foreignID string) (int, error) {
-	if strings.TrimSpace(foreignID) == "" {
-		return 0, fmt.Errorf("empty foreign author id")
-	}
-	// Build a minimal create payload. This may fail if the server doesn't accept this foreign id.
-	payload := map[string]any{
-		"authorName":      foreignID,
-		"foreignAuthorId": foreignID,
-		// Use a validated root folder path when possible
-		"rootFolderPath": r.getValidRootFolderPath(ctx, ""),
-	}
-	b, _ := json.Marshal(payload)
-	u := r.inst.BaseURL + "/api/v1/author"
-	if strings.Contains(u, "?") {
-		u += "&apikey=" + url.QueryEscape(r.inst.APIKey)
-	} else {
-		u += "?apikey=" + url.QueryEscape(r.inst.APIKey)
-	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(b))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	resp, err := r.cl.Do(req)
-	if err != nil {
-		return 0, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		return 0, fmt.Errorf("create author failed (HTTP %s): %s", resp.Status, string(body))
-	}
-	var out map[string]any
-	if err := json.Unmarshal(body, &out); err != nil {
-		return 0, err
-	}
-	if idv, ok := out["id"]; ok {
-		switch v := idv.(type) {
-		case float64:
-			return int(v), nil
-		case int:
-			return v, nil
-		}
-	}
-	return 0, fmt.Errorf("author create succeeded but no id returned")
-}
-
 func (r *Readarr) AddBook(ctx context.Context, candidate Candidate, opts AddOpts) ([]byte, []byte, error) {
 	tpl, err := template.New("payload").Funcs(template.FuncMap{
 		"toJSON": func(v any) string { b, _ := json.Marshal(v); return string(b) },
@@ -1240,10 +1193,6 @@ func (r *Readarr) getValidRootFolderPath(ctx context.Context, override string) s
 	}
 	return ""
 }
-
-var nonDigit = regexp.MustCompile(`[^0-9Xx]`)
-
-// use util.ParseAuthorNameFromTitle from util package
 
 // ----- Database caching methods -----
 
