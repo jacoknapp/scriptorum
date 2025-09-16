@@ -161,7 +161,7 @@ func (s *Server) handleApprovalToken(w http.ResponseWriter, r *http.Request) {
 	<div class="container">
 		<div class="status">` + emoji + ` Request #` + strconv.FormatInt(tokenData.RequestID, 10) + ` ` + actionText + `!</div>
 		<p>The request has been successfully ` + statusMessage + ` and will be processed accordingly.</p>
-		<a href="http://localhost:8080/requests" class="button">View All Requests</a>
+		<a href="` + s.cfg.ServerURL + `/requests" class="button">View All Requests</a>
 	</div>
 </body>
 </html>`))
@@ -475,7 +475,7 @@ func (s *Server) apiTestNtfy() http.HandlerFunc {
 			{
 				"action": "view",
 				"label":  "🌐 Open Scriptorum",
-				"url":    "http://localhost:8080",
+				"url":    s.cfg.ServerURL,
 			},
 		}
 
@@ -821,17 +821,17 @@ func (s *Server) sendRequestNotificationNtfy(cfg *config.Config, requestID int64
 		{
 			"action": "view",
 			"label":  "📋 View All Requests",
-			"url":    "http://localhost:8080/requests",
+			"url":    s.cfg.ServerURL + "/requests",
 		},
 		{
 			"action": "view",
 			"label":  fmt.Sprintf("✅ Approve Request #%d", requestID),
-			"url":    fmt.Sprintf("http://localhost:8080/approve/%s", approvalToken),
+			"url":    fmt.Sprintf("%s/approve/%s", s.cfg.ServerURL, approvalToken),
 		},
 		{
 			"action": "view",
 			"label":  fmt.Sprintf("❌ Decline Request #%d", requestID),
-			"url":    fmt.Sprintf("http://localhost:8080/approve/%s", declineToken),
+			"url":    fmt.Sprintf("%s/approve/%s", s.cfg.ServerURL, declineToken),
 		},
 	}
 
@@ -884,9 +884,9 @@ func (s *Server) sendRequestNotificationSMTP(cfg *config.Config, requestID int64
 				<p><strong>🆔 Request ID:</strong> #%d</p>
 			</div>
 			<div class="actions">
-				<a href="http://localhost:8080/approve/%s" class="button approve">✅ Approve Request</a>
-				<a href="http://localhost:8080/approve/%s" class="button decline">❌ Decline Request</a>
-				<a href="http://localhost:8080/requests" class="button view">📋 View All Requests</a>
+				<a href="%s/approve/%s" class="button approve">✅ Approve Request</a>
+				<a href="%s/approve/%s" class="button decline">❌ Decline Request</a>
+				<a href="%s/requests" class="button view">📋 View All Requests</a>
 			</div>
 		</div>
 	</div>
@@ -898,7 +898,7 @@ func (s *Server) sendRequestNotificationSMTP(cfg *config.Config, requestID int64
 			}
 			return ""
 		}(),
-		username, requestID, s.generateApprovalToken(requestID), s.generateDeclineToken(requestID))
+		username, requestID, s.cfg.ServerURL, s.generateApprovalToken(requestID), s.cfg.ServerURL, s.generateDeclineToken(requestID), s.cfg.ServerURL)
 
 	// Plain text content
 	textBody := fmt.Sprintf(`📚 New Book Request - Scriptorum
@@ -908,9 +908,9 @@ func (s *Server) sendRequestNotificationSMTP(cfg *config.Config, requestID int64
 🆔 Request ID: #%d
 
 Actions:
-• Approve: http://localhost:8080/approve/%s
-• Decline: http://localhost:8080/approve/%s  
-• View All Requests: http://localhost:8080/requests`,
+• Approve: %s/approve/%s
+• Decline: %s/approve/%s  
+• View All Requests: %s/requests`,
 		title,
 		func() string {
 			if authorsStr != "" {
@@ -918,7 +918,7 @@ Actions:
 			}
 			return ""
 		}(),
-		username, requestID, s.generateApprovalToken(requestID), s.generateDeclineToken(requestID))
+		username, requestID, s.cfg.ServerURL, s.generateApprovalToken(requestID), s.cfg.ServerURL, s.generateDeclineToken(requestID), s.cfg.ServerURL)
 
 	go func() {
 		_ = s.sendSMTPNotification(cfg.Notifications.SMTP, subject, htmlBody, textBody)
@@ -934,8 +934,8 @@ func (s *Server) sendRequestNotificationDiscord(cfg *config.Config, requestID in
 	}
 	message += fmt.Sprintf("\n🙋 **Requested by:** %s", username)
 	message += fmt.Sprintf("\n🆔 **Request ID:** #%d", requestID)
-	message += fmt.Sprintf("\n\n[✅ Approve Request](http://localhost:8080/approve/%s) | [❌ Decline Request](http://localhost:8080/approve/%s) | [📋 View All Requests](http://localhost:8080/requests)",
-		s.generateApprovalToken(requestID), s.generateDeclineToken(requestID))
+	message += fmt.Sprintf("\n\n[✅ Approve Request](%s/approve/%s) | [❌ Decline Request](%s/approve/%s) | [📋 View All Requests](%s/requests)",
+		s.cfg.ServerURL, s.generateApprovalToken(requestID), s.cfg.ServerURL, s.generateDeclineToken(requestID), s.cfg.ServerURL)
 
 	color := 0x3b82f6 // Blue color for new requests
 
@@ -990,7 +990,7 @@ func (s *Server) sendApprovalNotificationNtfy(cfg *config.Config, username, titl
 		{
 			"action": "view",
 			"label":  "📋 View All Requests",
-			"url":    "http://localhost:8080/requests",
+			"url":    s.cfg.ServerURL + "/requests",
 		},
 	}
 
@@ -1040,7 +1040,7 @@ func (s *Server) sendApprovalNotificationSMTP(cfg *config.Config, username, titl
 				<p>📚 <em>Your request has been processed and should be available soon!</em></p>
 			</div>
 			<div class="actions">
-				<a href="http://localhost:8080/requests" class="button">📋 View All Requests</a>
+				<a href="%s/requests" class="button">📋 View All Requests</a>
 			</div>
 		</div>
 	</div>
@@ -1052,7 +1052,7 @@ func (s *Server) sendApprovalNotificationSMTP(cfg *config.Config, username, titl
 			}
 			return ""
 		}(),
-		username)
+		username, s.cfg.ServerURL)
 
 	// Plain text content
 	textBody := fmt.Sprintf(`✅ Request Approved - Scriptorum
@@ -1062,7 +1062,7 @@ func (s *Server) sendApprovalNotificationSMTP(cfg *config.Config, username, titl
 
 📚 Your request has been processed and should be available soon!
 
-View All Requests: http://localhost:8080/requests`,
+View All Requests: %s/requests`,
 		title,
 		func() string {
 			if authorsStr != "" {
@@ -1070,7 +1070,7 @@ View All Requests: http://localhost:8080/requests`,
 			}
 			return ""
 		}(),
-		username)
+		username, s.cfg.ServerURL)
 
 	go func() {
 		_ = s.sendSMTPNotification(cfg.Notifications.SMTP, subject, htmlBody, textBody)
@@ -1086,7 +1086,7 @@ func (s *Server) sendApprovalNotificationDiscord(cfg *config.Config, username, t
 	}
 	message += fmt.Sprintf("\n✅ **Approved for:** %s", username)
 	message += "\n\n📚 *Your request has been processed and should be available soon!*"
-	message += "\n\n[📋 View All Requests](http://localhost:8080/requests)"
+	message += "\n\n[📋 View All Requests](" + s.cfg.ServerURL + "/requests)"
 
 	color := 0x10b981 // Green color for approved requests
 
@@ -1169,19 +1169,19 @@ func (s *Server) sendSystemNotificationSMTP(cfg *config.Config, title, message s
 				<p>%s</p>
 			</div>
 			<div class="actions">
-				<a href="http://localhost:8080" class="button">🌐 Open Scriptorum</a>
+				<a href="%s" class="button">🌐 Open Scriptorum</a>
 			</div>
 		</div>
 	</div>
 </body>
-</html>`, title, message)
+</html>`, title, message, s.cfg.ServerURL)
 
 	// Plain text content
 	textBody := fmt.Sprintf(`🚨 %s - Scriptorum
 
 %s
 
-Open Scriptorum: http://localhost:8080`, title, message)
+Open Scriptorum: %s`, title, message, s.cfg.ServerURL)
 
 	go func() {
 		_ = s.sendSMTPNotification(cfg.Notifications.SMTP, subject, htmlBody, textBody)

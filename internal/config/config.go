@@ -7,8 +7,9 @@ import (
 )
 
 type Config struct {
-	Debug bool `yaml:"debug"`
-	HTTP  struct {
+	Debug     bool   `yaml:"debug"`
+	ServerURL string `yaml:"server_url"`
+	HTTP      struct {
 		Listen string `yaml:"listen"`
 	} `yaml:"http"`
 	DB struct {

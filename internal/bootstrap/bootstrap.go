@@ -54,6 +54,7 @@ func defaultConfig(dbPath string) *config.Config {
 
 	// Mirror data/scriptorum.yaml defaults
 	c.Debug = false
+	c.ServerURL = "http://example.com:8080"
 	c.HTTP.Listen = ":8491"
 	c.DB.Path = dbPath
 	// Mark setup as not completed so the initial-run setup wizard is shown

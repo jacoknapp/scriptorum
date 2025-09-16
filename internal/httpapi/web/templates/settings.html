@@ -14,6 +14,11 @@
 				</label>
 				<div class="text-sm text-slate-400 ml-6">Prints verbose provider/API logs to server stdout (docker logs).</div>
 			</div>
+			<div class="border border-white/10 rounded p-3 mt-3">
+				<label class="block text-sm font-medium text-slate-200 mb-1">Server URL</label>
+				<input name="server_url" placeholder="http://example.com:8080" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.ServerURL }}">
+				<div class="text-sm text-slate-400 mt-1">Base URL used for notification links and redirects. Should match your external domain.</div>
+			</div>
 			</section>
 
 			<section class="mb-6">
@@ -36,7 +41,7 @@
 					</div>
 					<div class="md:col-span-2">
 						<label class="block text-sm font-medium text-slate-200 mb-1">Redirect URL</label>
-						<input name="oauth_redirect" placeholder="http://localhost:8080/oauth/callback" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.RedirectURL }}">
+						<input name="oauth_redirect" placeholder="http://example.com:8080/oauth/callback" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.OAuth.RedirectURL }}">
 					</div>
 				</div>
 				<div class="grid md:grid-cols-2 gap-3 mt-3">

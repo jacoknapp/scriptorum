@@ -44,6 +44,7 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 		cur := *s.settings.Get()
 		// General
 		cur.Debug = (r.FormValue("debug") == "on")
+		cur.ServerURL = strings.TrimSpace(r.FormValue("server_url"))
 		cur.Readarr.Ebooks.BaseURL = strings.TrimSpace(r.FormValue("ra_ebooks_base"))
 		cur.Readarr.Ebooks.APIKey = strings.TrimSpace(r.FormValue("ra_ebooks_key"))
 		cur.Readarr.Ebooks.InsecureSkipVerify = (r.FormValue("ra_ebooks_insecure") == "on")
