@@ -13,9 +13,11 @@ import (
 	"strings"
 	"time"
 
+	"gitea.knapp/jacoknapp/scriptorum/internal/config"
 	"gitea.knapp/jacoknapp/scriptorum/internal/db"
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 	"github.com/go-chi/chi/v5"
+	"gopkg.in/gomail.v2"
 )
 
 func (s *Server) mountNotifications(r chi.Router) {
@@ -30,6 +32,8 @@ func (s *Server) mountNotifications(r chi.Router) {
 		rt.Get("/notifications", u.handleNotifications(s))
 		rt.Post("/notifications/save", u.handleNotificationsSave(s))
 		rt.Post("/api/notifications/test-ntfy", s.apiTestNtfy())
+		rt.Post("/api/notifications/test-smtp", s.apiTestSMTP())
+		rt.Post("/api/notifications/test-discord", s.apiTestDiscord())
 	})
 }
 
@@ -403,6 +407,38 @@ func (u *notificationsUI) handleNotificationsSave(s *Server) http.HandlerFunc {
 		cur.Notifications.Ntfy.EnableApprovalNotifications = r.FormValue("ntfy_enable_approval_notifications") == "on"
 		cur.Notifications.Ntfy.EnableSystemNotifications = r.FormValue("ntfy_enable_system_notifications") == "on"
 
+		// Update SMTP settings
+		cur.Notifications.SMTP.Host = strings.TrimSpace(r.FormValue("smtp_host"))
+		if portStr := strings.TrimSpace(r.FormValue("smtp_port")); portStr != "" {
+			if port, err := strconv.Atoi(portStr); err == nil && port > 0 {
+				cur.Notifications.SMTP.Port = port
+			}
+		}
+		cur.Notifications.SMTP.Username = strings.TrimSpace(r.FormValue("smtp_username"))
+		if v := strings.TrimSpace(r.FormValue("smtp_password")); v != "" {
+			cur.Notifications.SMTP.Password = v
+		}
+		cur.Notifications.SMTP.FromEmail = strings.TrimSpace(r.FormValue("smtp_from_email"))
+		cur.Notifications.SMTP.FromName = strings.TrimSpace(r.FormValue("smtp_from_name"))
+		if cur.Notifications.SMTP.FromName == "" {
+			cur.Notifications.SMTP.FromName = "Scriptorum"
+		}
+		cur.Notifications.SMTP.ToEmail = strings.TrimSpace(r.FormValue("smtp_to_email"))
+		cur.Notifications.SMTP.EnableTLS = r.FormValue("smtp_enable_tls") == "on"
+		cur.Notifications.SMTP.EnableRequestNotifications = r.FormValue("smtp_enable_request_notifications") == "on"
+		cur.Notifications.SMTP.EnableApprovalNotifications = r.FormValue("smtp_enable_approval_notifications") == "on"
+		cur.Notifications.SMTP.EnableSystemNotifications = r.FormValue("smtp_enable_system_notifications") == "on"
+
+		// Update Discord settings
+		cur.Notifications.Discord.WebhookURL = strings.TrimSpace(r.FormValue("discord_webhook_url"))
+		cur.Notifications.Discord.Username = strings.TrimSpace(r.FormValue("discord_username"))
+		if cur.Notifications.Discord.Username == "" {
+			cur.Notifications.Discord.Username = "Scriptorum"
+		}
+		cur.Notifications.Discord.EnableRequestNotifications = r.FormValue("discord_enable_request_notifications") == "on"
+		cur.Notifications.Discord.EnableApprovalNotifications = r.FormValue("discord_enable_approval_notifications") == "on"
+		cur.Notifications.Discord.EnableSystemNotifications = r.FormValue("discord_enable_system_notifications") == "on"
+
 		_ = s.settings.Update(&cur)
 		http.Redirect(w, r, "/notifications", http.StatusFound)
 	}
@@ -526,14 +562,250 @@ func (s *Server) sendNtfyNotificationWithActions(server, topic, username, passwo
 	return nil
 }
 
+// sendSMTPNotification sends a notification via SMTP email
+func (s *Server) sendSMTPNotification(smtpConfig config.SMTPConfig, subject, htmlBody, textBody string) error {
+	if smtpConfig.Host == "" || smtpConfig.FromEmail == "" || smtpConfig.ToEmail == "" {
+		return fmt.Errorf("SMTP configuration incomplete: missing host, from_email, or to_email")
+	}
+
+	m := gomail.NewMessage()
+	m.SetHeader("From", fmt.Sprintf("%s <%s>", smtpConfig.FromName, smtpConfig.FromEmail))
+	m.SetHeader("To", smtpConfig.ToEmail)
+	m.SetHeader("Subject", subject)
+
+	if htmlBody != "" {
+		m.SetBody("text/html", htmlBody)
+		if textBody != "" {
+			m.AddAlternative("text/plain", textBody)
+		}
+	} else {
+		m.SetBody("text/plain", textBody)
+	}
+
+	d := gomail.NewDialer(smtpConfig.Host, smtpConfig.Port, smtpConfig.Username, smtpConfig.Password)
+	if !smtpConfig.EnableTLS {
+		d.TLSConfig = nil
+	}
+
+	return d.DialAndSend(m)
+}
+
+// apiTestSMTP tests the SMTP configuration by sending a test email
+func (s *Server) apiTestSMTP() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Host      string `json:"host"`
+			Port      int    `json:"port"`
+			Username  string `json:"username"`
+			Password  string `json:"password"`
+			FromEmail string `json:"from_email"`
+			FromName  string `json:"from_name"`
+			ToEmail   string `json:"to_email"`
+			EnableTLS bool   `json:"enable_tls"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, map[string]any{"success": false, "error": "Invalid request"}, 400)
+			return
+		}
+
+		if req.Host == "" || req.FromEmail == "" || req.ToEmail == "" {
+			writeJSON(w, map[string]any{"success": false, "error": "Host, from_email, and to_email are required"}, 400)
+			return
+		}
+
+		if req.Port == 0 {
+			req.Port = 587 // Default to 587
+		}
+		if req.FromName == "" {
+			req.FromName = "Scriptorum Test"
+		}
+
+		// Create test email content
+		subject := "🧪 Scriptorum SMTP Test"
+		htmlBody := `<!DOCTYPE html>
+<html>
+<head>
+	<title>Scriptorum Test Email</title>
+	<style>
+		body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #333; }
+		.container { max-width: 600px; margin: 0 auto; padding: 20px; }
+		.header { background: #3b82f6; color: white; padding: 20px; border-radius: 8px 8px 0 0; }
+		.content { background: #f8fafc; padding: 20px; border-radius: 0 0 8px 8px; }
+		.success { color: #10b981; font-weight: bold; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="header">
+			<h1>🎯 Scriptorum SMTP Test</h1>
+		</div>
+		<div class="content">
+			<p><span class="success">✅ Configuration is working correctly!</span></p>
+			<p>🔔 You will receive email notifications for:</p>
+			<ul>
+				<li>New book requests</li>
+				<li>Request approvals</li>
+				<li>System alerts</li>
+			</ul>
+			<p>💡 <em>This is a test email to verify your SMTP configuration.</em></p>
+		</div>
+	</div>
+</body>
+</html>`
+
+		textBody := `🧪 Scriptorum SMTP Test
+
+✅ Configuration is working correctly!
+
+🔔 You will receive email notifications for:
+• New book requests
+• Request approvals  
+• System alerts
+
+💡 This is a test email to verify your SMTP configuration.`
+
+		smtpConfig := config.SMTPConfig{
+			Host:      req.Host,
+			Port:      req.Port,
+			Username:  req.Username,
+			Password:  req.Password,
+			FromEmail: req.FromEmail,
+			FromName:  req.FromName,
+			ToEmail:   req.ToEmail,
+			EnableTLS: req.EnableTLS,
+		}
+
+		err := s.sendSMTPNotification(smtpConfig, subject, htmlBody, textBody)
+		if err != nil {
+			writeJSON(w, map[string]any{"success": false, "error": err.Error()}, 500)
+			return
+		}
+
+		writeJSON(w, map[string]any{"success": true}, 200)
+	}
+}
+
+// sendDiscordNotification sends a notification via Discord webhook
+func (s *Server) sendDiscordNotification(webhookURL, username, title, message string, color int) error {
+	if webhookURL == "" {
+		return fmt.Errorf("Discord webhook URL is required")
+	}
+
+	embed := map[string]any{
+		"title":       title,
+		"description": message,
+		"color":       color,
+		"timestamp":   time.Now().Format(time.RFC3339),
+		"footer": map[string]string{
+			"text": "Scriptorum",
+		},
+	}
+
+	payload := map[string]any{
+		"username": username,
+		"embeds":   []map[string]any{embed},
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal Discord payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", webhookURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create Discord request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send Discord notification: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("Discord webhook returned error: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+// apiTestDiscord tests the Discord configuration by sending a test message
+func (s *Server) apiTestDiscord() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			WebhookURL string `json:"webhook_url"`
+			Username   string `json:"username"`
+		}
+
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, map[string]any{"success": false, "error": "Invalid request"}, 400)
+			return
+		}
+
+		if req.WebhookURL == "" {
+			writeJSON(w, map[string]any{"success": false, "error": "Webhook URL is required"}, 400)
+			return
+		}
+
+		if req.Username == "" {
+			req.Username = "Scriptorum Test"
+		}
+
+		// Send test notification
+		title := "🧪 Scriptorum Discord Test"
+		message := "✅ **Configuration is working correctly!**\n\n🔔 You will receive Discord notifications for:\n• New book requests\n• Request approvals\n• System alerts\n\n💡 *This is a test message to verify your Discord webhook configuration.*"
+		color := 0x3b82f6 // Blue color
+
+		err := s.sendDiscordNotification(req.WebhookURL, req.Username, title, message, color)
+		if err != nil {
+			writeJSON(w, map[string]any{"success": false, "error": err.Error()}, 500)
+			return
+		}
+
+		writeJSON(w, map[string]any{"success": true}, 200)
+	}
+}
+
 // SendRequestNotification sends a notification when a new request is created
 func (s *Server) SendRequestNotification(requestID int64, username, title string, authors []string) {
 	cfg := s.settings.Get()
-	if cfg.Notifications.Provider != "ntfy" || !cfg.Notifications.Ntfy.EnableRequestNotifications {
+
+	// Check if any notifications are enabled
+	if cfg.Notifications.Provider == "" {
 		return
 	}
 
 	authorsStr := strings.Join(authors, ", ")
+
+	switch cfg.Notifications.Provider {
+	case "ntfy":
+		if !cfg.Notifications.Ntfy.EnableRequestNotifications {
+			return
+		}
+		s.sendRequestNotificationNtfy(cfg, requestID, username, title, authorsStr)
+
+	case "smtp":
+		if !cfg.Notifications.SMTP.EnableRequestNotifications {
+			return
+		}
+		s.sendRequestNotificationSMTP(cfg, requestID, username, title, authorsStr)
+
+	case "discord":
+		if !cfg.Notifications.Discord.EnableRequestNotifications {
+			return
+		}
+		s.sendRequestNotificationDiscord(cfg, requestID, username, title, authorsStr)
+	}
+}
+
+// sendRequestNotificationNtfy sends ntfy notification for new requests
+func (s *Server) sendRequestNotificationNtfy(cfg *config.Config, requestID int64, username, title, authorsStr string) {
 	message := fmt.Sprintf("📖 **%s**", title)
 	if authorsStr != "" {
 		message += fmt.Sprintf("\n👤 *by %s*", authorsStr)
@@ -577,14 +849,135 @@ func (s *Server) SendRequestNotification(requestID int64, username, title string
 	}()
 }
 
+// sendRequestNotificationSMTP sends email notification for new requests
+func (s *Server) sendRequestNotificationSMTP(cfg *config.Config, requestID int64, username, title, authorsStr string) {
+	subject := "📚 New Book Request - Scriptorum"
+
+	// HTML email content
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+	<title>New Book Request</title>
+	<style>
+		body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #333; margin: 0; padding: 20px; }
+		.container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+		.header { background: #3b82f6; color: white; padding: 20px; text-align: center; }
+		.content { padding: 20px; }
+		.book-info { background: #f8fafc; padding: 15px; border-radius: 6px; margin: 15px 0; }
+		.actions { text-align: center; margin: 20px 0; }
+		.button { display: inline-block; padding: 10px 20px; margin: 0 5px; text-decoration: none; border-radius: 5px; font-weight: bold; }
+		.approve { background: #10b981; color: white; }
+		.decline { background: #ef4444; color: white; }
+		.view { background: #6b7280; color: white; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="header">
+			<h1>📚 New Book Request</h1>
+		</div>
+		<div class="content">
+			<div class="book-info">
+				<h2>📖 %s</h2>
+				%s
+				<p><strong>🙋 Requested by:</strong> %s</p>
+				<p><strong>🆔 Request ID:</strong> #%d</p>
+			</div>
+			<div class="actions">
+				<a href="http://localhost:8080/approve/%s" class="button approve">✅ Approve Request</a>
+				<a href="http://localhost:8080/approve/%s" class="button decline">❌ Decline Request</a>
+				<a href="http://localhost:8080/requests" class="button view">📋 View All Requests</a>
+			</div>
+		</div>
+	</div>
+</body>
+</html>`, title,
+		func() string {
+			if authorsStr != "" {
+				return fmt.Sprintf("<p><strong>👤 Author(s):</strong> %s</p>", authorsStr)
+			}
+			return ""
+		}(),
+		username, requestID, s.generateApprovalToken(requestID), s.generateDeclineToken(requestID))
+
+	// Plain text content
+	textBody := fmt.Sprintf(`📚 New Book Request - Scriptorum
+
+📖 %s
+%s🙋 Requested by: %s
+🆔 Request ID: #%d
+
+Actions:
+• Approve: http://localhost:8080/approve/%s
+• Decline: http://localhost:8080/approve/%s  
+• View All Requests: http://localhost:8080/requests`,
+		title,
+		func() string {
+			if authorsStr != "" {
+				return fmt.Sprintf("👤 Author(s): %s\n", authorsStr)
+			}
+			return ""
+		}(),
+		username, requestID, s.generateApprovalToken(requestID), s.generateDeclineToken(requestID))
+
+	go func() {
+		_ = s.sendSMTPNotification(cfg.Notifications.SMTP, subject, htmlBody, textBody)
+	}()
+}
+
+// sendRequestNotificationDiscord sends Discord notification for new requests
+func (s *Server) sendRequestNotificationDiscord(cfg *config.Config, requestID int64, username, title, authorsStr string) {
+	embedTitle := "📚 New Book Request"
+	message := fmt.Sprintf("📖 **%s**", title)
+	if authorsStr != "" {
+		message += fmt.Sprintf("\n👤 **Author(s):** %s", authorsStr)
+	}
+	message += fmt.Sprintf("\n🙋 **Requested by:** %s", username)
+	message += fmt.Sprintf("\n🆔 **Request ID:** #%d", requestID)
+	message += fmt.Sprintf("\n\n[✅ Approve Request](http://localhost:8080/approve/%s) | [❌ Decline Request](http://localhost:8080/approve/%s) | [📋 View All Requests](http://localhost:8080/requests)",
+		s.generateApprovalToken(requestID), s.generateDeclineToken(requestID))
+
+	color := 0x3b82f6 // Blue color for new requests
+
+	go func() {
+		_ = s.sendDiscordNotification(cfg.Notifications.Discord.WebhookURL, cfg.Notifications.Discord.Username, embedTitle, message, color)
+	}()
+}
+
 // SendApprovalNotification sends a notification when a request is approved
 func (s *Server) SendApprovalNotification(username, title string, authors []string) {
 	cfg := s.settings.Get()
-	if cfg.Notifications.Provider != "ntfy" || !cfg.Notifications.Ntfy.EnableApprovalNotifications {
+
+	// Check if any notifications are enabled
+	if cfg.Notifications.Provider == "" {
 		return
 	}
 
 	authorsStr := strings.Join(authors, ", ")
+
+	switch cfg.Notifications.Provider {
+	case "ntfy":
+		if !cfg.Notifications.Ntfy.EnableApprovalNotifications {
+			return
+		}
+		s.sendApprovalNotificationNtfy(cfg, username, title, authorsStr)
+
+	case "smtp":
+		if !cfg.Notifications.SMTP.EnableApprovalNotifications {
+			return
+		}
+		s.sendApprovalNotificationSMTP(cfg, username, title, authorsStr)
+
+	case "discord":
+		if !cfg.Notifications.Discord.EnableApprovalNotifications {
+			return
+		}
+		s.sendApprovalNotificationDiscord(cfg, username, title, authorsStr)
+	}
+}
+
+// sendApprovalNotificationNtfy sends ntfy notification for approved requests
+func (s *Server) sendApprovalNotificationNtfy(cfg *config.Config, username, title, authorsStr string) {
 	message := fmt.Sprintf("🎉 **%s**", title)
 	if authorsStr != "" {
 		message += fmt.Sprintf("\n👤 *by %s*", authorsStr)
@@ -615,13 +1008,125 @@ func (s *Server) SendApprovalNotification(username, title string, authors []stri
 	}()
 }
 
+// sendApprovalNotificationSMTP sends email notification for approved requests
+func (s *Server) sendApprovalNotificationSMTP(cfg *config.Config, username, title, authorsStr string) {
+	subject := "✅ Request Approved - Scriptorum"
+
+	// HTML email content
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+	<title>Request Approved</title>
+	<style>
+		body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #333; margin: 0; padding: 20px; }
+		.container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+		.header { background: #10b981; color: white; padding: 20px; text-align: center; }
+		.content { padding: 20px; }
+		.book-info { background: #f0fdf4; padding: 15px; border-radius: 6px; margin: 15px 0; border-left: 4px solid #10b981; }
+		.actions { text-align: center; margin: 20px 0; }
+		.button { display: inline-block; padding: 10px 20px; margin: 0 5px; text-decoration: none; border-radius: 5px; font-weight: bold; background: #6b7280; color: white; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="header">
+			<h1>✅ Request Approved</h1>
+		</div>
+		<div class="content">
+			<div class="book-info">
+				<h2>🎉 %s</h2>
+				%s
+				<p><strong>✅ Approved for:</strong> %s</p>
+				<p>📚 <em>Your request has been processed and should be available soon!</em></p>
+			</div>
+			<div class="actions">
+				<a href="http://localhost:8080/requests" class="button">📋 View All Requests</a>
+			</div>
+		</div>
+	</div>
+</body>
+</html>`, title,
+		func() string {
+			if authorsStr != "" {
+				return fmt.Sprintf("<p><strong>👤 Author(s):</strong> %s</p>", authorsStr)
+			}
+			return ""
+		}(),
+		username)
+
+	// Plain text content
+	textBody := fmt.Sprintf(`✅ Request Approved - Scriptorum
+
+🎉 %s
+%s✅ Approved for: %s
+
+📚 Your request has been processed and should be available soon!
+
+View All Requests: http://localhost:8080/requests`,
+		title,
+		func() string {
+			if authorsStr != "" {
+				return fmt.Sprintf("👤 Author(s): %s\n", authorsStr)
+			}
+			return ""
+		}(),
+		username)
+
+	go func() {
+		_ = s.sendSMTPNotification(cfg.Notifications.SMTP, subject, htmlBody, textBody)
+	}()
+}
+
+// sendApprovalNotificationDiscord sends Discord notification for approved requests
+func (s *Server) sendApprovalNotificationDiscord(cfg *config.Config, username, title, authorsStr string) {
+	embedTitle := "✅ Request Approved"
+	message := fmt.Sprintf("🎉 **%s**", title)
+	if authorsStr != "" {
+		message += fmt.Sprintf("\n👤 **Author(s):** %s", authorsStr)
+	}
+	message += fmt.Sprintf("\n✅ **Approved for:** %s", username)
+	message += "\n\n📚 *Your request has been processed and should be available soon!*"
+	message += "\n\n[📋 View All Requests](http://localhost:8080/requests)"
+
+	color := 0x10b981 // Green color for approved requests
+
+	go func() {
+		_ = s.sendDiscordNotification(cfg.Notifications.Discord.WebhookURL, cfg.Notifications.Discord.Username, embedTitle, message, color)
+	}()
+}
+
 // SendSystemNotification sends a system notification
 func (s *Server) SendSystemNotification(title, message string) {
 	cfg := s.settings.Get()
-	if cfg.Notifications.Provider != "ntfy" || !cfg.Notifications.Ntfy.EnableSystemNotifications {
+
+	// Check if any notifications are enabled
+	if cfg.Notifications.Provider == "" {
 		return
 	}
 
+	switch cfg.Notifications.Provider {
+	case "ntfy":
+		if !cfg.Notifications.Ntfy.EnableSystemNotifications {
+			return
+		}
+		s.sendSystemNotificationNtfy(cfg, title, message)
+
+	case "smtp":
+		if !cfg.Notifications.SMTP.EnableSystemNotifications {
+			return
+		}
+		s.sendSystemNotificationSMTP(cfg, title, message)
+
+	case "discord":
+		if !cfg.Notifications.Discord.EnableSystemNotifications {
+			return
+		}
+		s.sendSystemNotificationDiscord(cfg, title, message)
+	}
+}
+
+// sendSystemNotificationNtfy sends ntfy notification for system alerts
+func (s *Server) sendSystemNotificationNtfy(cfg *config.Config, title, message string) {
 	go func() {
 		_ = s.sendNtfyNotification(
 			cfg.Notifications.Ntfy.Server,
@@ -632,5 +1137,63 @@ func (s *Server) SendSystemNotification(title, message string) {
 			message,
 			"high",
 		)
+	}()
+}
+
+// sendSystemNotificationSMTP sends email notification for system alerts
+func (s *Server) sendSystemNotificationSMTP(cfg *config.Config, title, message string) {
+	subject := fmt.Sprintf("🚨 %s - Scriptorum", title)
+
+	// HTML email content
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+	<title>System Notification</title>
+	<style>
+		body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #333; margin: 0; padding: 20px; }
+		.container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+		.header { background: #ef4444; color: white; padding: 20px; text-align: center; }
+		.content { padding: 20px; }
+		.alert-info { background: #fef2f2; padding: 15px; border-radius: 6px; margin: 15px 0; border-left: 4px solid #ef4444; }
+		.actions { text-align: center; margin: 20px 0; }
+		.button { display: inline-block; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; background: #6b7280; color: white; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="header">
+			<h1>🚨 %s</h1>
+		</div>
+		<div class="content">
+			<div class="alert-info">
+				<p>%s</p>
+			</div>
+			<div class="actions">
+				<a href="http://localhost:8080" class="button">🌐 Open Scriptorum</a>
+			</div>
+		</div>
+	</div>
+</body>
+</html>`, title, message)
+
+	// Plain text content
+	textBody := fmt.Sprintf(`🚨 %s - Scriptorum
+
+%s
+
+Open Scriptorum: http://localhost:8080`, title, message)
+
+	go func() {
+		_ = s.sendSMTPNotification(cfg.Notifications.SMTP, subject, htmlBody, textBody)
+	}()
+}
+
+// sendSystemNotificationDiscord sends Discord notification for system alerts
+func (s *Server) sendSystemNotificationDiscord(cfg *config.Config, title, message string) {
+	embedTitle := fmt.Sprintf("🚨 %s", title)
+	color := 0xef4444 // Red color for system alerts
+
+	go func() {
+		_ = s.sendDiscordNotification(cfg.Notifications.Discord.WebhookURL, cfg.Notifications.Discord.Username, embedTitle, message, color)
 	}()
 }

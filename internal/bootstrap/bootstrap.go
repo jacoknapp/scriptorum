@@ -108,5 +108,25 @@ func defaultConfig(dbPath string) *config.Config {
 	c.Notifications.Ntfy.EnableApprovalNotifications = false
 	c.Notifications.Ntfy.EnableSystemNotifications = false
 
+	// SMTP defaults
+	c.Notifications.SMTP.Host = ""
+	c.Notifications.SMTP.Port = 587
+	c.Notifications.SMTP.Username = ""
+	c.Notifications.SMTP.Password = ""
+	c.Notifications.SMTP.FromEmail = ""
+	c.Notifications.SMTP.FromName = "Scriptorum"
+	c.Notifications.SMTP.ToEmail = ""
+	c.Notifications.SMTP.EnableTLS = true
+	c.Notifications.SMTP.EnableRequestNotifications = false
+	c.Notifications.SMTP.EnableApprovalNotifications = false
+	c.Notifications.SMTP.EnableSystemNotifications = false
+
+	// Discord defaults
+	c.Notifications.Discord.WebhookURL = ""
+	c.Notifications.Discord.Username = "Scriptorum"
+	c.Notifications.Discord.EnableRequestNotifications = false
+	c.Notifications.Discord.EnableApprovalNotifications = false
+	c.Notifications.Discord.EnableSystemNotifications = false
+
 	return c
 }

@@ -65,8 +65,10 @@ type Config struct {
 	} `yaml:"readarr"`
 
 	Notifications struct {
-		Provider string     `yaml:"provider"`
-		Ntfy     NtfyConfig `yaml:"ntfy"`
+		Provider string        `yaml:"provider"`
+		Ntfy     NtfyConfig    `yaml:"ntfy"`
+		SMTP     SMTPConfig    `yaml:"smtp"`
+		Discord  DiscordConfig `yaml:"discord"`
 	} `yaml:"notifications"`
 }
 
@@ -75,6 +77,28 @@ type NtfyConfig struct {
 	Topic                       string `yaml:"topic"`
 	Username                    string `yaml:"username"`
 	Password                    string `yaml:"password"`
+	EnableRequestNotifications  bool   `yaml:"enable_request_notifications"`
+	EnableApprovalNotifications bool   `yaml:"enable_approval_notifications"`
+	EnableSystemNotifications   bool   `yaml:"enable_system_notifications"`
+}
+
+type SMTPConfig struct {
+	Host                        string `yaml:"host"`
+	Port                        int    `yaml:"port"`
+	Username                    string `yaml:"username"`
+	Password                    string `yaml:"password"`
+	FromEmail                   string `yaml:"from_email"`
+	FromName                    string `yaml:"from_name"`
+	ToEmail                     string `yaml:"to_email"`
+	EnableTLS                   bool   `yaml:"enable_tls"`
+	EnableRequestNotifications  bool   `yaml:"enable_request_notifications"`
+	EnableApprovalNotifications bool   `yaml:"enable_approval_notifications"`
+	EnableSystemNotifications   bool   `yaml:"enable_system_notifications"`
+}
+
+type DiscordConfig struct {
+	WebhookURL                  string `yaml:"webhook_url"`
+	Username                    string `yaml:"username"`
 	EnableRequestNotifications  bool   `yaml:"enable_request_notifications"`
 	EnableApprovalNotifications bool   `yaml:"enable_approval_notifications"`
 	EnableSystemNotifications   bool   `yaml:"enable_system_notifications"`

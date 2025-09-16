@@ -13,6 +13,8 @@
 					<select id="notification_provider" name="notification_provider" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" onchange="toggleNotificationSettings()">
 						<option value="">Disabled</option>
 						<option value="ntfy" {{ if eq .Notifications.Provider "ntfy" }}selected{{ end }}>ntfy.sh</option>
+						<option value="smtp" {{ if eq .Notifications.Provider "smtp" }}selected{{ end }}>SMTP Email</option>
+						<option value="discord" {{ if eq .Notifications.Provider "discord" }}selected{{ end }}>Discord Webhook</option>
 					</select>
 					<div class="text-sm text-slate-400 mt-1">Choose a notification service to receive alerts for book requests and system events.</div>
 				</div>
@@ -69,6 +71,121 @@
 				</div>
 			</section>
 
+			<!-- SMTP Configuration -->
+			<section id="smtp_settings" class="mb-6"{{ if ne .Notifications.Provider "smtp" }} style="display: none;"{{ end }}>
+				<h2 class="font-semibold mb-2">SMTP Email Configuration</h2>
+				<div class="border border-white/10 rounded p-3">
+					<div class="grid md:grid-cols-2 gap-3">
+						<div>
+							<label class="block text-sm font-medium text-slate-200 mb-1">SMTP Host</label>
+							<input name="smtp_host" placeholder="smtp.gmail.com" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.Host }}">
+							<div class="text-xs text-slate-400 mt-1">Your SMTP server hostname</div>
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-slate-200 mb-1">Port</label>
+							<input type="number" name="smtp_port" placeholder="587" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.Port }}">
+							<div class="text-xs text-slate-400 mt-1">Usually 587 (TLS) or 465 (SSL)</div>
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-slate-200 mb-1">Username</label>
+							<input name="smtp_username" placeholder="your-email@gmail.com" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.Username }}">
+							<div class="text-xs text-slate-400 mt-1">SMTP authentication username</div>
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-slate-200 mb-1">Password</label>
+							<input type="password" name="smtp_password" placeholder="password or app-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.Password }}">
+							<div class="text-xs text-slate-400 mt-1">SMTP authentication password</div>
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-slate-200 mb-1">From Email</label>
+							<input name="smtp_from_email" placeholder="scriptorum@yourdomain.com" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.FromEmail }}">
+							<div class="text-xs text-slate-400 mt-1">Sender email address</div>
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-slate-200 mb-1">From Name</label>
+							<input name="smtp_from_name" placeholder="Scriptorum" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.FromName }}">
+							<div class="text-xs text-slate-400 mt-1">Sender display name</div>
+						</div>
+						<div class="md:col-span-2">
+							<label class="block text-sm font-medium text-slate-200 mb-1">To Email</label>
+							<input name="smtp_to_email" placeholder="admin@yourdomain.com" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.ToEmail }}">
+							<div class="text-xs text-slate-400 mt-1">Email address to receive notifications</div>
+						</div>
+					</div>
+					<div class="mt-3">
+						<label class="inline-flex items-center gap-2">
+							<input type="checkbox" name="smtp_enable_tls" {{ if .Notifications.SMTP.EnableTLS }}checked{{ end }}> 
+							Enable TLS (recommended)
+						</label>
+					</div>
+					<div class="mt-3">
+						<label class="inline-flex items-center gap-2">
+							<input type="checkbox" name="smtp_enable_request_notifications" {{ if .Notifications.SMTP.EnableRequestNotifications }}checked{{ end }}> 
+							Send notifications for new requests
+						</label>
+					</div>
+					<div class="mt-2">
+						<label class="inline-flex items-center gap-2">
+							<input type="checkbox" name="smtp_enable_approval_notifications" {{ if .Notifications.SMTP.EnableApprovalNotifications }}checked{{ end }}> 
+							Send notifications for request approvals
+						</label>
+					</div>
+					<div class="mt-2">
+						<label class="inline-flex items-center gap-2">
+							<input type="checkbox" name="smtp_enable_system_notifications" {{ if .Notifications.SMTP.EnableSystemNotifications }}checked{{ end }}> 
+							Send notifications for system events
+						</label>
+					</div>
+					<div class="mt-4 flex items-center gap-2">
+						<button type="button" class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-500" onclick="testSMTP()">Test Email</button>
+						<span id="smtp_test" class="text-sm text-slate-400">—</span>
+					</div>
+				</div>
+			</section>
+
+			<!-- Discord Configuration -->
+			<section id="discord_settings" class="mb-6"{{ if ne .Notifications.Provider "discord" }} style="display: none;"{{ end }}>
+				<h2 class="font-semibold mb-2">Discord Webhook Configuration</h2>
+				<div class="border border-white/10 rounded p-3">
+					<div class="grid gap-3">
+						<div>
+							<label class="block text-sm font-medium text-slate-200 mb-1">Webhook URL</label>
+							<input name="discord_webhook_url" placeholder="https://discord.com/api/webhooks/..." class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.Discord.WebhookURL }}">
+							<div class="text-xs text-slate-400 mt-1">
+								<a href="https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks" target="_blank" class="text-blue-400 hover:text-blue-300">How to create a Discord webhook</a>
+							</div>
+						</div>
+						<div>
+							<label class="block text-sm font-medium text-slate-200 mb-1">Bot Username</label>
+							<input name="discord_username" placeholder="Scriptorum" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.Discord.Username }}">
+							<div class="text-xs text-slate-400 mt-1">Display name for the bot messages</div>
+						</div>
+					</div>
+					<div class="mt-3">
+						<label class="inline-flex items-center gap-2">
+							<input type="checkbox" name="discord_enable_request_notifications" {{ if .Notifications.Discord.EnableRequestNotifications }}checked{{ end }}> 
+							Send notifications for new requests
+						</label>
+					</div>
+					<div class="mt-2">
+						<label class="inline-flex items-center gap-2">
+							<input type="checkbox" name="discord_enable_approval_notifications" {{ if .Notifications.Discord.EnableApprovalNotifications }}checked{{ end }}> 
+							Send notifications for request approvals
+						</label>
+					</div>
+					<div class="mt-2">
+						<label class="inline-flex items-center gap-2">
+							<input type="checkbox" name="discord_enable_system_notifications" {{ if .Notifications.Discord.EnableSystemNotifications }}checked{{ end }}> 
+							Send notifications for system events
+						</label>
+					</div>
+					<div class="mt-4 flex items-center gap-2">
+						<button type="button" class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-500" onclick="testDiscord()">Test Message</button>
+						<span id="discord_test" class="text-sm text-slate-400">—</span>
+					</div>
+				</div>
+			</section>
+
 			<!-- Save Button -->
 			<div class="flex justify-end">
 				<button class="px-4 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500">Save</button>
@@ -81,11 +198,21 @@
 function toggleNotificationSettings() {
 	const provider = document.getElementById('notification_provider').value;
 	const ntfySettings = document.getElementById('ntfy_settings');
+	const smtpSettings = document.getElementById('smtp_settings');
+	const discordSettings = document.getElementById('discord_settings');
 	
+	// Hide all settings first
+	ntfySettings.style.display = 'none';
+	smtpSettings.style.display = 'none';
+	discordSettings.style.display = 'none';
+	
+	// Show the selected provider settings
 	if (provider === 'ntfy') {
 		ntfySettings.style.display = 'block';
-	} else {
-		ntfySettings.style.display = 'none';
+	} else if (provider === 'smtp') {
+		smtpSettings.style.display = 'block';
+	} else if (provider === 'discord') {
+		discordSettings.style.display = 'block';
 	}
 }
 
@@ -144,6 +271,154 @@ function testNtfy() {
 		clearTimeout(timeoutId);
 		if (error.name === 'AbortError') {
 			testSpan.textContent = '✗ Test timed out after 8 seconds';
+		} else {
+			testSpan.textContent = '✗ ' + (error.message || 'Network error');
+		}
+		testSpan.className = 'text-sm text-red-400';
+	})
+	.finally(() => {
+		// Re-enable button and remove loading state
+		button.disabled = false;
+		button.classList.remove('opacity-50', 'cursor-not-allowed');
+		
+		// Reset status after 5 seconds
+		setTimeout(() => {
+			testSpan.textContent = '—';
+			testSpan.className = 'text-sm text-slate-400';
+		}, 5000);
+	});
+}
+
+function testSMTP() {
+	const testSpan = document.getElementById('smtp_test');
+	const button = document.querySelector('button[onclick="testSMTP()"]');
+	
+	// Disable button and show loading state
+	testSpan.textContent = 'Sending test email...';
+	testSpan.className = 'text-sm text-blue-400';
+	button.disabled = true;
+	button.classList.add('opacity-50', 'cursor-not-allowed');
+	
+	const form = document.querySelector('form');
+	const formData = new FormData(form);
+	
+	// Build test request
+	const testData = {
+		host: formData.get('smtp_host') || '',
+		port: parseInt(formData.get('smtp_port')) || 587,
+		username: formData.get('smtp_username') || '',
+		password: formData.get('smtp_password') || '',
+		from_email: formData.get('smtp_from_email') || '',
+		from_name: formData.get('smtp_from_name') || 'Scriptorum Test',
+		to_email: formData.get('smtp_to_email') || '',
+		enable_tls: formData.get('smtp_enable_tls') === 'on'
+	};
+
+	// Create abort controller for timeout
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for SMTP
+	
+	fetch('/api/notifications/test-smtp', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'X-Requested-With': 'XMLHttpRequest',
+			'X-CSRF-Token': formData.get('_csrf_token')
+		},
+		body: JSON.stringify(testData),
+		signal: controller.signal
+	})
+	.then(response => {
+		clearTimeout(timeoutId);
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}`);
+		}
+		return response.json();
+	})
+	.then(data => {
+		if (data.success) {
+			testSpan.textContent = '✓ Test email sent successfully!';
+			testSpan.className = 'text-sm text-emerald-400';
+		} else {
+			testSpan.textContent = '✗ ' + (data.error || 'Test failed');
+			testSpan.className = 'text-sm text-red-400';
+		}
+	})
+	.catch(error => {
+		clearTimeout(timeoutId);
+		if (error.name === 'AbortError') {
+			testSpan.textContent = '✗ Test timed out after 15 seconds';
+		} else {
+			testSpan.textContent = '✗ ' + (error.message || 'Network error');
+		}
+		testSpan.className = 'text-sm text-red-400';
+	})
+	.finally(() => {
+		// Re-enable button and remove loading state
+		button.disabled = false;
+		button.classList.remove('opacity-50', 'cursor-not-allowed');
+		
+		// Reset status after 5 seconds
+		setTimeout(() => {
+			testSpan.textContent = '—';
+			testSpan.className = 'text-sm text-slate-400';
+		}, 5000);
+	});
+}
+
+function testDiscord() {
+	const testSpan = document.getElementById('discord_test');
+	const button = document.querySelector('button[onclick="testDiscord()"]');
+	
+	// Disable button and show loading state
+	testSpan.textContent = 'Sending test message...';
+	testSpan.className = 'text-sm text-blue-400';
+	button.disabled = true;
+	button.classList.add('opacity-50', 'cursor-not-allowed');
+	
+	const form = document.querySelector('form');
+	const formData = new FormData(form);
+	
+	// Build test request
+	const testData = {
+		webhook_url: formData.get('discord_webhook_url') || '',
+		username: formData.get('discord_username') || 'Scriptorum Test'
+	};
+
+	// Create abort controller for timeout
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+	
+	fetch('/api/notifications/test-discord', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'X-Requested-With': 'XMLHttpRequest',
+			'X-CSRF-Token': formData.get('_csrf_token')
+		},
+		body: JSON.stringify(testData),
+		signal: controller.signal
+	})
+	.then(response => {
+		clearTimeout(timeoutId);
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}`);
+		}
+		return response.json();
+	})
+	.then(data => {
+		if (data.success) {
+			testSpan.textContent = '✓ Test message sent successfully!';
+			testSpan.className = 'text-sm text-emerald-400';
+		} else {
+			testSpan.textContent = '✗ ' + (data.error || 'Test failed');
+			testSpan.className = 'text-sm text-red-400';
+		}
+	})
+	.catch(error => {
+		clearTimeout(timeoutId);
+		if (error.name === 'AbortError') {
+			testSpan.textContent = '✗ Test timed out after 10 seconds';
 		} else {
 			testSpan.textContent = '✗ ' + (error.message || 'Network error');
 		}
