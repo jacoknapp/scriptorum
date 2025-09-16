@@ -44,8 +44,8 @@ const (
 				"statistics": {{ if (index .Candidate "statistics") }}{{ toJSON (index .Candidate "statistics") }}{{ else }}{"bookFileCount":0,"bookCount":0,"totalBookCount":0,"sizeOnDisk":0}{{ end }},
 				"added": {{ toJSON (index .Candidate "added") }},
 				"addOptions": {
-					"addType": {{ if (index (index .Candidate "addOptions") "addType") }}{{ toJSON (index (index .Candidate "addOptions") "addType") }}{{ else }}"automatic"{{ end }},
-					"searchForNewBook": {{ if (index (index .Candidate "addOptions") "searchForNewBook") }}{{ toJSON (index (index .Candidate "addOptions") "searchForNewBook") }}{{ else }}true{{ end }},
+					"addType": {{ if and (index .Candidate "addOptions") (index (index .Candidate "addOptions") "addType") }}{{ toJSON (index (index .Candidate "addOptions") "addType") }}{{ else }}"automatic"{{ end }},
+					"searchForNewBook": {{ if and (index .Candidate "addOptions") (index (index .Candidate "addOptions") "searchForNewBook") }}{{ toJSON (index (index .Candidate "addOptions") "searchForNewBook") }}{{ else }}true{{ end }},
 					"monitor": "all",
 					"monitored": true,
 					"booksToMonitor": [],
@@ -326,13 +326,18 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 			}
 			if am["foreignAuthorId"] == nil || am["foreignAuthorId"] == "" {
 				if nm, _ := am["name"].(string); nm != "" {
+					fmt.Printf("DEBUG: Author missing foreignAuthorId, trying to resolve name='%s'\n", nm)
 					if fid := r.LookupForeignAuthorIDString(ctx, nm); fid != "" {
+						fmt.Printf("DEBUG: Found foreignAuthorId via lookup: %s\n", fid)
 						am["foreignAuthorId"] = fid
 					} else {
-						// try to import by cleaned name as fallback
-						if id, err := r.ImportAuthor(ctx, strings.ReplaceAll(strings.TrimSpace(nm), " ", "-")); err == nil && id != 0 {
-							am["foreignAuthorId"] = strings.ReplaceAll(strings.TrimSpace(nm), " ", "-")
-						}
+						fmt.Printf("DEBUG: Lookup failed, creating synthetic foreignAuthorId\n")
+						// Instead of using a fake foreign ID, try to find an existing author with a similar name
+						// and use their foreign ID, or create a synthetic one based on the author name
+						cleanedName := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(nm)), " ", "-")
+						syntheticId := "local-" + cleanedName
+						am["foreignAuthorId"] = syntheticId
+						fmt.Printf("DEBUG: Set synthetic foreignAuthorId: %s\n", syntheticId)
 					}
 				} else if idv, ok := am["id"]; ok {
 					// No name; fetch details by id

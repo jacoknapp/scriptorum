@@ -121,6 +121,93 @@ func TestReadarrPayloadTemplate(t *testing.T) {
 	}
 }
 
+// Test that the payload template handles missing addOptions (like ebook payloads)
+func TestReadarrPayloadTemplateEbookCase(t *testing.T) {
+	// Parse the template to ensure it's valid
+	tmpl, err := template.New("test").Funcs(template.FuncMap{
+		"toJSON": func(v interface{}) string {
+			b, _ := json.Marshal(v)
+			return string(b)
+		},
+	}).Parse(readarrAddPayloadTemplate)
+
+	if err != nil {
+		t.Fatalf("Payload template is not valid: %v", err)
+	}
+
+	// Test with ebook-style data (missing addOptions field)
+	testData := struct {
+		Candidate map[string]interface{}
+		Opts      struct {
+			SearchForMissing bool
+			QualityProfileID int
+			RootFolderPath   string
+			Tags             []int
+		}
+		Inst struct {
+			DefaultQualityProfileID int
+		}
+	}{
+		Candidate: map[string]interface{}{
+			"title":             "Hello Beautiful",
+			"titleSlug":         "97397727",
+			"author":            map[string]interface{}{"name": "Ann Napolitano"},
+			"editions":          []interface{}{map[string]interface{}{"foreignEditionId": "61771675", "monitored": true}},
+			"foreignBookId":     "97397727",
+			"foreignEditionId":  "61771675",
+			"monitored":         true,
+			"metadataProfileId": 1,
+			// Note: NO addOptions field - this simulates ebook payloads from search.go
+		},
+		Opts: struct {
+			SearchForMissing bool
+			QualityProfileID int
+			RootFolderPath   string
+			Tags             []int
+		}{
+			SearchForMissing: true,
+			QualityProfileID: 1,
+			RootFolderPath:   "/books",
+			Tags:             []int{},
+		},
+		Inst: struct {
+			DefaultQualityProfileID int
+		}{
+			DefaultQualityProfileID: 1,
+		},
+	}
+
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, testData)
+	if err != nil {
+		t.Fatalf("Failed to execute template with ebook-style payload (no addOptions): %v", err)
+	}
+
+	// Validate that the result is valid JSON
+	var result map[string]interface{}
+	err = json.Unmarshal(buf.Bytes(), &result)
+	if err != nil {
+		t.Fatalf("Template generated invalid JSON for ebook payload: %v\nJSON: %s", err, buf.String())
+	}
+
+	// Check that addOptions was created with defaults
+	addOptions, exists := result["addOptions"].(map[string]interface{})
+	if !exists {
+		t.Fatalf("addOptions not found in generated JSON")
+	}
+
+	// Verify defaults are applied when original payload lacks addOptions
+	if addOptions["addType"] != "automatic" {
+		t.Errorf("Expected addType to default to 'automatic', got %v", addOptions["addType"])
+	}
+
+	if addOptions["searchForNewBook"] != true {
+		t.Errorf("Expected searchForNewBook to default to true, got %v", addOptions["searchForNewBook"])
+	}
+
+	t.Log("SUCCESS: Template correctly handled ebook payload without addOptions field")
+}
+
 // Test Readarr construction with hardcoded endpoints
 func TestReadarrConstructor(t *testing.T) {
 	instance := ReadarrInstance{
