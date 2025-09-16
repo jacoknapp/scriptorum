@@ -268,8 +268,33 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 		if strings.Contains(emsg, "ix_editions_foreigneditionid") ||
 			strings.Contains(emsg, "duplicate key value") ||
 			strings.Contains(emsg, "already exists") {
+
+			// For duplicates, try to enable monitoring with a single command (no background loop needed)
+			if payload != nil {
+				if bid, gotBody, gerr := ra.GetBookByAddPayload(reqCtx, payload); gerr == nil && bid > 0 {
+					if s.settings.Get().Debug {
+						fmt.Printf("DEBUG: Duplicate detected; GET existing book with same payload returned (id=%d):\n%s\n", bid, string(gotBody))
+					}
+					if monBody, merr := ra.MonitorBooks(reqCtx, []int{bid}, true); merr == nil {
+						if s.settings.Get().Debug {
+							mb, _ := json.Marshal(map[string]any{"bookIds": []int{bid}, "monitored": true})
+							fmt.Printf("DEBUG: PUT /api/v1/book/monitor sent payload:\n%s\n", string(mb))
+							fmt.Printf("DEBUG: PUT /api/v1/book/monitor returned body:\n%s\n", string(monBody))
+						}
+						_ = s.db.ApproveRequest(ctx, req.ID, username)
+						_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d via notification", bid), username, payload, respBody)
+
+						// Send notification for approved request
+						s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
+
+						return &ApprovalResult{Status: "queued", Error: nil}
+					}
+				}
+			}
+
+			// Fallback: treat as already present without monitor update
 			_ = s.db.ApproveRequest(ctx, req.ID, username)
-			_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", "already in Readarr via notification", username, payload, respBody)
+			_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", "already in Readarr (duplicate edition) via notification", username, payload, respBody)
 
 			// Send notification for approved request
 			s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
@@ -284,6 +309,57 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 	// Success - book added to Readarr
 	_ = s.db.ApproveRequest(ctx, req.ID, username)
 	_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", "sent to Readarr via notification", username, payload, respBody)
+
+	// Start background monitoring task for successful additions
+	if respBody != nil {
+		if s.settings.Get().Debug {
+			fmt.Printf("DEBUG: Readarr add response body for monitoring (notification approval):\n%s\n", string(respBody))
+		}
+		var rb map[string]any
+		if json.Unmarshal(respBody, &rb) == nil {
+			if s.settings.Get().Debug {
+				fmt.Printf("DEBUG: Parsed response structure (notification): %+v\n", rb)
+			}
+			if v, ok := rb["id"]; ok {
+				var bid int
+				switch t := v.(type) {
+				case float64:
+					bid = int(t)
+				case int:
+					bid = t
+				case int64:
+					bid = int(t)
+				}
+				if bid > 0 {
+					if s.settings.Get().Debug {
+						fmt.Printf("DEBUG: Starting background monitor for book ID: %d (notification approval)\n", bid)
+					}
+					ra := providers.NewReadarrWithDB(inst, s.db.SQL())
+					go s.backgroundMonitorBook(ra, bid)
+				} else {
+					if s.settings.Get().Debug {
+						fmt.Printf("DEBUG: Book ID is 0 or invalid (notification): %v (type: %T)\n", v, v)
+					}
+				}
+			} else {
+				if s.settings.Get().Debug {
+					keys := make([]string, 0, len(rb))
+					for k := range rb {
+						keys = append(keys, k)
+					}
+					fmt.Printf("DEBUG: No 'id' field found in response (notification). Available fields: %v\n", keys)
+				}
+			}
+		} else {
+			if s.settings.Get().Debug {
+				fmt.Printf("DEBUG: Failed to parse response body as JSON (notification)\n")
+			}
+		}
+	} else {
+		if s.settings.Get().Debug {
+			fmt.Printf("DEBUG: No response body from Readarr add operation (notification)\n")
+		}
+	}
 
 	// Send notification for approved request
 	s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
@@ -434,7 +510,9 @@ func (s *Server) sendNtfyNotificationWithActions(server, topic, username, passwo
 		req.SetBasicAuth(username, password)
 	}
 
-	client := &http.Client{}
+	client := &http.Client{
+		Timeout: 10 * time.Second, // 10 second timeout
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send notification: %w", err)

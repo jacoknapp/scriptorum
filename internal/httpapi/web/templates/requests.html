@@ -6,7 +6,7 @@
 	<div id="req-table"
 		 class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-2"
 		 hx-get="/ui/requests/table"
-		 hx-trigger="load, request:created from:body, request:updated from:body"
+		 hx-trigger="load, request:created from:body, request:updated from:body, every 5s"
 		 hx-swap="innerHTML">
 		<div class="p-4 text-slate-400">Loading…</div>
 		{{/* Initial server render as a fallback; will be replaced by HTMX */}}

@@ -91,7 +91,13 @@ function toggleNotificationSettings() {
 
 function testNtfy() {
 	const testSpan = document.getElementById('ntfy_test');
-	testSpan.textContent = 'Testing...';
+	const button = document.querySelector('button[onclick="testNtfy()"]');
+	
+	// Disable button and show loading state
+	testSpan.textContent = 'Sending test...';
+	testSpan.className = 'text-sm text-blue-400';
+	button.disabled = true;
+	button.classList.add('opacity-50', 'cursor-not-allowed');
 	
 	const form = document.querySelector('form');
 	const formData = new FormData(form);
@@ -103,6 +109,10 @@ function testNtfy() {
 		username: formData.get('ntfy_username') || '',
 		password: formData.get('ntfy_password') || ''
 	};
+
+	// Create abort controller for timeout
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), 8000); // 8 second timeout
 	
 	fetch('/api/notifications/test-ntfy', {
 		method: 'POST',
@@ -111,9 +121,16 @@ function testNtfy() {
 			'X-Requested-With': 'XMLHttpRequest',
 			'X-CSRF-Token': formData.get('_csrf_token')
 		},
-		body: JSON.stringify(testData)
+		body: JSON.stringify(testData),
+		signal: controller.signal
 	})
-	.then(response => response.json())
+	.then(response => {
+		clearTimeout(timeoutId);
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}`);
+		}
+		return response.json();
+	})
 	.then(data => {
 		if (data.success) {
 			testSpan.textContent = '✓ Test notification sent successfully!';
@@ -122,14 +139,22 @@ function testNtfy() {
 			testSpan.textContent = '✗ ' + (data.error || 'Test failed');
 			testSpan.className = 'text-sm text-red-400';
 		}
-		setTimeout(() => {
-			testSpan.textContent = '—';
-			testSpan.className = 'text-sm text-slate-400';
-		}, 5000);
 	})
 	.catch(error => {
-		testSpan.textContent = '✗ Network error';
+		clearTimeout(timeoutId);
+		if (error.name === 'AbortError') {
+			testSpan.textContent = '✗ Test timed out after 8 seconds';
+		} else {
+			testSpan.textContent = '✗ ' + (error.message || 'Network error');
+		}
 		testSpan.className = 'text-sm text-red-400';
+	})
+	.finally(() => {
+		// Re-enable button and remove loading state
+		button.disabled = false;
+		button.classList.remove('opacity-50', 'cursor-not-allowed');
+		
+		// Reset status after 5 seconds
 		setTimeout(() => {
 			testSpan.textContent = '—';
 			testSpan.className = 'text-sm text-slate-400';

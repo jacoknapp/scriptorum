@@ -241,33 +241,49 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 		_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
 		_ = s.db.UpdateRequestStatus(r.Context(), id, "approved", "approved (no Readarr configured)", r.Context().Value(ctxUser).(*session).Username, nil, nil)
 
-		// Send notification for approved request
-		s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
+		// Send notification for approved request asynchronously
+		go s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
 
 		w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 		writeJSON(w, map[string]string{"status": "approved"}, 200)
 		return
 	}
+
+	// For Readarr-enabled approvals, first update the UI immediately then process async
+	username := r.Context().Value(ctxUser).(*session).Username
+	_ = s.db.UpdateRequestStatus(r.Context(), id, "processing", "approval in progress", username, nil, nil)
+
+	// Send immediate response to unblock the UI
+	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
+	writeJSON(w, map[string]string{"status": "processing"}, 200)
+
+	// Process approval asynchronously
+	go s.processAsyncApproval(id, req, inst, username)
+}
+
+// processAsyncApproval handles the long-running approval process asynchronously
+func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.ReadarrInstance, username string) {
+	ctx := context.Background()
 	ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 
-	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	reqCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 
-	// Require an exact selection payload saved at request-time; don't perform lookups here
+	// Require an exact selection payload saved at request-time
 	if len(req.ReadarrReq) == 0 {
-		http.Error(w, "request has no stored selection payload; please re-request from search", http.StatusBadRequest)
+		_ = s.db.UpdateRequestStatus(ctx, id, "error", "request has no stored selection payload; please re-request from search", username, nil, nil)
 		return
 	}
+
 	var cand map[string]any
 	if err := json.Unmarshal(req.ReadarrReq, &cand); err != nil || cand == nil {
-		http.Error(w, "invalid stored selection payload", http.StatusBadRequest)
+		_ = s.db.UpdateRequestStatus(ctx, id, "error", "invalid stored selection payload", username, nil, nil)
 		return
 	}
 
-	// Ensure candidate has an author id. If missing, try to resolve by name and create if necessary.
+	// Ensure candidate has an author id. If missing, try to resolve by name
 	if a, ok := cand["author"].(map[string]any); ok {
 		if _, hasID := a["id"]; !hasID {
-
 			// try to find by name
 			var name string
 			if n, _ := a["name"].(string); n != "" {
@@ -279,13 +295,12 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 				fmt.Printf("DEBUG: Author missing id, trying to resolve name='%s'\n", name)
 			}
 			if name != "" {
-				if aid, err := ra.FindAuthorIDByName(ctx, name); err == nil && aid != 0 {
+				if aid, err := ra.FindAuthorIDByName(reqCtx, name); err == nil && aid != 0 {
 					a["id"] = aid
 					if s.settings.Get().Debug {
 						fmt.Printf("DEBUG: Found author id %d for name '%s'\n", aid, name)
 					}
 				} else {
-					// Do not attempt to create an author here. If not found, leave author as-is
 					if s.settings.Get().Debug {
 						if err == nil {
 							fmt.Printf("DEBUG: Author not found for name '%s' (will not create)\n", name)
@@ -299,116 +314,91 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// If the stored payload looks like a full Readarr Book schema, send it as-is
-	// during approval to honor the provided structure from the client.
+	// Try to add the book to Readarr
 	var payload []byte
 	var respBody []byte
+	var err error
+
+	// If the stored payload looks like a full Readarr Book schema, send it as-is
 	if len(req.ReadarrReq) > 0 {
 		var raw map[string]any
 		if json.Unmarshal(req.ReadarrReq, &raw) == nil {
-			// Heuristic: treat as full schema if it contains any of these indicators.
+			// Heuristic: treat as full schema if it contains indicators
 			if _, ok := raw["authorTitle"]; ok || raw["author"] != nil || raw["editions"] != nil || raw["addOptions"] != nil {
-				payload, respBody, err = ra.AddBookRaw(ctx, req.ReadarrReq)
+				payload, respBody, err = ra.AddBookRaw(reqCtx, req.ReadarrReq)
 			}
 		}
 	}
+
 	// Fallback to templated add if raw wasn't used
 	if payload == nil && err == nil {
-		payload, respBody, err = ra.AddBook(ctx, cand, providers.AddOpts{
+		payload, respBody, err = ra.AddBook(reqCtx, cand, providers.AddOpts{
 			QualityProfileID: inst.DefaultQualityProfileID,
 			RootFolderPath:   inst.DefaultRootFolderPath,
 			SearchForMissing: true,
 			Tags:             inst.DefaultTags,
 		})
 	}
-	// Debug: always log sent payload and Readarr response if enabled
+
+	// Debug logging
 	if s.settings.Get().Debug && payload != nil {
 		fmt.Printf("DEBUG: Readarr add sent payload:\n%s\n", string(payload))
 		if respBody != nil {
 			fmt.Printf("DEBUG: Readarr add returned body:\n%s\n", string(respBody))
 		}
 	}
+
 	if err != nil {
-		// If Readarr reports a duplicate edition (already added), try to fetch the
-		// existing book and ensure it's monitored using /api/v1/book/monitor
+		// Handle duplicate book error
 		emsg := strings.ToLower(err.Error())
 		if strings.Contains(emsg, "ix_editions_foreigneditionid") || strings.Contains(emsg, "duplicate key value") || strings.Contains(emsg, "already exists") {
-			// Attempt GET with the same payload to discover the existing book id
+			// Try to monitor existing book
 			if payload != nil {
-				if bid, gotBody, gerr := ra.GetBookByAddPayload(ctx, payload); gerr == nil && bid > 0 {
+				if bid, gotBody, gerr := ra.GetBookByAddPayload(reqCtx, payload); gerr == nil && bid > 0 {
 					if s.settings.Get().Debug {
 						fmt.Printf("DEBUG: Duplicate detected; GET existing book with same payload returned (id=%d):\n%s\n", bid, string(gotBody))
 					}
-					if monBody, merr := ra.MonitorBooks(ctx, []int{bid}, true); merr == nil {
+					if monBody, merr := ra.MonitorBooks(reqCtx, []int{bid}, true); merr == nil {
 						if s.settings.Get().Debug {
 							mb, _ := json.Marshal(map[string]any{"bookIds": []int{bid}, "monitored": true})
 							fmt.Printf("DEBUG: PUT /api/v1/book/monitor sent payload:\n%s\n", string(mb))
 							fmt.Printf("DEBUG: PUT /api/v1/book/monitor returned body:\n%s\n", string(monBody))
 						}
-						_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
-						_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid), r.Context().Value(ctxUser).(*session).Username, payload, respBody)
-
-						// Send notification for approved request
-						s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
-
-						trig := map[string]any{"request:updated": map[string]any{
-							"id":     id,
-							"isbn13": req.ISBN13,
-							"isbn10": req.ISBN10,
-							"asin":   "",
-							"title":  req.Title,
-							"format": req.Format,
-						}}
-						if b, mErr := json.Marshal(trig); mErr == nil {
-							w.Header().Set("HX-Trigger", string(b))
-						} else {
-							w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
-						}
-						writeJSON(w, map[string]string{"status": "queued"}, 200)
+						_ = s.db.ApproveRequest(ctx, id, username)
+						_ = s.db.UpdateRequestStatus(ctx, id, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid), username, payload, respBody)
+						go s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
 						return
 					}
 				}
 			}
 			// Fallback: treat as already present without monitor update
-			_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
-			_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", "already in Readarr (duplicate edition)", r.Context().Value(ctxUser).(*session).Username, payload, respBody)
-
-			// Send notification for approved request
-			s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
-
-			trig := map[string]any{"request:updated": map[string]any{
-				"id":     id,
-				"isbn13": req.ISBN13,
-				"isbn10": req.ISBN10,
-				"asin":   "",
-				"title":  req.Title,
-				"format": req.Format,
-			}}
-			if b, mErr := json.Marshal(trig); mErr == nil {
-				w.Header().Set("HX-Trigger", string(b))
-			} else {
-				w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
-			}
-			writeJSON(w, map[string]string{"status": "queued"}, 200)
+			_ = s.db.ApproveRequest(ctx, id, username)
+			_ = s.db.UpdateRequestStatus(ctx, id, "queued", "already in Readarr (duplicate edition)", username, payload, respBody)
+			go s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
 			return
 		}
-		_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", payload, respBody)
-		// Debug: surface payload and Readarr response in server logs for troubleshooting
+
+		_ = s.db.UpdateRequestStatus(ctx, id, "error", err.Error(), "system", payload, respBody)
 		if s.settings.Get().Debug {
 			fmt.Printf("DEBUG: Readarr add error: %v\n---payload---\n%s\n---response---\n%s\n", err, string(payload), string(respBody))
 		}
-		http.Error(w, "readarr add: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 
-	// If the add to Readarr succeeded, start a background monitor task that
-	// repeatedly sends a monitor payload for the newly created book every 30s
-	// for 5 minutes. This helps ensure the book is properly monitored even if
-	// the initial request has transient issues. Do not block the HTTP flow.
+	// Success: book added to Readarr
+	_ = s.db.ApproveRequest(ctx, id, username)
+	_ = s.db.UpdateRequestStatus(ctx, id, "queued", "sent to Readarr", username, payload, respBody)
+
+	// Start background monitoring task for successful additions
 	if respBody != nil {
+		if s.settings.Get().Debug {
+			fmt.Printf("DEBUG: Readarr add response body for monitoring:\n%s\n", string(respBody))
+		}
 		var rb map[string]any
 		if json.Unmarshal(respBody, &rb) == nil {
-			// Readarr returns the created book with an "id" field when successful
+			if s.settings.Get().Debug {
+				fmt.Printf("DEBUG: Parsed response structure: %+v\n", rb)
+			}
 			if v, ok := rb["id"]; ok {
 				var bid int
 				switch t := v.(type) {
@@ -420,63 +410,95 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 					bid = int(t)
 				}
 				if bid > 0 {
-					go func(rra *providers.Readarr, bookID int, dbg bool) {
-						bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-						defer cancel()
-						ticker := time.NewTicker(30 * time.Second)
-						defer ticker.Stop()
-
-						sendMonitor := func() {
-							perCtx, pCancel := context.WithTimeout(bgCtx, 12*time.Second)
-							defer pCancel()
-							if monBody, merr := rra.MonitorBooks(perCtx, []int{bookID}, true); merr == nil {
-								if dbg {
-									mb, _ := json.Marshal(map[string]any{"bookIds": []int{bookID}, "monitored": true})
-									fmt.Printf("DEBUG: PUT /api/v1/book/monitor sent payload:\n%s\n", string(mb))
-									fmt.Printf("DEBUG: PUT /api/v1/book/monitor returned body:\n%s\n", string(monBody))
-								}
-							} else if dbg {
-								fmt.Printf("DEBUG: MonitorBooks attempt for id=%d failed: %v\n", bookID, merr)
-							}
-						}
-
-						// First immediate attempt
-						sendMonitor()
-						for {
-							select {
-							case <-bgCtx.Done():
-								return
-							case <-ticker.C:
-								sendMonitor()
-							}
-						}
-					}(ra, bid, s.settings.Get().Debug)
+					if s.settings.Get().Debug {
+						fmt.Printf("DEBUG: Starting background monitor for book ID: %d\n", bid)
+					}
+					go s.backgroundMonitorBook(ra, bid)
+				} else {
+					if s.settings.Get().Debug {
+						fmt.Printf("DEBUG: Book ID is 0 or invalid: %v (type: %T)\n", v, v)
+					}
+				}
+			} else {
+				if s.settings.Get().Debug {
+					keys := make([]string, 0, len(rb))
+					for k := range rb {
+						keys = append(keys, k)
+					}
+					fmt.Printf("DEBUG: No 'id' field found in response. Available fields: %v\n", keys)
 				}
 			}
+		} else {
+			if s.settings.Get().Debug {
+				fmt.Printf("DEBUG: Failed to parse response body as JSON\n")
+			}
+		}
+	} else {
+		if s.settings.Get().Debug {
+			fmt.Printf("DEBUG: No response body from Readarr add operation\n")
 		}
 	}
 
-	_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
-	_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", "sent to Readarr", r.Context().Value(ctxUser).(*session).Username, payload, respBody)
-
 	// Send notification for approved request
-	s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
+	go s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
 
-	// Include minimal identifiers so the UI can update any matching search results
-	trig := map[string]any{"request:updated": map[string]any{
-		"id":     id,
-		"isbn13": req.ISBN13,
-		"isbn10": req.ISBN10,
-		"asin":   "",
-		"title":  req.Title,
-		"format": req.Format,
-	}}
-	if b, err := json.Marshal(trig); err == nil {
-		w.Header().Set("HX-Trigger", string(b))
-	} else {
-		w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
+	// Trigger UI update via server-sent events or websockets would be ideal,
+	// but for now we'll rely on the existing periodic refresh mechanisms
+}
+
+// backgroundMonitorBook ensures a newly added book stays monitored
+func (s *Server) backgroundMonitorBook(ra *providers.Readarr, bookID int) {
+	if s.settings.Get().Debug {
+		fmt.Printf("DEBUG: backgroundMonitorBook started for book ID: %d\n", bookID)
 	}
-	writeJSON(w, map[string]string{"status": "queued"}, 200)
+
+	bgCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	attempts := 0
+	maxAttempts := 10 // 5 minutes / 30 seconds = 10 attempts
+
+	sendMonitor := func() {
+		attempts++
+		perCtx, pCancel := context.WithTimeout(bgCtx, 12*time.Second)
+		defer pCancel()
+
+		if s.settings.Get().Debug {
+			fmt.Printf("DEBUG: MonitorBooks attempt %d/%d for book ID: %d\n", attempts, maxAttempts, bookID)
+		}
+
+		if monBody, merr := ra.MonitorBooks(perCtx, []int{bookID}, true); merr == nil {
+			if s.settings.Get().Debug {
+				mb, _ := json.Marshal(map[string]any{"bookIds": []int{bookID}, "monitored": true})
+				fmt.Printf("DEBUG: PUT /api/v1/book/monitor sent payload:\n%s\n", string(mb))
+				fmt.Printf("DEBUG: PUT /api/v1/book/monitor returned body:\n%s\n", string(monBody))
+			}
+		} else if s.settings.Get().Debug {
+			fmt.Printf("DEBUG: MonitorBooks attempt for id=%d failed: %v\n", bookID, merr)
+		}
+	}
+
+	// First immediate attempt
+	sendMonitor()
+	for {
+		select {
+		case <-bgCtx.Done():
+			if s.settings.Get().Debug {
+				fmt.Printf("DEBUG: backgroundMonitorBook finished for book ID: %d after %d attempts\n", bookID, attempts)
+			}
+			return
+		case <-ticker.C:
+			if attempts >= maxAttempts {
+				if s.settings.Get().Debug {
+					fmt.Printf("DEBUG: backgroundMonitorBook reached max attempts (%d) for book ID: %d\n", maxAttempts, bookID)
+				}
+				return
+			}
+			sendMonitor()
+		}
+	}
 }
 
 func (s *Server) apiDeclineRequest(w http.ResponseWriter, r *http.Request) {
