@@ -471,11 +471,12 @@ func (s *Server) apiTestNtfy() http.HandlerFunc {
 		testMessage := "🧪 **Test Notification**\n\n✅ *Configuration is working correctly!*\n\n🔔 You will receive notifications for:\n• New book requests\n• Request approvals\n• System alerts\n\n💡 *Click the button below to visit Scriptorum*"
 
 		// Create test action button
+		currentCfg := s.settings.Get()
 		testActions := []map[string]string{
 			{
 				"action": "view",
 				"label":  "🌐 Open Scriptorum",
-				"url":    s.cfg.ServerURL,
+				"url":    currentCfg.ServerURL,
 			},
 		}
 
@@ -817,21 +818,22 @@ func (s *Server) sendRequestNotificationNtfy(cfg *config.Config, requestID int64
 	// Create action buttons with individual request approval and decline
 	approvalToken := s.generateApprovalToken(requestID)
 	declineToken := s.generateDeclineToken(requestID)
+	currentCfg := s.settings.Get()
 	actions := []map[string]string{
 		{
 			"action": "view",
 			"label":  "📋 View All Requests",
-			"url":    s.cfg.ServerURL + "/requests",
+			"url":    currentCfg.ServerURL + "/requests",
 		},
 		{
 			"action": "view",
 			"label":  fmt.Sprintf("✅ Approve Request #%d", requestID),
-			"url":    fmt.Sprintf("%s/approve/%s", s.cfg.ServerURL, approvalToken),
+			"url":    fmt.Sprintf("%s/approve/%s", currentCfg.ServerURL, approvalToken),
 		},
 		{
 			"action": "view",
 			"label":  fmt.Sprintf("❌ Decline Request #%d", requestID),
-			"url":    fmt.Sprintf("%s/approve/%s", s.cfg.ServerURL, declineToken),
+			"url":    fmt.Sprintf("%s/approve/%s", currentCfg.ServerURL, declineToken),
 		},
 	}
 
@@ -851,6 +853,7 @@ func (s *Server) sendRequestNotificationNtfy(cfg *config.Config, requestID int64
 
 // sendRequestNotificationSMTP sends email notification for new requests
 func (s *Server) sendRequestNotificationSMTP(cfg *config.Config, requestID int64, username, title, authorsStr string) {
+	currentCfg := s.settings.Get()
 	subject := "📚 New Book Request - Scriptorum"
 
 	// HTML email content
@@ -898,7 +901,7 @@ func (s *Server) sendRequestNotificationSMTP(cfg *config.Config, requestID int64
 			}
 			return ""
 		}(),
-		username, requestID, s.cfg.ServerURL, s.generateApprovalToken(requestID), s.cfg.ServerURL, s.generateDeclineToken(requestID), s.cfg.ServerURL)
+		username, requestID, currentCfg.ServerURL, s.generateApprovalToken(requestID), currentCfg.ServerURL, s.generateDeclineToken(requestID), currentCfg.ServerURL)
 
 	// Plain text content
 	textBody := fmt.Sprintf(`📚 New Book Request - Scriptorum
@@ -918,7 +921,7 @@ Actions:
 			}
 			return ""
 		}(),
-		username, requestID, s.cfg.ServerURL, s.generateApprovalToken(requestID), s.cfg.ServerURL, s.generateDeclineToken(requestID), s.cfg.ServerURL)
+		username, requestID, currentCfg.ServerURL, s.generateApprovalToken(requestID), currentCfg.ServerURL, s.generateDeclineToken(requestID), currentCfg.ServerURL)
 
 	go func() {
 		_ = s.sendSMTPNotification(cfg.Notifications.SMTP, subject, htmlBody, textBody)
@@ -927,6 +930,7 @@ Actions:
 
 // sendRequestNotificationDiscord sends Discord notification for new requests
 func (s *Server) sendRequestNotificationDiscord(cfg *config.Config, requestID int64, username, title, authorsStr string) {
+	currentCfg := s.settings.Get()
 	embedTitle := "📚 New Book Request"
 	message := fmt.Sprintf("📖 **%s**", title)
 	if authorsStr != "" {
@@ -935,7 +939,7 @@ func (s *Server) sendRequestNotificationDiscord(cfg *config.Config, requestID in
 	message += fmt.Sprintf("\n🙋 **Requested by:** %s", username)
 	message += fmt.Sprintf("\n🆔 **Request ID:** #%d", requestID)
 	message += fmt.Sprintf("\n\n[✅ Approve Request](%s/approve/%s) | [❌ Decline Request](%s/approve/%s) | [📋 View All Requests](%s/requests)",
-		s.cfg.ServerURL, s.generateApprovalToken(requestID), s.cfg.ServerURL, s.generateDeclineToken(requestID), s.cfg.ServerURL)
+		currentCfg.ServerURL, s.generateApprovalToken(requestID), currentCfg.ServerURL, s.generateDeclineToken(requestID), currentCfg.ServerURL)
 
 	color := 0x3b82f6 // Blue color for new requests
 
@@ -986,11 +990,12 @@ func (s *Server) sendApprovalNotificationNtfy(cfg *config.Config, username, titl
 	message += "\n\n📚 *Your request has been processed and should be available soon!*"
 
 	// Create action button to view requests
+	currentCfg := s.settings.Get()
 	actions := []map[string]string{
 		{
 			"action": "view",
 			"label":  "📋 View All Requests",
-			"url":    s.cfg.ServerURL + "/requests",
+			"url":    currentCfg.ServerURL + "/requests",
 		},
 	}
 
