@@ -98,5 +98,15 @@ func defaultConfig(dbPath string) *config.Config {
 	c.Readarr.Audiobooks.DefaultRootFolderPath = "/books/audiobooks"
 	c.Readarr.Audiobooks.DefaultTags = []string{}
 
+	// Notifications defaults
+	c.Notifications.Provider = ""
+	c.Notifications.Ntfy.Server = "https://ntfy.sh"
+	c.Notifications.Ntfy.Topic = ""
+	c.Notifications.Ntfy.Username = ""
+	c.Notifications.Ntfy.Password = ""
+	c.Notifications.Ntfy.EnableRequestNotifications = false
+	c.Notifications.Ntfy.EnableApprovalNotifications = false
+	c.Notifications.Ntfy.EnableSystemNotifications = false
+
 	return c
 }

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -25,26 +26,29 @@ var tplFS embed.FS
 var setupFS embed.FS
 
 type Server struct {
-	cfg         *config.Config
-	db          *db.DB
-	cfgPath     string
-	settings    *settings.Store
-	chi         *chi.Mux
-	oidc        *oidcMgr
-	csrf        *csrfManager
-	rateLimiter *rateLimiter
-	disableCSRF bool // For testing purposes
+	cfg            *config.Config
+	db             *db.DB
+	cfgPath        string
+	settings       *settings.Store
+	chi            *chi.Mux
+	oidc           *oidcMgr
+	csrf           *csrfManager
+	rateLimiter    *rateLimiter
+	disableCSRF    bool // For testing purposes
+	approvalTokens map[string]approvalTokenData
+	tokenMutex     sync.RWMutex
 }
 
 func NewServer(cfg *config.Config, database *db.DB, cfgPath string) *Server {
 	s := &Server{
-		cfg:         cfg,
-		db:          database,
-		cfgPath:     cfgPath,
-		settings:    settings.New(cfgPath, cfg),
-		chi:         chi.NewRouter(),
-		csrf:        newCSRFManager(),
-		rateLimiter: newRateLimiter(),
+		cfg:            cfg,
+		db:             database,
+		cfgPath:        cfgPath,
+		settings:       settings.New(cfgPath, cfg),
+		chi:            chi.NewRouter(),
+		csrf:           newCSRFManager(),
+		rateLimiter:    newRateLimiter(),
+		approvalTokens: make(map[string]approvalTokenData),
 	}
 	_ = s.initOIDC()
 	return s
@@ -86,6 +90,7 @@ func (s *Server) Router() http.Handler {
 		s.mountAPI(rt)
 		s.mountSearch(rt)
 		s.mountSettings(rt)
+		s.mountNotifications(rt)
 	})
 
 	return r

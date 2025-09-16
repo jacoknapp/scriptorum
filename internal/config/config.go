@@ -63,6 +63,21 @@ type Config struct {
 		Ebooks     ReadarrInstance `yaml:"ebooks"`
 		Audiobooks ReadarrInstance `yaml:"audiobooks"`
 	} `yaml:"readarr"`
+
+	Notifications struct {
+		Provider string     `yaml:"provider"`
+		Ntfy     NtfyConfig `yaml:"ntfy"`
+	} `yaml:"notifications"`
+}
+
+type NtfyConfig struct {
+	Server                      string `yaml:"server"`
+	Topic                       string `yaml:"topic"`
+	Username                    string `yaml:"username"`
+	Password                    string `yaml:"password"`
+	EnableRequestNotifications  bool   `yaml:"enable_request_notifications"`
+	EnableApprovalNotifications bool   `yaml:"enable_approval_notifications"`
+	EnableSystemNotifications   bool   `yaml:"enable_system_notifications"`
 }
 
 type ReadarrInstance struct {

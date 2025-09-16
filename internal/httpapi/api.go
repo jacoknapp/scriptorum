@@ -183,6 +183,10 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "db: "+err.Error(), 500)
 		return
 	}
+
+	// Send notification for new request
+	s.SendRequestNotification(id, u.Username, p.Title, p.Authors)
+
 	// If HTMX, return a tiny HTML notice instead of JSON
 	if strings.Contains(r.Header.Get("HX-Request"), "true") || r.Header.Get("HX-Request") == "true" {
 		// let the client know a request was created so UI can refresh if needed
@@ -236,6 +240,10 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
 		_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
 		_ = s.db.UpdateRequestStatus(r.Context(), id, "approved", "approved (no Readarr configured)", r.Context().Value(ctxUser).(*session).Username, nil, nil)
+
+		// Send notification for approved request
+		s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
+
 		w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 		writeJSON(w, map[string]string{"status": "approved"}, 200)
 		return
@@ -259,6 +267,7 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 	// Ensure candidate has an author id. If missing, try to resolve by name and create if necessary.
 	if a, ok := cand["author"].(map[string]any); ok {
 		if _, hasID := a["id"]; !hasID {
+
 			// try to find by name
 			var name string
 			if n, _ := a["name"].(string); n != "" {
@@ -338,6 +347,10 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 						}
 						_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
 						_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid), r.Context().Value(ctxUser).(*session).Username, payload, respBody)
+
+						// Send notification for approved request
+						s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
+
 						trig := map[string]any{"request:updated": map[string]any{
 							"id":     id,
 							"isbn13": req.ISBN13,
@@ -359,6 +372,10 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 			// Fallback: treat as already present without monitor update
 			_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
 			_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", "already in Readarr (duplicate edition)", r.Context().Value(ctxUser).(*session).Username, payload, respBody)
+
+			// Send notification for approved request
+			s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
+
 			trig := map[string]any{"request:updated": map[string]any{
 				"id":     id,
 				"isbn13": req.ISBN13,
@@ -441,6 +458,10 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 
 	_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
 	_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", "sent to Readarr", r.Context().Value(ctxUser).(*session).Username, payload, respBody)
+
+	// Send notification for approved request
+	s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
+
 	// Include minimal identifiers so the UI can update any matching search results
 	trig := map[string]any{"request:updated": map[string]any{
 		"id":     id,
@@ -517,11 +538,11 @@ func (s *Server) apiApproveAllRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Filter to only pending requests
-	var pendingRequests []int64
+	// Filter to only pending requests and collect their details for notifications
+	var pendingRequests []db.Request
 	for _, req := range allRequests {
 		if req.Status == "pending" {
-			pendingRequests = append(pendingRequests, req.ID)
+			pendingRequests = append(pendingRequests, req)
 		}
 	}
 
@@ -532,12 +553,15 @@ func (s *Server) apiApproveAllRequests(w http.ResponseWriter, r *http.Request) {
 
 	// Approve each pending request by updating status to "queued"
 	username := r.Context().Value(ctxUser).(*session).Username
-	for _, reqID := range pendingRequests {
-		err := s.db.UpdateRequestStatus(r.Context(), reqID, "queued", "bulk approved", username, nil, nil)
+	for _, req := range pendingRequests {
+		err := s.db.UpdateRequestStatus(r.Context(), req.ID, "queued", "bulk approved", username, nil, nil)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("failed to approve request %d", reqID), 500)
+			http.Error(w, fmt.Sprintf("failed to approve request %d", req.ID), 500)
 			return
 		}
+
+		// Send notification for each approved request
+		s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
 	}
 
 	w.Header().Set("HX-Trigger", `{"request:updated": {}}`)
