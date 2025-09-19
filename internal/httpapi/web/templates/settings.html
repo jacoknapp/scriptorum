@@ -114,17 +114,21 @@
 				<p class="text-sm text-slate-400 mb-3">Manage all user requests in the system.</p>
 				<div class="flex flex-wrap gap-3">
 					<button type="button" 
-							class="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-500"
+							class="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-500 js-notify-on-htmx"
 							hx-post="/api/v1/requests/approve-all"
 							hx-confirm="Are you sure you want to approve ALL pending requests? This will send them to Readarr for processing."
-							hx-on="htmx:afterRequest: if(event.detail.successful) { alert('All pending requests have been approved.'); } else { alert('Failed to approve requests.'); }">
+							data-success-message="All pending requests have been approved."
+							data-failure-message="Failed to approve requests."
+							data-label-working="Working...">
 						Approve All Requests
 					</button>
 					<button type="button" 
-							class="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-500"
+							class="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-500 js-notify-on-htmx"
 							hx-delete="/api/v1/requests"
 							hx-confirm="Are you sure you want to permanently delete ALL requests? This action cannot be undone."
-							hx-on="htmx:afterRequest: if(event.detail.successful) { alert('All requests have been deleted.'); } else { alert('Failed to delete requests.'); }">
+							data-success-message="All requests have been deleted."
+							data-failure-message="Failed to delete requests."
+							data-label-working="Working...">
 						Delete All Requests
 					</button>
 				</div>

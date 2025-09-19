@@ -5,6 +5,7 @@
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>Scriptorum</title>
+	<link rel="stylesheet" href="/static/styles.css">
 	<script src="https://cdn.tailwindcss.com"></script>
 	<script src="https://unpkg.com/htmx.org@1.9.12"></script>
 	<script>
@@ -351,14 +352,39 @@
 		<div class="relative max-w-3xl w-full bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden z-10">
 			<div class="flex gap-4 p-4">
 				<img id="book-modal-cover" src="/static/placeholder-cover.svg" class="w-28 h-40 object-cover rounded-md border border-white/10 bg-night-900" alt="Cover">
-				<div class="min-w-0">
+				<div class="min-w-0 flex-1">
 					<h3 id="book-modal-title" class="font-semibold text-lg truncate"></h3>
 					<div id="book-modal-authors" class="text-sm text-slate-400 mt-1"></div>
 					<div id="book-modal-meta" class="text-xs text-slate-400 mt-2"></div>
+					<!-- Request info section -->
+					<div id="book-modal-request-info" class="hidden mt-3 p-2 bg-night-700/50 rounded border border-white/5">
+						<div class="text-xs text-slate-300">
+							<strong>Requested by:</strong> <span id="book-modal-requester"></span>
+						</div>
+						<div class="text-xs text-slate-400 mt-1">
+							<span>Status:</span> <span id="book-modal-status"></span>
+						</div>
+					</div>
 				</div>
 			</div>
 			<div class="p-4 border-t border-white/5 text-sm text-slate-200">
 				<div id="book-modal-description" class="prose max-w-none text-slate-200"></div>
+			</div>
+			<!-- User request buttons for search results -->
+			<div id="book-modal-user-actions" class="hidden p-3 border-t border-white/5">
+				<div class="flex flex-wrap gap-2 justify-end">
+					<button id="book-modal-request-ebook" class="px-3 py-1.5 text-xs rounded bg-royal-600 text-white hover:bg-royal-500">Request eBook</button>
+					<button id="book-modal-request-audiobook" class="px-3 py-1.5 text-xs rounded bg-royal-600 text-white hover:bg-royal-500">Request Audiobook</button>
+				</div>
+			</div>
+			<!-- Action buttons for requests -->
+			<div id="book-modal-actions" class="hidden p-3 border-t border-white/5">
+				<div class="flex flex-wrap gap-2 justify-end">
+					<button id="book-modal-approve" class="hidden px-3 py-1.5 text-xs rounded bg-royal-600 text-white hover:bg-royal-500">Approve</button>
+					<button id="book-modal-attach" class="hidden px-3 py-1.5 text-xs rounded bg-amber-600 text-white hover:bg-amber-500">Attach</button>
+					<button id="book-modal-decline" class="hidden px-3 py-1.5 text-xs rounded bg-orange-600 text-white hover:bg-orange-500">Decline</button>
+					<button id="book-modal-delete" class="hidden px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500">Delete</button>
+				</div>
 			</div>
 			<div class="p-3 border-t border-white/5 flex justify-end gap-2">
 				<button id="book-modal-close" class="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10">Close</button>
@@ -367,9 +393,29 @@
 	</div>
 
 	<script>
+		// Test function to debug modal with sample request data
+		window.testRequestModal = function() {
+			var testData = {
+				title: "Test Book",
+				authors: ["Test Author"],
+				requesterEmail: "test@example.com",
+				status: "pending",
+				requestId: 123,
+				isAdmin: true,
+				readarrRequest: true
+			};
+			console.log('Testing modal with data:', testData);
+			window.openBookModal(testData, false);
+		};
+		
 		// Open the book modal with a plain data object or parse provider payload
 		window.openBookModal = function(data, loading) {
 			console.log('openBookModal called with:', data, 'loading:', loading);
+			// Guard against non-object inputs (e.g., accidental numeric "1")
+			if (!data || typeof data !== 'object') {
+				console.warn('openBookModal received non-object data, coercing to empty object');
+				data = {};
+			}
 			try {
 				var modal = document.getElementById('book-modal');
 				var cover = document.getElementById('book-modal-cover');
@@ -377,10 +423,41 @@
 				var authors = document.getElementById('book-modal-authors');
 				var meta = document.getElementById('book-modal-meta');
 				var desc = document.getElementById('book-modal-description');
+				
+				// Request-specific elements
+				var requestInfo = document.getElementById('book-modal-request-info');
+				var requester = document.getElementById('book-modal-requester');
+				var status = document.getElementById('book-modal-status');
+				var actionsSection = document.getElementById('book-modal-actions');
+				var userActions = document.getElementById('book-modal-user-actions');
+				var reqEbookBtn = document.getElementById('book-modal-request-ebook');
+				var reqAudioBtn = document.getElementById('book-modal-request-audiobook');
+				var approveBtn = document.getElementById('book-modal-approve');
+				var attachBtn = document.getElementById('book-modal-attach');
+				var declineBtn = document.getElementById('book-modal-decline');
+				var deleteBtn = document.getElementById('book-modal-delete');
+				
 				if (!modal) {
 					console.log('Modal element not found!');
 					return;
 				}
+				
+				console.log('Modal elements found:', {
+					modal: !!modal,
+					cover: !!cover,
+					title: !!title,
+					authors: !!authors,
+					meta: !!meta,
+					desc: !!desc,
+					requestInfo: !!requestInfo,
+					requester: !!requester,
+					status: !!status,
+					actionsSection: !!actionsSection,
+					approveBtn: !!approveBtn,
+					attachBtn: !!attachBtn,
+					declineBtn: !!declineBtn,
+					deleteBtn: !!deleteBtn
+				});
 				console.log('Modal elements found:', {modal, cover, title, authors, meta, desc});
 				
 				// Show loading state if requested
@@ -390,10 +467,135 @@
 					authors.textContent = 'Loading...';
 					meta.textContent = 'Loading metadata...';
 					desc.textContent = 'Fetching additional information...';
+					
+					// Hide request-specific sections during loading
+					if (requestInfo) requestInfo.classList.add('hidden');
+					if (actionsSection) actionsSection.classList.add('hidden');
+					
 					modal.classList.remove('hidden');
 					modal.setAttribute('aria-hidden', 'false');
 					console.log('Modal opened in loading state');
 					return;
+				}
+				
+				// Check if this is request data (has requesterEmail or requestId)
+				var isRequest = data.requesterEmail || data.requestId || data.RequesterEmail;
+				console.log('Is request data:', isRequest, 'data keys:', Object.keys(data));
+				console.log('Full data object:', data);
+				
+				// Show/hide request-specific sections
+				if (requestInfo) {
+					if (isRequest) {
+						console.log('Showing request info section');
+						requestInfo.classList.remove('hidden');
+						if (requester) requester.textContent = data.requesterEmail || data.RequesterEmail || 'Unknown';
+						if (status) {
+							var statusText = data.status || data.Status || 'pending';
+							var statusColor = statusText === 'queued' ? 'text-green-400' : 
+											  statusText === 'pending' ? 'text-yellow-400' :
+											  statusText === 'declined' ? 'text-red-400' :
+											  statusText === 'processing' ? 'text-blue-400' : 'text-gray-400';
+							status.innerHTML = '<span class="' + statusColor + '">' + statusText + '</span>';
+						}
+					} else {
+						console.log('Hiding request info section');
+						requestInfo.classList.add('hidden');
+					}
+				}
+				
+				// Show/hide action buttons for requests
+				if (actionsSection && isRequest) {
+					// Only show actions if user is admin
+					var isAdmin = data.isAdmin || false;
+					console.log('Is admin:', isAdmin, 'from data.isAdmin:', data.isAdmin);
+					if (isAdmin) {
+						console.log('User is admin, showing actions section');
+						actionsSection.classList.remove('hidden');
+						var requestStatus = data.status || data.Status || 'pending';
+						var hasReadarrReq = !!(data.readarrRequest || data.ReadarrReq);
+						var requestId = data.requestId || data.id || data.ID;
+						
+						console.log('Request details:', {
+							status: requestStatus,
+							hasReadarrReq: hasReadarrReq,
+							requestId: requestId
+						});
+						
+						// Show appropriate buttons based on status and data
+						if (approveBtn) {
+							if (requestStatus === 'pending') {
+								console.log('Showing approve button');
+								approveBtn.classList.remove('hidden');
+								if (!hasReadarrReq) {
+									approveBtn.classList.add('opacity-60', 'cursor-not-allowed');
+									approveBtn.disabled = true;
+									approveBtn.title = 'Missing selection payload; re-create the request from Search';
+								} else {
+									approveBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+									approveBtn.disabled = false;
+									approveBtn.title = '';
+								}
+								approveBtn.onclick = function() { handleRequestAction('approve', requestId); };
+							} else {
+								console.log('Hiding approve button (status not pending)');
+								approveBtn.classList.add('hidden');
+							}
+						}
+						
+						if (attachBtn) {
+							if (requestStatus === 'pending' && !hasReadarrReq) {
+								console.log('Showing attach button');
+								attachBtn.classList.remove('hidden');
+								attachBtn.onclick = function() { handleRequestAction('hydrate', requestId); };
+								attachBtn.title = 'Attempt to attach a selection payload from Readarr';
+							} else {
+								console.log('Hiding attach button');
+								attachBtn.classList.add('hidden');
+							}
+						}
+						
+						if (declineBtn) {
+							console.log('Showing decline button');
+							declineBtn.classList.remove('hidden');
+							declineBtn.onclick = function() { handleRequestAction('decline', requestId); };
+						}
+						
+						if (deleteBtn) {
+							console.log('Showing delete button');
+							deleteBtn.classList.remove('hidden');
+							deleteBtn.onclick = function() { 
+								if (confirm('Are you sure you want to permanently delete this request?')) {
+									handleRequestAction('delete', requestId); 
+								}
+							};
+						}
+					} else {
+						console.log('User is not admin, hiding actions section');
+						actionsSection.classList.add('hidden');
+					}
+				} else if (actionsSection) {
+					console.log('Not request data or no actions section, hiding actions');
+					actionsSection.classList.add('hidden');
+				}
+
+				// For search results (not a request), show user request buttons if we have at least a title
+				if (userActions) {
+					if (!isRequest && (data.title || data.isbn13 || data.isbn10 || data.asin)) {
+						userActions.classList.remove('hidden');
+						// Attach click handlers that submit requests with the same helper used elsewhere
+						if (reqEbookBtn) {
+							reqEbookBtn.onclick = function(){
+								window.submitRequestFromModal('ebook', data);
+							};
+						}
+						if (reqAudioBtn) {
+							reqAudioBtn.onclick = function(){
+								window.submitRequestFromModal('audiobook', data);
+							};
+						}
+					} else {
+						userActions.classList.add('hidden');
+					}
 				}
 				
 				// Populate fields, tolerant of missing keys
@@ -441,9 +643,13 @@
 				if (data.asin) metaParts.push('ASIN: ' + data.asin);
 				
 				console.log('Available data keys:', Object.keys(data));
-				console.log('Available enriched data keys:', Object.keys(enrichedData));
-				console.log('Ratings data:', enrichedData.ratings);
-				console.log('Genres data:', enrichedData.genres);
+				console.log('Raw data object:', data);
+				console.log('Data type:', typeof data, 'Is array:', Array.isArray(data));
+				
+				if (data.rating || data.ratings) console.log('Ratings data:', data.rating || data.ratings);
+				if (data.genres) console.log('Genres data:', data.genres);
+				if (data.description) console.log('Description found:', data.description.length, 'chars');
+				if (data.overview) console.log('Overview found:', data.overview.length, 'chars');
 				
 				meta.textContent = metaParts.join(' • ');
 				console.log('Meta populated:', meta.textContent);
@@ -466,33 +672,34 @@
 				// If no description found, show other useful information
 				if (!description) {
 					console.log('No description found, building from other data...');
-					var descParts = ['=== BOOK INFORMATION ==='];
+					// Build a clean fallback description without a noisy header
+					var descParts = [];
 					
 					// Show genres if available
-					if (enrichedData.genres && enrichedData.genres.length > 0) {
-						console.log('Found genres:', enrichedData.genres);
-						descParts.push('Genres: ' + enrichedData.genres.slice(0, 5).join(', ') + (enrichedData.genres.length > 5 ? ', and more...' : ''));
+					if (data.genres && data.genres.length > 0) {
+						console.log('Found genres:', data.genres);
+						descParts.push('Genres: ' + data.genres.slice(0, 5).join(', ') + (data.genres.length > 5 ? ', and more...' : ''));
 					}
 					
 					// Show series information if available
-					if (enrichedData.seriesTitle && enrichedData.seriesTitle.trim() !== '') {
-						console.log('Found series:', enrichedData.seriesTitle);
-						descParts.push('Series: ' + enrichedData.seriesTitle);
+					if (data.seriesTitle && data.seriesTitle.trim() !== '') {
+						console.log('Found series:', data.seriesTitle);
+						descParts.push('Series: ' + data.seriesTitle);
 					}
 					
 					// Show additional metadata
-					if (enrichedData.authorTitle && enrichedData.authorTitle.trim() !== '') {
-						var authorParts = enrichedData.authorTitle.split(' ');
+					if (data.authorTitle && data.authorTitle.trim() !== '') {
+						var authorParts = data.authorTitle.split(' ');
 						if (authorParts.length > 2) {
 							// Skip if it's just author + title repetition
-							var cleanAuthor = authorParts.slice(0, -enrichedData.title.split(' ').length).join(' ');
+							var cleanAuthor = authorParts.slice(0, -data.title.split(' ').length).join(' ');
 							if (cleanAuthor.length > 0) descParts.push('Full Author: ' + cleanAuthor);
 						}
 					}
 					
 					// Show Goodreads links if available
-					if (enrichedData.links && enrichedData.links.length > 0) {
-						var goodreadsLinks = enrichedData.links.filter(function(link) { return link.name && link.name.includes('Goodreads'); });
+					if (data.links && data.links.length > 0) {
+						var goodreadsLinks = data.links.filter(function(link) { return link.name && link.name.includes('Goodreads'); });
 						if (goodreadsLinks.length > 0) {
 							var linkHtml = 'View on Goodreads for full description and reviews:<br>';
 							goodreadsLinks.forEach(function(link) {
@@ -528,6 +735,133 @@
 			modal.setAttribute('aria-hidden', 'true');
 		}
 
+		// Submit a request from the modal (used for search result popups)
+		window.submitRequestFromModal = async function(format, data){
+			try{
+				var btnE = document.getElementById('book-modal-request-ebook');
+				var btnA = document.getElementById('book-modal-request-audiobook');
+				var btnTarget = (format === 'audiobook') ? btnA : btnE;
+				if (btnTarget) btnTarget.classList.add('opacity-60','pointer-events-none');
+
+				var payload = {
+					title: (data.title||'').toString(),
+					authors: Array.isArray(data.authors) ? data.authors : (data.author ? [data.author] : []),
+					isbn10: (data.isbn10||'').toString(),
+					isbn13: (data.isbn13||'').toString(),
+					asin: (data.asin||'').toString(),
+					format: (format||'ebook'),
+					provider: (data.provider||'').toString()
+				};
+				// Include correct provider payload if available
+				if ((format||'ebook') === 'ebook' && data.provider_payload_ebook) {
+					payload.provider_payload = data.provider_payload_ebook;
+				} else if ((format||'ebook') === 'audiobook' && data.provider_payload_audiobook) {
+					payload.provider_payload = data.provider_payload_audiobook;
+				} else if (data.provider_payload) {
+					payload.provider_payload = data.provider_payload;
+				}
+
+				var resp = await fetch('/api/v1/requests', {
+					method: 'POST',
+					body: JSON.stringify(payload),
+					headers: { 'HX-Request':'true', 'Content-Type':'application/json' },
+					credentials: 'same-origin'
+				});
+
+				if (resp.ok) {
+					// Mark only the clicked button as requested; leave the other available
+					if (btnTarget) { btnTarget.textContent = 'Requested ✓'; btnTarget.classList.add('bg-emerald-600'); btnTarget.disabled = true; }
+					scriptorumShowToast('Request submitted. Open Requests to view.');
+					// Optionally refresh requests table if present
+					var reqTable = document.querySelector('#req-table');
+					if (reqTable && window.htmx) { htmx.trigger(reqTable, 'refresh'); }
+				} else if (resp.status === 302 || resp.redirected) {
+					scriptorumShowToast('Not signed in. Please log in.', 'bg-amber-50 text-amber-800 ring-1 ring-amber-200');
+					if (btnTarget) btnTarget.classList.remove('opacity-60','pointer-events-none');
+				} else {
+					var txt = await resp.text();
+					scriptorumShowToast('Error: ' + (txt||resp.status), 'bg-rose-50 text-rose-800 ring-1 ring-rose-200');
+					if (btnTarget) btnTarget.classList.remove('opacity-60','pointer-events-none');
+				}
+			}catch(err){
+				scriptorumShowToast('Network error submitting request', 'bg-rose-50 text-rose-800 ring-1 ring-rose-200');
+				var btnE = document.getElementById('book-modal-request-ebook');
+				var btnA = document.getElementById('book-modal-request-audiobook');
+				var btnTarget = (format === 'audiobook') ? btnA : btnE;
+				if (btnTarget) btnTarget.classList.remove('opacity-60','pointer-events-none');
+			}
+		}
+
+		// Handle request actions (approve, decline, delete, hydrate)
+		window.handleRequestAction = function(action, requestId) {
+			if (!requestId) {
+				console.error('No request ID provided for action:', action);
+				return;
+			}
+			
+			console.log('Handling request action:', action, 'for request ID:', requestId);
+			
+			var apiUrl;
+			var method = 'POST';
+			
+			switch (action) {
+				case 'approve':
+					apiUrl = '/api/v1/requests/' + requestId + '/approve';
+					break;
+				case 'decline':
+					apiUrl = '/api/v1/requests/' + requestId + '/decline';
+					break;
+				case 'delete':
+					apiUrl = '/api/v1/requests/' + requestId;
+					method = 'DELETE';
+					break;
+				case 'hydrate':
+					apiUrl = '/api/v1/requests/' + requestId + '/hydrate';
+					break;
+				default:
+					console.error('Unknown action:', action);
+					return;
+			}
+			
+			// Make the API call
+			fetch(apiUrl, {
+				method: method,
+				headers: {
+					'Content-Type': 'application/json',
+					'HX-Request': 'true'
+				},
+				credentials: 'same-origin'
+			})
+			.then(function(resp) {
+				if (resp.ok) {
+					console.log('Action successful:', action);
+					// Close modal
+					window.closeBookModal();
+					// Refresh requests table if it exists
+					var reqTable = document.querySelector('#req-table');
+					if (reqTable && window.htmx) {
+						htmx.trigger(reqTable, 'refresh');
+					}
+					// Show success message
+					var actionText = action === 'delete' ? 'deleted' : 
+									action === 'approve' ? 'approved' : 
+									action === 'decline' ? 'declined' :
+									action === 'hydrate' ? 'updated' : action + 'd';
+					window.scriptorumShowToast && window.scriptorumShowToast('Request ' + actionText + ' successfully.');
+				} else {
+					console.error('Action failed:', action, resp.status, resp.statusText);
+					resp.text().then(function(text) {
+						var errorMsg = text || 'Action failed: ' + resp.status;
+						window.scriptorumShowToast && window.scriptorumShowToast('Error: ' + errorMsg, 'bg-rose-50 text-rose-800 ring-1 ring-rose-200');
+					});
+				}
+			})
+			.catch(function(err) {
+				console.error('Network error:', err);
+				window.scriptorumShowToast && window.scriptorumShowToast('Network error occurred.', 'bg-rose-50 text-rose-800 ring-1 ring-rose-200');
+			});
+		}
+
 		// Helper: open modal from an element inside the search result item (li)
 		window.openBookModalFromElem = function(el){
 			console.log('openBookModalFromElem called with:', el);
@@ -558,9 +892,12 @@
 					var pIn = form.querySelector('input[name="provider_payload"]');
 					var ppe = form.querySelector('input[name="provider_payload_ebook"]');
 					var ppa = form.querySelector('input[name="provider_payload_audiobook"]');
-					if (ppe && ppe.value) data.provider_payload = ppe.value;
-					else if (ppa && ppa.value) data.provider_payload = ppa.value;
-					else if (pIn && pIn.value) data.provider_payload = pIn.value;
+					if (ppe && ppe.value) data.provider_payload_ebook = ppe.value;
+					if (ppa && ppa.value) data.provider_payload_audiobook = ppa.value;
+					if (pIn && pIn.value) data.provider_payload = pIn.value;
+					// keep provider label if available
+					var prov = form.querySelector('input[name="provider"]');
+					if (prov && prov.value) data.provider = prov.value;
 				}
 				// also gather cover src if available in li
 				var img = li.querySelector('img'); if (img && img.src) data.cover = img.src;
@@ -577,7 +914,13 @@
 				
 				// If we don't have a description, try to fetch enriched data from API
 				if (!hasDescription && (data.provider_payload || data.isbn13 || data.isbn10 || data.asin)) {
-					console.log('Fetching additional book details from API...');
+					console.log('No description found, fetching enriched data from API...');
+					console.log('hasDescription:', hasDescription, 'identifiers:', {
+						provider_payload: !!data.provider_payload,
+						isbn13: data.isbn13,
+						isbn10: data.isbn10,
+						asin: data.asin
+					});
 					
 					// Show modal immediately with loading state
 					window.openBookModal(data, true);
@@ -630,6 +973,7 @@
 					});
 				} else {
 					// We have sufficient data or no way to fetch more, show modal directly
+					console.log('Using existing data, not calling enriched API. hasDescription:', hasDescription, 'identifiers present:', !!(data.provider_payload || data.isbn13 || data.isbn10 || data.asin));
 					window.openBookModal(data);
 				}
 			} catch(e) { console.error('openBookModalFromElem error', e); }
@@ -644,6 +988,94 @@
 		});
 		document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ window.closeBookModal(); } });
 
+		// Generic HTMX form state handler (no inline hx-on needed)
+		document.body.addEventListener('htmx:beforeRequest', function(evt){
+			try {
+				var form = evt.target;
+				if (!form || !form.classList || !form.classList.contains('js-approve-form')) return;
+				var btn = form.querySelector('button');
+				if (!btn) return;
+				btn.classList.add('opacity-50');
+				var working = btn.getAttribute('data-label-working') || 'Working...';
+				btn.textContent = working;
+			} catch {}
+		});
+		document.body.addEventListener('htmx:afterRequest', function(evt){
+			try {
+				var form = evt.target;
+				if (!form || !form.classList || !form.classList.contains('js-approve-form')) return;
+				var btn = form.querySelector('button');
+				if (!btn) return;
+				btn.classList.remove('opacity-50');
+				var def = btn.getAttribute('data-label-default') || 'Submit';
+				btn.textContent = def;
+			} catch {}
+		});
+		document.body.addEventListener('htmx:responseError', function(evt){
+			try {
+				var form = evt.target;
+				if (!form || !form.classList || !form.classList.contains('js-approve-form')) return;
+				var btn = form.querySelector('button');
+				if (!btn) return;
+				btn.classList.add('bg-rose-600');
+				btn.textContent = 'Approve failed';
+				setTimeout(function(){ btn.textContent = btn.getAttribute('data-label-default') || 'Submit'; btn.classList.remove('bg-rose-600','opacity-50'); }, 2200);
+			} catch {}
+		});
+
+		// Centralized notifications for simple HTMX buttons (no inline hx-on)
+		document.body.addEventListener('htmx:beforeRequest', function(evt){
+			try {
+				var el = evt.target;
+				if (!el || !el.classList || !el.classList.contains('js-notify-on-htmx')) return;
+				var btn = el;
+				if (!btn.getAttribute('data-label-default')) {
+					btn.setAttribute('data-label-default', (btn.textContent || '').trim());
+				}
+				var working = btn.getAttribute('data-label-working') || 'Working...';
+				btn.disabled = true;
+				btn.classList.add('opacity-50','cursor-not-allowed');
+				btn.textContent = working;
+			} catch {}
+		});
+		document.body.addEventListener('htmx:afterRequest', function(evt){
+			try {
+				var el = evt.target;
+				if (!el || !el.classList || !el.classList.contains('js-notify-on-htmx')) return;
+				var btn = el;
+				var ok = false;
+				if (evt.detail && typeof evt.detail.successful === 'boolean') { ok = evt.detail.successful; }
+				else if (evt.detail && evt.detail.xhr) { ok = evt.detail.xhr.status >= 200 && evt.detail.xhr.status < 300; }
+				var msg = ok ? (btn.getAttribute('data-success-message') || 'Done.') : (btn.getAttribute('data-failure-message') || 'Request failed.');
+				try { alert(msg); } catch {}
+				btn.disabled = false;
+				btn.classList.remove('opacity-50','cursor-not-allowed');
+				btn.textContent = btn.getAttribute('data-label-default') || 'Submit';
+			} catch {}
+		});
+		document.body.addEventListener('htmx:responseError', function(evt){
+			try {
+				var el = evt.target;
+				if (!el || !el.classList || !el.classList.contains('js-notify-on-htmx')) return;
+				var btn = el;
+				var msg = btn.getAttribute('data-failure-message') || 'Request failed.';
+				try { alert(msg); } catch {}
+				btn.disabled = false;
+				btn.classList.remove('opacity-50','cursor-not-allowed');
+				btn.textContent = btn.getAttribute('data-label-default') || 'Submit';
+			} catch {}
+		});
+
+		// Reset search pagination to 1 whenever the query input changes (replaces inline hx-on)
+		document.addEventListener('input', function(evt){
+			var t = evt.target;
+			if (!t || t.name !== 'q') return;
+			var form = t.closest && t.closest('#searchForm');
+			if (!form) return;
+			var pageInput = form.querySelector('input[name=page]');
+			if (pageInput) { pageInput.value = '1'; }
+		});
+
 		// Delegate clicks/key presses for opening book details on elements with data-open-book
 		document.addEventListener('click', function(e){
 			try {
@@ -655,7 +1087,65 @@
 				var el = t.closest && t.closest('[data-open-book]');
 				if (el) {
 					console.log('Opening modal from click on element:', el);
-					// open modal using the element (will locate nearest form)
+					
+					// Check if this element has JSON data directly (requests table). Search results set a sentinel like "1".
+					var jsonData = el.getAttribute('data-open-book');
+					if (jsonData) {
+						var isJsonLike = /^\s*[{\[]/.test(jsonData);
+						if (!isJsonLike) {
+							// Not a JSON payload (likely "1"), use form extraction path
+							openBookModalFromElem(el);
+							return;
+						}
+						try {
+							var bookData = JSON.parse(jsonData);
+							console.log('Parsed JSON book data:', bookData);
+							if (!bookData || typeof bookData !== 'object') {
+								openBookModalFromElem(el);
+								return;
+							}
+							// For requests table, call enriched API to get full details
+							if (bookData.title || bookData.isbn13 || bookData.isbn10 || bookData.asin) {
+								// Show modal with loading state first
+								console.log('Opening modal with request data for enrichment');
+								window.openBookModal(bookData, true);
+								// Make API call for enriched data
+								fetch('/api/v1/book/enriched', {
+									method: 'POST',
+									headers: { 'Content-Type': 'application/json', 'HX-Request': 'true' },
+									body: JSON.stringify(bookData),
+									credentials: 'same-origin'
+								})
+								.then(function(resp) { if (!resp.ok) { console.log('Enriched API call failed, using original data'); window.openBookModal(bookData); return; } return resp.json(); })
+								.then(function(enrichedData) {
+									if (enrichedData && !enrichedData.error) {
+										console.log('Got enriched data from API:', enrichedData);
+										var mergedData = Object.assign({}, enrichedData);
+										if (bookData.requesterEmail) mergedData.requesterEmail = bookData.requesterEmail;
+										if (bookData.status) mergedData.status = bookData.status;
+										if (bookData.requestId) mergedData.requestId = bookData.requestId;
+										if (bookData.hasOwnProperty('isAdmin')) mergedData.isAdmin = bookData.isAdmin;
+										if (bookData.readarrRequest) mergedData.readarrRequest = bookData.readarrRequest;
+										console.log('Merged data with request fields:', mergedData);
+										window.openBookModal(mergedData);
+									} else {
+										console.log('Enriched API returned error or no data:', enrichedData);
+										window.openBookModal(bookData);
+									}
+								})
+								.catch(function(err) { console.error('API fetch error:', err); window.openBookModal(bookData); });
+							} else {
+								// No identifiers, just open with basic data
+								window.openBookModal(bookData);
+							}
+							return;
+						} catch(parseError) {
+							console.log('Failed to parse JSON data, falling back to form extraction');
+							openBookModalFromElem(el);
+							return;
+						}
+					}
+					// Fallback to form extraction for search results
 					openBookModalFromElem(el);
 				}
 			} catch(err) { console.error('Click handler error:', err); }
@@ -664,6 +1154,63 @@
 			if (e.key === 'Enter') {
 				var active = document.activeElement;
 				if (active && active.getAttribute && active.getAttribute('data-open-book') !== null) {
+					// Check if this element has JSON data directly (requests table)
+					var jsonData = active.getAttribute('data-open-book');
+					if (jsonData) {
+						var isJsonLike = /^\s*[{\[]/.test(jsonData);
+						if (!isJsonLike) {
+							openBookModalFromElem(active);
+							e.preventDefault();
+							return;
+						}
+						try {
+							var bookData = JSON.parse(jsonData);
+							console.log('Parsed JSON book data from keyboard:', bookData);
+							if (!bookData || typeof bookData !== 'object') { openBookModalFromElem(active); e.preventDefault(); return; }
+							// For requests table, call enriched API to get full details
+							if (bookData.title || bookData.isbn13 || bookData.isbn10 || bookData.asin) {
+								// Show modal with loading state first
+								window.openBookModal(bookData, true);
+								// Make API call for enriched data
+								fetch('/api/v1/book/enriched', {
+									method: 'POST',
+									headers: { 'Content-Type': 'application/json', 'HX-Request': 'true' },
+									body: JSON.stringify(bookData),
+									credentials: 'same-origin'
+								})
+								.then(function(resp) { if (!resp.ok) { console.log('Enriched API call failed, using original data'); window.openBookModal(bookData); return; } return resp.json(); })
+								.then(function(enrichedData) {
+									if (enrichedData && !enrichedData.error) {
+										console.log('Got enriched data from API:', enrichedData);
+										var mergedData = Object.assign({}, enrichedData);
+										if (bookData.requesterEmail) mergedData.requesterEmail = bookData.requesterEmail;
+										if (bookData.status) mergedData.status = bookData.status;
+										if (bookData.requestId) mergedData.requestId = bookData.requestId;
+										if (bookData.hasOwnProperty('isAdmin')) mergedData.isAdmin = bookData.isAdmin;
+										if (bookData.readarrRequest) mergedData.readarrRequest = bookData.readarrRequest;
+										console.log('Merged data with request fields:', mergedData);
+										window.openBookModal(mergedData);
+									} else {
+										console.log('Enriched API returned error or no data:', enrichedData);
+										window.openBookModal(bookData);
+									}
+								})
+								.catch(function(err) { console.error('API fetch error:', err); window.openBookModal(bookData); });
+							} else {
+								// No identifiers, just open with basic data
+								window.openBookModal(bookData);
+							}
+							e.preventDefault();
+							return;
+						} catch(parseError) {
+							console.log('Failed to parse JSON data, falling back to form extraction');
+							openBookModalFromElem(active);
+							e.preventDefault();
+							return;
+						}
+					}
+					
+					// Fallback to form extraction for search results
 					openBookModalFromElem(active);
 					e.preventDefault();
 				}

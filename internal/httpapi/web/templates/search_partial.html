@@ -40,18 +40,7 @@
             data-isbn10="{{ .ISBN10 }}"
             data-isbn13="{{ .ISBN13 }}"
             data-asin="{{ .ASIN }}"
-            data-author="{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}"
-            hx-on:htmx:after-request="
-              if (event.detail.successful) {
-                const btns = this.querySelectorAll('button');
-                btns.forEach(btn => {
-                  btn.textContent = 'Requested ✓';
-                  btn.classList.remove('bg-royal-600', 'bg-royal-500', 'hover:bg-royal-700', 'hover:bg-royal-600');
-                  btn.classList.add('bg-emerald-600');
-                  btn.disabled = true;
-                });
-              }
-            ">
+            data-author="{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}">
         <input type="hidden" name="title" value="{{ .Title }}">
         {{ range .Authors }}
         <input type="hidden" name="authors" value="{{ . }}">
@@ -65,14 +54,14 @@
         <input type="hidden" name="provider_payload_audiobook" value='{{ .ProviderAudiobookPayload }}'>
 
         <!-- Use the same purple and fixed width for both buttons so layout doesn't shift -->
-        <button type="button" name="format" value="ebook"
-                class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500 w-full sm:w-44"
-                onclick="scriptorumRequestFallback(this, 'ebook')">
+  <button type="button" name="format" value="ebook"
+    class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500 w-full sm:w-44"
+    onclick="scriptorumRequestHtmx(this, 'ebook')">
           Request eBook
         </button>
-        <button type="button" name="format" value="audiobook"
-                class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500 w-full sm:w-44"
-                onclick="scriptorumRequestFallback(this, 'audiobook')">
+  <button type="button" name="format" value="audiobook"
+    class="px-3 py-2 rounded-lg bg-royal-600 text-white hover:bg-royal-500 w-full sm:w-44"
+    onclick="scriptorumRequestHtmx(this, 'audiobook')">
           Request Audiobook
         </button>
       </form>

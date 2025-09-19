@@ -15,7 +15,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Content Security Policy - restrictive policy that allows HTMX and inline styles
 		csp := "default-src 'self'; " +
-			"script-src 'self' 'unsafe-inline' https://unpkg.com/htmx.org@1.9.12 https://cdn.tailwindcss.com; " +
+			"script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com/htmx.org@1.9.12 https://cdn.tailwindcss.com; " +
 			"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdn.tailwindcss.com; " +
 			"font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; " +
 			"img-src 'self' data: https:; " +
