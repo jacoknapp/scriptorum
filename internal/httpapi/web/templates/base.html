@@ -347,9 +347,9 @@
 {{ define "footer" }}
 
 	<!-- Global Book Details Modal -->
-	<div id="book-modal" class="hidden fixed inset-0 z-50 flex items-start justify-center p-4" aria-hidden="true">
+	<div id="book-modal" class="hidden fixed inset-0 z-50 flex items-center md:items-start justify-center p-4" aria-hidden="true">
 		<div id="book-modal-backdrop" class="absolute inset-0 bg-black/60" tabindex="-1"></div>
-		<div class="relative max-w-3xl w-full bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden z-10">
+		<div class="relative max-w-3xl w-full bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden z-10 max-h-[90vh] overflow-y-auto">
 			<div class="flex gap-4 p-4">
 				<img id="book-modal-cover" src="/static/placeholder-cover.svg" class="w-28 h-40 object-cover rounded-md border border-white/10 bg-night-900" alt="Cover">
 				<div class="min-w-0 flex-1">
