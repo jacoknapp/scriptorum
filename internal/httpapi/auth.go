@@ -615,7 +615,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		if _, err := s.db.GetUserByUsername(r.Context(), username); err != nil {
 			// create with random/empty password hash; password not used for OAuth logins
 			randHash := "$2a$10$scriptorum.oauth.autocreate.dummyhash012345678901234567890"
-			_, _ = s.db.CreateUser(r.Context(), username, randHash, s.isAdminUsername(username))
+			_, _ = s.db.CreateUser(r.Context(), username, randHash, s.isAdminUsername(username), false)
 		}
 	}
 

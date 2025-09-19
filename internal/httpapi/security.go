@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -109,7 +110,7 @@ func (s *Server) csrfProtection(next http.Handler) http.Handler {
 			return
 		}
 
-		// Check for CSRF token in form, header, or HTMX header
+		// Allow HTMX same-origin requests
 		var token string
 		if token = r.FormValue("_csrf_token"); token == "" {
 			if token = r.Header.Get("X-CSRF-Token"); token == "" {
@@ -122,6 +123,22 @@ func (s *Server) csrfProtection(next http.Handler) http.Handler {
 			// HTMX requests from same origin are considered safe due to CORS
 			next.ServeHTTP(w, r)
 			return
+		}
+
+		// Permit same-origin POSTs (standard HTML forms) using Origin/Referer check
+		if r.Method == http.MethodPost {
+			if origin := r.Header.Get("Origin"); origin != "" {
+				if u, err := url.Parse(origin); err == nil && u.Host == r.Host {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			if ref := r.Header.Get("Referer"); ref != "" {
+				if u, err := url.Parse(ref); err == nil && u.Host == r.Host {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
 		}
 
 		// Validate and consume CSRF token for regular form submissions

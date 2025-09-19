@@ -19,7 +19,8 @@
 							data-id="{{ .ID }}"
 							data-username="{{ .Username }}"
 							data-isadmin="{{ .IsAdmin }}"
-							onclick="openEditModal(parseInt(this.dataset.id), this.dataset.username, this.dataset.isadmin === 'true')"
+							data-autoapprove="{{ .AutoApprove }}"
+							onclick="openEditModal(parseInt(this.dataset.id), this.dataset.username, this.dataset.isadmin === 'true', this.dataset.autoapprove === 'true')"
 							class="text-blue-400 hover:text-blue-300">Edit</button>
 						<button
 							data-id="{{ .ID }}"
@@ -57,7 +58,8 @@
 						data-id="{{ .ID }}"
 						data-username="{{ .Username }}"
 						data-isadmin="{{ .IsAdmin }}"
-						onclick="openEditModal(parseInt(this.dataset.id), this.dataset.username, this.dataset.isadmin === 'true')"
+						data-autoapprove="{{ .AutoApprove }}"
+						onclick="openEditModal(parseInt(this.dataset.id), this.dataset.username, this.dataset.isadmin === 'true', this.dataset.autoapprove === 'true')"
 						class="text-blue-400 hover:text-blue-300 mr-2">Edit</button>
 					<button
 						data-id="{{ .ID }}"
@@ -65,11 +67,6 @@
 						onclick="openDeleteModal(parseInt(this.dataset.id), this.dataset.username)"
 						class="text-red-400 hover:text-red-300">Delete</button>
 				</td>
-			</tr>
-			{{ else }}
-			<tr>
-				<td colspan="4" class="p-4 text-slate-400">No users</td>
-			</tr>
 			{{ end }}
 		</tbody>
 	</table>
@@ -93,6 +90,7 @@
 			</div>
 
 			<form method="post" action="/users" class="grid gap-3">
+				<input type="hidden" name="_csrf_token" value="{{ .CSRFToken }}">
 				<label class="grid gap-1">
 					<span>Username</span>
 					<input name="username" required class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2">
@@ -104,6 +102,10 @@
 				<label class="inline-flex items-center gap-2">
 					<input type="checkbox" name="is_admin">
 					<span>Admin</span>
+				</label>
+				<label class="inline-flex items-center gap-2">
+					<input type="checkbox" name="is_auto_approve">
+					<span>Auto-approve requests</span>
 				</label>
 				<div class="flex items-center justify-end gap-2 mt-2">
 					<button type="button" id="cancelCreateUser" class="px-3 py-2 rounded border border-white/10 bg-night-900">Cancel</button>
@@ -126,6 +128,7 @@
 			</div>
 
 			<form method="post" action="/users/edit" class="grid gap-3">
+				<input type="hidden" name="_csrf_token" value="{{ .CSRFToken }}">
 				<input type="hidden" name="user_id" id="editUserId">
 				<div>
 					<label class="block text-sm font-medium mb-1">Username</label>
@@ -142,6 +145,10 @@
 				<label class="inline-flex items-center gap-2">
 					<input type="checkbox" name="is_admin" id="editUserAdmin">
 					<span>Admin</span>
+				</label>
+				<label class="inline-flex items-center gap-2">
+					<input type="checkbox" name="is_auto_approve" id="editUserAutoApprove">
+					<span>Auto-approve requests</span>
 				</label>
 				<div class="flex items-center justify-end gap-2 mt-2">
 					<button type="button" id="cancelEditUser" class="px-3 py-2 rounded border border-white/10 bg-night-900">Cancel</button>
@@ -177,10 +184,12 @@
 
 	<script>
 	// Global modal functions
-	function openEditModal(userId, username, isAdmin) {
+	function openEditModal(userId, username, isAdmin, autoApprove) {
 		document.getElementById('editUserId').value = userId;
 		document.getElementById('editUserName').textContent = username;
 		document.getElementById('editUserAdmin').checked = isAdmin;
+		var aa = document.getElementById('editUserAutoApprove');
+		if (aa) aa.checked = !!autoApprove;
 		document.getElementById('editUserPassword').value = '';
 		document.getElementById('editUserConfirmPassword').value = '';
 		document.getElementById('editUserModal').classList.remove('hidden');

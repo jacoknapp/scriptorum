@@ -634,16 +634,51 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Send notification for new request
-	s.SendRequestNotification(id, u.Username, p.Title, p.Authors)
+	// Check if user has auto-approve enabled
+	autoApprove := false
+	if u != nil {
+		if usr, err := s.db.GetUserByUsername(r.Context(), u.Username); err == nil && usr != nil {
+			autoApprove = usr.AutoApprove
+		}
+	}
+
+	if autoApprove {
+		// If Readarr not configured for this format, mark approved; else set processing and kick off async approval
+		var inst providers.ReadarrInstance
+		if format == "audiobook" {
+			c := s.settings.Get().Readarr.Audiobooks
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
+		} else {
+			c := s.settings.Get().Readarr.Ebooks
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
+		}
+
+		if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+			// Approve without Readarr
+			_ = s.db.ApproveRequest(r.Context(), id, u.Username)
+			_ = s.db.UpdateRequestStatus(r.Context(), id, "approved", "auto-approved (no Readarr configured)", u.Username, nil, nil)
+			go s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
+		} else {
+			// Mark processing and start async approval using stored payload
+			_ = s.db.UpdateRequestStatus(r.Context(), id, "processing", "auto-approval in progress", u.Username, nil, nil)
+			go s.processAsyncApproval(id, req, inst, u.Username)
+		}
+	} else {
+		// Send notification for new request (only when not auto-approved)
+		s.SendRequestNotification(id, u.Username, p.Title, p.Authors)
+	}
 
 	// If HTMX, return a tiny HTML notice instead of JSON
 	if strings.Contains(r.Header.Get("HX-Request"), "true") || r.Header.Get("HX-Request") == "true" {
-		// let the client know a request was created so UI can refresh if needed
+		// let the client know a request was created/updated so UI can refresh if needed
 		w.Header().Set("HX-Trigger", `{"request:created": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(201)
-		w.Write([]byte(`<li class="p-3 bg-emerald-50 text-emerald-700 rounded mb-2">Request submitted (ID ` + strconv.FormatInt(id, 10) + `). <a class="underline text-emerald-800" href="/requests">View in Requests</a></li>`))
+		msg := "Request submitted"
+		if autoApprove {
+			msg = "Request auto-approved"
+		}
+		w.Write([]byte(`<li class="p-3 bg-emerald-50 text-emerald-700 rounded mb-2">` + msg + ` (ID ` + strconv.FormatInt(id, 10) + `). <a class="underline text-emerald-800" href="/requests">View in Requests</a></li>`))
 		return
 	}
 	// Non-HTMX: prefer redirect back to the referrer if it's a browser form post

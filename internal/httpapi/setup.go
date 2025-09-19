@@ -57,7 +57,7 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 			// Hash with config salt and store
 			hash, err := s.hashPassword(adminPass, cur.Auth.Salt)
 			if err == nil {
-				_, _ = s.db.CreateUser(r.Context(), adminUser, hash, true)
+				_, _ = s.db.CreateUser(r.Context(), adminUser, hash, true, false)
 				// Also add the username to admins.usernames list for OAuth compatibility
 				if !containsInsensitive(cur.Admins.Usernames, adminUser) {
 					cur.Admins.Usernames = append(cur.Admins.Usernames, adminUser)

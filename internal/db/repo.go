@@ -187,18 +187,19 @@ func (d *DB) DeleteAllRequests(ctx context.Context) error {
 
 // Users
 type User struct {
-	ID       int64
-	Username string
-	Hash     string
-	IsAdmin  bool
-	Created  time.Time
+	ID          int64
+	Username    string
+	Hash        string
+	IsAdmin     bool
+	AutoApprove bool
+	Created     time.Time
 }
 
-func (d *DB) CreateUser(ctx context.Context, username, passwordHash string, isAdmin bool) (int64, error) {
+func (d *DB) CreateUser(ctx context.Context, username, passwordHash string, isAdmin bool, autoApprove bool) (int64, error) {
 	now := time.Now().UTC()
 	res, err := d.sql.ExecContext(ctx, `
-INSERT INTO users (created_at, username, password_hash, is_admin)
-VALUES (?, ?, ?, ?)`, now.Format(time.RFC3339Nano), strings.ToLower(username), passwordHash, boolToInt(isAdmin))
+INSERT INTO users (created_at, username, password_hash, is_admin, auto_approve)
+VALUES (?, ?, ?, ?, ?)`, now.Format(time.RFC3339Nano), strings.ToLower(username), passwordHash, boolToInt(isAdmin), boolToInt(autoApprove))
 	if err != nil {
 		return 0, err
 	}
@@ -207,14 +208,16 @@ VALUES (?, ?, ?, ?)`, now.Format(time.RFC3339Nano), strings.ToLower(username), p
 }
 
 func (d *DB) GetUserByUsername(ctx context.Context, username string) (*User, error) {
-	row := d.sql.QueryRowContext(ctx, `SELECT id, created_at, username, password_hash, is_admin FROM users WHERE username=?`, strings.ToLower(username))
+	row := d.sql.QueryRowContext(ctx, `SELECT id, created_at, username, password_hash, is_admin, COALESCE(auto_approve, 0) FROM users WHERE username=?`, strings.ToLower(username))
 	var u User
 	var created string
 	var isAdminInt int
-	if err := row.Scan(&u.ID, &created, &u.Username, &u.Hash, &isAdminInt); err != nil {
+	var autoApproveInt int
+	if err := row.Scan(&u.ID, &created, &u.Username, &u.Hash, &isAdminInt, &autoApproveInt); err != nil {
 		return nil, err
 	}
 	u.IsAdmin = isAdminInt == 1
+	u.AutoApprove = autoApproveInt == 1
 	u.Created, _ = time.Parse(time.RFC3339Nano, created)
 	return &u, nil
 }
@@ -229,7 +232,7 @@ func (d *DB) CountAdmins(ctx context.Context) (int, error) {
 }
 
 func (d *DB) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := d.sql.QueryContext(ctx, `SELECT id, created_at, username, password_hash, is_admin FROM users ORDER BY id DESC`)
+	rows, err := d.sql.QueryContext(ctx, `SELECT id, created_at, username, password_hash, is_admin, COALESCE(auto_approve, 0) FROM users ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -239,11 +242,13 @@ func (d *DB) ListUsers(ctx context.Context) ([]User, error) {
 		var u User
 		var created string
 		var isAdminInt int
-		if err := rows.Scan(&u.ID, &created, &u.Username, &u.Hash, &isAdminInt); err != nil {
+		var autoApproveInt int
+		if err := rows.Scan(&u.ID, &created, &u.Username, &u.Hash, &isAdminInt, &autoApproveInt); err != nil {
 			return nil, err
 		}
 		u.Created, _ = time.Parse(time.RFC3339Nano, created)
 		u.IsAdmin = isAdminInt == 1
+		u.AutoApprove = autoApproveInt == 1
 		out = append(out, u)
 	}
 	return out, nil
@@ -256,6 +261,11 @@ func (d *DB) DeleteUser(ctx context.Context, id int64) error {
 
 func (d *DB) SetUserAdmin(ctx context.Context, id int64, isAdmin bool) error {
 	_, err := d.sql.ExecContext(ctx, `UPDATE users SET is_admin=? WHERE id=?`, boolToInt(isAdmin), id)
+	return err
+}
+
+func (d *DB) SetUserAutoApprove(ctx context.Context, id int64, autoApprove bool) error {
+	_, err := d.sql.ExecContext(ctx, `UPDATE users SET auto_approve=? WHERE id=?`, boolToInt(autoApprove), id)
 	return err
 }
 

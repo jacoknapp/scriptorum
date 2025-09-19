@@ -59,11 +59,14 @@ func (s *Server) mountUI(r chi.Router) {
 			password := r.FormValue("password")
 			confirmPassword := r.FormValue("confirm_password")
 			admin := r.FormValue("is_admin") == "on"
+			autoApprove := r.FormValue("is_auto_approve") == "on"
 
 			if idStr != "" {
 				if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
 					// Update admin status
 					_ = s.db.SetUserAdmin(r.Context(), id, admin)
+					// Update auto-approve status
+					_ = s.db.SetUserAutoApprove(r.Context(), id, autoApprove)
 
 					// Update password if provided and confirmed
 					if password != "" && password == confirmPassword {
@@ -132,15 +135,21 @@ func (u *ui) handleUsers(s *Server) http.HandlerFunc {
 			username := strings.TrimSpace(r.FormValue("username"))
 			password := r.FormValue("password")
 			admin := r.FormValue("is_admin") == "on"
+			autoApprove := r.FormValue("is_auto_approve") == "on"
 			if username != "" && password != "" {
 				hash, _ := s.hashPassword(password, s.settings.Get().Auth.Salt)
-				_, _ = s.db.CreateUser(r.Context(), username, hash, admin)
+				_, _ = s.db.CreateUser(r.Context(), username, hash, admin, autoApprove)
 			}
 			http.Redirect(w, r, "/users", http.StatusFound)
 			return
 		}
 		users, _ := s.db.ListUsers(r.Context())
-		data := map[string]any{"UserName": s.userName(r), "IsAdmin": true, "Users": users}
+		data := map[string]any{
+			"UserName":  s.userName(r),
+			"IsAdmin":   true,
+			"Users":     users,
+			"CSRFToken": s.getCSRFToken(r),
+		}
 		_ = u.tpl.ExecuteTemplate(w, "users.html", data)
 	}
 }

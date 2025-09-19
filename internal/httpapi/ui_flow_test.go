@@ -41,7 +41,7 @@ func TestLocalLoginAndDashboard(t *testing.T) {
 	password := "secret123"
 	peppered := s.settings.Get().Auth.Salt + ":" + password
 	hash, _ := bcrypt.GenerateFromPassword([]byte(peppered), bcrypt.DefaultCost)
-	if _, err := database.CreateUser(t.Context(), "tester", string(hash), true); err != nil {
+	if _, err := database.CreateUser(t.Context(), "tester", string(hash), true, false); err != nil {
 		t.Fatalf("create user: %v", err)
 	}
 
