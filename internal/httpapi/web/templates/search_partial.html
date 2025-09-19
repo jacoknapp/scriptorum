@@ -6,10 +6,12 @@
   <ul class="divide-y divide-white/5">
     {{ range .Items }}
   <li class="p-4 grid gap-6 items-start grid-cols-[auto,1fr] md:grid-cols-[auto,1fr,24rem]">
-      <!-- Use placeholder if no cover; fallback on error -->
+    <!-- Clickable area spans first two columns (cover + text). Buttons/forms on the right should not open the modal. -->
+    <div class="col-span-2 md:col-span-2 flex gap-2 items-start" data-open-book="1" role="button" tabindex="0" style="cursor:pointer;">
+      <!-- Use placeholder if no cover; clicking opens details modal -->
       <img src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
-           class="w-16 h-24 object-cover rounded-lg border border-white/10 bg-night-900"
-           onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
+        class="w-16 h-24 object-cover rounded-lg border border-white/10 bg-night-900"
+        onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
 
       <div class="min-w-0 pl-2 md:pl-0">
         <div class="font-medium truncate">{{ .Title }}</div>
@@ -23,7 +25,7 @@
           {{ else }}
             Unknown Author
           {{ end }}
-        </div>
+  </div>
         <div class="text-xs text-slate-400">
           {{ if .ISBN13 }}ISBN-13: {{ .ISBN13 }}{{ end }}
           {{ if and .ISBN13 .ISBN10 }}, {{ end }}
@@ -32,7 +34,7 @@
         </div>
         <!-- Source label removed: do not display which instance returned the result -->
       </div>
-
+    </div>
   <form method="post" action="/api/v1/requests" class="col-span-2 md:col-span-1 md:col-start-3 flex flex-wrap gap-2 items-center justify-start md:justify-end mt-2 md:mt-0"
             data-title="{{ .Title }}"
             data-isbn10="{{ .ISBN10 }}"

@@ -37,6 +37,456 @@ func (s *Server) mountAPI(r chi.Router) {
 		rr.Delete("/", s.requireAdmin(s.apiDeleteAllRequests))
 		rr.Post("/approve-all", s.requireAdmin(s.apiApproveAllRequests))
 	})
+	// Book details endpoint used by UI to fetch richer metadata on-demand
+	r.Route("/api/v1/book", func(br chi.Router) {
+		br.Post("/details", s.apiBookDetails)
+		br.Post("/enriched", s.apiBookEnriched)
+	})
+}
+
+// apiBookDetails returns a normalized book details object.
+// Input (JSON or form): any of provider_payload, provider_payload_ebook, provider_payload_audiobook,
+// isbn13, isbn10, asin, title, authors
+func (s *Server) apiBookDetails(w http.ResponseWriter, r *http.Request) {
+	// Parse input (JSON preferred)
+	var in map[string]any
+	ct := r.Header.Get("Content-Type")
+	if strings.Contains(ct, "application/json") {
+		_ = json.NewDecoder(r.Body).Decode(&in)
+	} else {
+		_ = r.ParseForm()
+		in = map[string]any{}
+		for k := range r.Form {
+			if len(r.Form[k]) == 1 {
+				in[k] = r.Form.Get(k)
+			} else {
+				// authors may be multiple
+				in[k] = r.Form[k]
+			}
+		}
+	}
+
+	// Helper to write normalized response
+	writeNormalized := func(obj map[string]any) {
+		// Ensure keys: title, authors ([]string), isbn10, isbn13, asin, cover, description, provider_payload
+		if obj == nil {
+			writeJSON(w, map[string]any{"error": "no details found"}, 404)
+			return
+		}
+		// normalize authors
+		if a, ok := obj["authors"]; ok {
+			switch t := a.(type) {
+			case []string:
+				// ok
+			case []any:
+				var out []string
+				for _, v := range t {
+					if s2, _ := v.(string); s2 != "" {
+						out = append(out, s2)
+					}
+				}
+				obj["authors"] = out
+			case string:
+				obj["authors"] = []string{t}
+			}
+		}
+		writeJSON(w, obj, 200)
+	}
+
+	// If provider payload is present, try to parse it and extract fields
+	pickPayload := ""
+	if v, ok := in["provider_payload_ebook"].(string); ok && strings.TrimSpace(v) != "" {
+		pickPayload = v
+	}
+	if pickPayload == "" {
+		if v, ok := in["provider_payload_audiobook"].(string); ok && strings.TrimSpace(v) != "" {
+			pickPayload = v
+		}
+	}
+	if pickPayload == "" {
+		if v, ok := in["provider_payload"].(string); ok && strings.TrimSpace(v) != "" {
+			pickPayload = v
+		}
+	}
+	if pickPayload != "" {
+		var pp map[string]any
+		if err := json.Unmarshal([]byte(pickPayload), &pp); err == nil {
+			// Build normalized object
+			out := map[string]any{}
+			if t, ok := pp["title"].(string); ok {
+				out["title"] = t
+			}
+			if d, ok := pp["description"].(string); ok {
+				out["description"] = d
+			}
+			if d, ok := pp["overview"].(string); ok && out["description"] == nil {
+				out["description"] = d
+			}
+			if im, ok := pp["images"].([]any); ok && out["cover"] == nil {
+				for _, it := range im {
+					if m, ok := it.(map[string]any); ok {
+						if url, ok := m["remoteUrl"].(string); ok && url != "" {
+							out["cover"] = url
+							break
+						}
+						if url, ok := m["url"].(string); ok && url != "" {
+							out["cover"] = url
+							break
+						}
+					}
+				}
+			}
+			if a, ok := pp["author"].(map[string]any); ok {
+				if n, _ := a["name"].(string); n != "" {
+					out["authors"] = []string{n}
+				}
+			}
+			if a, ok := pp["authors"].([]any); ok {
+				var outA []string
+				for _, aa := range a {
+					if s2, _ := aa.(string); s2 != "" {
+						outA = append(outA, s2)
+					}
+				}
+				if len(outA) > 0 {
+					out["authors"] = outA
+				}
+			}
+			if v, ok := in["isbn13"].(string); ok && v != "" {
+				out["isbn13"] = v
+			}
+			if v, ok := in["isbn10"].(string); ok && v != "" {
+				out["isbn10"] = v
+			}
+			if v, ok := in["asin"].(string); ok && v != "" {
+				out["asin"] = v
+			}
+			out["provider_payload"] = pp
+			writeNormalized(out)
+			return
+		}
+	}
+
+	// No provider payload: attempt Readarr lookup if identifiers or title present
+	term := ""
+	if v, ok := in["asin"].(string); ok && v != "" {
+		term = v
+	}
+	if term == "" {
+		if v, ok := in["isbn13"].(string); ok && v != "" {
+			term = v
+		}
+	}
+	if term == "" {
+		if v, ok := in["isbn10"].(string); ok && v != "" {
+			term = v
+		}
+	}
+	if term == "" {
+		if v, ok := in["title"].(string); ok && v != "" {
+			term = v
+		}
+		if a, ok := in["authors"]; ok && term != "" {
+			switch t := a.(type) {
+			case []string:
+				if len(t) > 0 && strings.TrimSpace(t[0]) != "" {
+					term = term + " " + t[0]
+				}
+			case []any:
+				if len(t) > 0 {
+					if s2, _ := t[0].(string); s2 != "" {
+						term = term + " " + s2
+					}
+				}
+			case string:
+				if t != "" {
+					term = term + " " + t
+				}
+			}
+		}
+	}
+	if term == "" {
+		writeJSON(w, map[string]any{"error": "no query provided"}, 400)
+		return
+	}
+
+	// Prefer Readarr if configured (ebooks first)
+	cfg := s.settings.Get()
+	var inst providers.ReadarrInstance
+	if cfg != nil && strings.TrimSpace(cfg.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cfg.Readarr.Ebooks.APIKey) != "" {
+		inst = providers.ReadarrInstance{BaseURL: cfg.Readarr.Ebooks.BaseURL, APIKey: cfg.Readarr.Ebooks.APIKey, DefaultQualityProfileID: cfg.Readarr.Ebooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Ebooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Ebooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Ebooks.InsecureSkipVerify}
+	}
+	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+		// No Readarr configured — return basic info from inputs
+		out := map[string]any{"title": in["title"], "isbn13": in["isbn13"], "isbn10": in["isbn10"], "asin": in["asin"], "authors": in["authors"]}
+		writeNormalized(out)
+		return
+	}
+
+	ra := providers.NewReadarrWithDB(inst, s.db.SQL())
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	list, err := ra.LookupByTerm(ctx, term)
+	if err != nil || len(list) == 0 {
+		writeJSON(w, map[string]any{"error": "no matches from Readarr"}, 404)
+		return
+	}
+	pick := list[0]
+	// prefer exact title match
+	for _, b := range list {
+		if strings.EqualFold(strings.TrimSpace(b.Title), strings.TrimSpace(in["title"].(string))) && strings.TrimSpace(b.Title) != "" {
+			pick = b
+			break
+		}
+	}
+	out := map[string]any{}
+	out["title"] = pick.Title
+	if pick.Author != nil {
+		if n, _ := pick.Author["name"].(string); n != "" {
+			out["authors"] = []string{n}
+		}
+	} else if len(pick.Authors) > 0 {
+		var aa []string
+		for _, a := range pick.Authors {
+			if n, _ := a["name"].(string); n != "" {
+				aa = append(aa, n)
+			}
+		}
+		if len(aa) > 0 {
+			out["authors"] = aa
+		}
+	}
+	// Extract identifiers (ISBN10/ISBN13/ASIN) from Readarr lookup Identifiers
+	var isbn10, isbn13, asin string
+	for _, id := range pick.Identifiers {
+		if id == nil {
+			continue
+		}
+		if typ, ok := id["type"].(string); ok {
+			if val, ok2 := id["value"].(string); ok2 && val != "" {
+				switch strings.ToLower(strings.TrimSpace(typ)) {
+				case "isbn_10", "isbn10", "isbn-10":
+					if isbn10 == "" {
+						isbn10 = val
+					}
+				case "isbn_13", "isbn13", "isbn-13":
+					if isbn13 == "" {
+						isbn13 = val
+					}
+				case "asin":
+					if asin == "" {
+						asin = val
+					}
+				}
+			}
+		} else {
+			// fallback: some servers provide keys directly
+			if v, ok := id["isbn10"].(string); ok && v != "" && isbn10 == "" {
+				isbn10 = v
+			}
+			if v, ok := id["isbn13"].(string); ok && v != "" && isbn13 == "" {
+				isbn13 = v
+			}
+			if v, ok := id["asin"].(string); ok && v != "" && asin == "" {
+				asin = v
+			}
+		}
+	}
+	if isbn10 != "" {
+		out["isbn10"] = isbn10
+	}
+	if isbn13 != "" {
+		out["isbn13"] = isbn13
+	}
+	if asin != "" {
+		out["asin"] = asin
+	}
+	// pick a cover if present
+	if pick.CoverUrl != "" {
+		out["cover"] = pick.CoverUrl
+	}
+	if pick.RemoteCover != "" && out["cover"] == nil {
+		out["cover"] = pick.RemoteCover
+	}
+	// include raw provider payload for the client if desired
+	// Attempt to marshal the pick into a generic map
+	ppb, _ := json.Marshal(pick)
+	var pp map[string]any
+	_ = json.Unmarshal(ppb, &pp)
+	out["provider_payload"] = pp
+	writeNormalized(out)
+}
+
+// apiBookEnriched returns full Readarr book data directly for UI modals
+func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
+	// Parse input to get book identifiers
+	var in map[string]any
+	ct := r.Header.Get("Content-Type")
+	if strings.Contains(ct, "application/json") {
+		_ = json.NewDecoder(r.Body).Decode(&in)
+	} else {
+		_ = r.ParseForm()
+		in = map[string]any{}
+		for k := range r.Form {
+			if len(r.Form[k]) == 1 {
+				in[k] = r.Form.Get(k)
+			} else {
+				in[k] = r.Form[k]
+			}
+		}
+	}
+
+	// Build search term from available identifiers
+	term := ""
+	if v, ok := in["asin"].(string); ok && v != "" {
+		term = v
+	}
+	if term == "" {
+		if v, ok := in["isbn13"].(string); ok && v != "" {
+			term = v
+		}
+	}
+	if term == "" {
+		if v, ok := in["isbn10"].(string); ok && v != "" {
+			term = v
+		}
+	}
+	if term == "" {
+		if v, ok := in["title"].(string); ok && v != "" {
+			term = v
+			// Add author to improve search accuracy
+			if a, ok := in["authors"]; ok {
+				switch t := a.(type) {
+				case []string:
+					if len(t) > 0 && strings.TrimSpace(t[0]) != "" {
+						term = term + " " + t[0]
+					}
+				case []any:
+					if len(t) > 0 {
+						if s2, _ := t[0].(string); s2 != "" {
+							term = term + " " + s2
+						}
+					}
+				case string:
+					if t != "" {
+						term = term + " " + t
+					}
+				}
+			}
+		}
+	}
+	if term == "" {
+		writeJSON(w, map[string]any{"error": "no query provided"}, 400)
+		return
+	}
+
+	// Get Readarr configuration
+	cfg := s.settings.Get()
+	var inst providers.ReadarrInstance
+	if cfg != nil && strings.TrimSpace(cfg.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cfg.Readarr.Ebooks.APIKey) != "" {
+		inst = providers.ReadarrInstance{BaseURL: cfg.Readarr.Ebooks.BaseURL, APIKey: cfg.Readarr.Ebooks.APIKey, DefaultQualityProfileID: cfg.Readarr.Ebooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Ebooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Ebooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Ebooks.InsecureSkipVerify}
+	}
+	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+		writeJSON(w, map[string]any{"error": "Readarr not configured"}, 500)
+		return
+	}
+
+	// Query Readarr
+	ra := providers.NewReadarrWithDB(inst, s.db.SQL())
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	list, err := ra.LookupByTerm(ctx, term)
+	if err != nil || len(list) == 0 {
+		writeJSON(w, map[string]any{"error": "no matches from Readarr", "term": term}, 404)
+		return
+	}
+
+	// Find best match - prefer exact title match
+	pick := list[0]
+	if titleStr, ok := in["title"].(string); ok && titleStr != "" {
+		for _, b := range list {
+			if strings.EqualFold(strings.TrimSpace(b.Title), strings.TrimSpace(titleStr)) {
+				pick = b
+				break
+			}
+		}
+	}
+
+	// Convert Readarr book to map and return directly
+	bookData, err := json.Marshal(pick)
+	if err != nil {
+		writeJSON(w, map[string]any{"error": "failed to serialize book data"}, 500)
+		return
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(bookData, &result); err != nil {
+		writeJSON(w, map[string]any{"error": "failed to parse book data"}, 500)
+		return
+	}
+
+	// If we have a book ID, try to get detailed book information including description
+	if pick.ID > 0 {
+		if details, err := ra.GetBookDetails(ctx, pick.ID); err == nil {
+			// Merge details into result, giving priority to detailed information
+			for key, value := range details {
+				// Don't overwrite key fields from lookup, but add new ones
+				if _, exists := result[key]; !exists || key == "description" || key == "overview" || key == "synopsis" || key == "summary" {
+					result[key] = value
+				}
+			}
+		}
+	}
+
+	// Add normalized author field for easier frontend access
+	// Try multiple author sources: Author object, Authors array, or AuthorTitle string
+	var authorNames []string
+	if pick.Author != nil {
+		if name, ok := pick.Author["name"].(string); ok && name != "" {
+			authorNames = append(authorNames, name)
+		}
+	}
+	if len(authorNames) == 0 && len(pick.Authors) > 0 {
+		for _, a := range pick.Authors {
+			if name, ok := a["name"].(string); ok && name != "" {
+				authorNames = append(authorNames, name)
+			}
+		}
+	}
+	// If still no authors, try to extract from AuthorTitle field
+	if len(authorNames) == 0 && pick.AuthorTitle != "" {
+		// AuthorTitle is often in format "lastname, firstname BookTitle"
+		// Try to extract just the author part before the book title
+		authorTitle := pick.AuthorTitle
+		if pick.Title != "" {
+			// Remove the book title from the end if present
+			authorTitle = strings.TrimSuffix(authorTitle, " "+pick.Title)
+		}
+		// Convert "lastname, firstname" to "firstname lastname"
+		if strings.Contains(authorTitle, ",") {
+			parts := strings.SplitN(authorTitle, ",", 2)
+			if len(parts) == 2 {
+				lastname := strings.TrimSpace(parts[0])
+				firstname := strings.TrimSpace(parts[1])
+				if firstname != "" && lastname != "" {
+					authorNames = append(authorNames, firstname+" "+lastname)
+				}
+			}
+		} else {
+			// Use as-is if no comma
+			authorTitle = strings.TrimSpace(authorTitle)
+			if authorTitle != "" {
+				authorNames = append(authorNames, authorTitle)
+			}
+		}
+	}
+
+	if len(authorNames) > 0 {
+		result["authors"] = authorNames
+		result["author"] = strings.Join(authorNames, ", ")
+	}
+
+	writeJSON(w, result, 200)
 }
 
 func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {

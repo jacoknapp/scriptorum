@@ -344,6 +344,333 @@
 {{ end }}
 
 {{ define "footer" }}
+
+	<!-- Global Book Details Modal -->
+	<div id="book-modal" class="hidden fixed inset-0 z-50 flex items-start justify-center p-4" aria-hidden="true">
+		<div id="book-modal-backdrop" class="absolute inset-0 bg-black/60" tabindex="-1"></div>
+		<div class="relative max-w-3xl w-full bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden z-10">
+			<div class="flex gap-4 p-4">
+				<img id="book-modal-cover" src="/static/placeholder-cover.svg" class="w-28 h-40 object-cover rounded-md border border-white/10 bg-night-900" alt="Cover">
+				<div class="min-w-0">
+					<h3 id="book-modal-title" class="font-semibold text-lg truncate"></h3>
+					<div id="book-modal-authors" class="text-sm text-slate-400 mt-1"></div>
+					<div id="book-modal-meta" class="text-xs text-slate-400 mt-2"></div>
+				</div>
+			</div>
+			<div class="p-4 border-t border-white/5 text-sm text-slate-200">
+				<div id="book-modal-description" class="prose max-w-none text-slate-200"></div>
+			</div>
+			<div class="p-3 border-t border-white/5 flex justify-end gap-2">
+				<button id="book-modal-close" class="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10">Close</button>
+			</div>
+		</div>
+	</div>
+
+	<script>
+		// Open the book modal with a plain data object or parse provider payload
+		window.openBookModal = function(data, loading) {
+			console.log('openBookModal called with:', data, 'loading:', loading);
+			try {
+				var modal = document.getElementById('book-modal');
+				var cover = document.getElementById('book-modal-cover');
+				var title = document.getElementById('book-modal-title');
+				var authors = document.getElementById('book-modal-authors');
+				var meta = document.getElementById('book-modal-meta');
+				var desc = document.getElementById('book-modal-description');
+				if (!modal) {
+					console.log('Modal element not found!');
+					return;
+				}
+				console.log('Modal elements found:', {modal, cover, title, authors, meta, desc});
+				
+				// Show loading state if requested
+				if (loading) {
+					cover.src = data.cover || data.coverMedium || data.coverSmall || '/static/placeholder-cover.svg';
+					title.textContent = data.title || data.Title || 'Loading...';
+					authors.textContent = 'Loading...';
+					meta.textContent = 'Loading metadata...';
+					desc.textContent = 'Fetching additional information...';
+					modal.classList.remove('hidden');
+					modal.setAttribute('aria-hidden', 'false');
+					console.log('Modal opened in loading state');
+					return;
+				}
+				
+				// Populate fields, tolerant of missing keys
+				// Try Readarr image fields first, then fallback to original cover fields
+				var coverUrl = data.cover || data.remoteCover;
+				if (!coverUrl && data.images && data.images.length > 0) {
+					// Find cover image from Readarr images array
+					var coverImage = data.images.find(function(img) { return img.coverType === 'cover'; });
+					if (coverImage) {
+						coverUrl = coverImage.remoteUrl || coverImage.url;
+					}
+				}
+				cover.src = coverUrl || data.coverMedium || data.coverSmall || '/static/placeholder-cover.svg';
+				title.textContent = data.title || data.Title || 'No title';
+				if (data.authors && data.authors.length) {
+					authors.textContent = data.authors.join(', ');
+				} else if (data.authors && typeof data.authors === 'string') {
+					authors.textContent = data.authors;
+				} else if (data.author && typeof data.author === 'string') {
+					authors.textContent = data.author;
+				} else {
+					authors.textContent = 'Unknown author';
+				}
+				
+				console.log('Basic info populated:', title.textContent, authors.textContent);
+				
+				// Data is already enriched from the new API endpoint, no need to extract provider_payload
+				var enrichedData = data;
+				console.log('Using data directly (should contain Readarr fields):', enrichedData);
+				
+				// Build metadata from actual Readarr data
+				var metaParts = [];
+				if (enrichedData.ratings && enrichedData.ratings.value) {
+					var stars = '★'.repeat(Math.floor(enrichedData.ratings.value)) + '☆'.repeat(5 - Math.floor(enrichedData.ratings.value));
+					metaParts.push(`Rating: ${enrichedData.ratings.value.toFixed(1)}/5 ${stars} (${enrichedData.ratings.votes} votes)`);
+				}
+				if (enrichedData.pageCount) metaParts.push(`Pages: ${enrichedData.pageCount}`);
+				if (enrichedData.releaseDate) {
+					var releaseYear = new Date(enrichedData.releaseDate).getFullYear();
+					metaParts.push(`Published: ${releaseYear}`);
+				}
+				if (enrichedData.seriesTitle) metaParts.push(`Series: ${enrichedData.seriesTitle}`);
+				if (data.isbn13) metaParts.push('ISBN-13: ' + data.isbn13);
+				if (data.isbn10) metaParts.push('ISBN-10: ' + data.isbn10);
+				if (data.asin) metaParts.push('ASIN: ' + data.asin);
+				
+				console.log('Available data keys:', Object.keys(data));
+				console.log('Available enriched data keys:', Object.keys(enrichedData));
+				console.log('Ratings data:', enrichedData.ratings);
+				console.log('Genres data:', enrichedData.genres);
+				
+				meta.textContent = metaParts.join(' • ');
+				console.log('Meta populated:', meta.textContent);
+				// Description: try common keys
+				var description = data.description || data.overview || data.synopsis || data.summary || data.desc || data.about || '';
+				// If provider payload nested description exists, handle it
+				if (!description && data.provider_payload) {
+					try {
+						var pp = typeof data.provider_payload === 'string' ? JSON.parse(data.provider_payload) : data.provider_payload;
+						description = pp.description || pp.overview || pp.synopsis || pp.summary || pp.details || '';
+						// Some providers embed description under different keys
+						if (!description) {
+							for (var k in pp) {
+								if (typeof pp[k] === 'string' && pp[k].length > 50) { description = pp[k]; break; }
+							}
+						}
+					} catch(e) { /* ignore parse errors */ }
+				}
+				
+				// If no description found, show other useful information
+				if (!description) {
+					console.log('No description found, building from other data...');
+					var descParts = ['=== BOOK INFORMATION ==='];
+					
+					// Show genres if available
+					if (enrichedData.genres && enrichedData.genres.length > 0) {
+						console.log('Found genres:', enrichedData.genres);
+						descParts.push('Genres: ' + enrichedData.genres.slice(0, 5).join(', ') + (enrichedData.genres.length > 5 ? ', and more...' : ''));
+					}
+					
+					// Show series information if available
+					if (enrichedData.seriesTitle && enrichedData.seriesTitle.trim() !== '') {
+						console.log('Found series:', enrichedData.seriesTitle);
+						descParts.push('Series: ' + enrichedData.seriesTitle);
+					}
+					
+					// Show additional metadata
+					if (enrichedData.authorTitle && enrichedData.authorTitle.trim() !== '') {
+						var authorParts = enrichedData.authorTitle.split(' ');
+						if (authorParts.length > 2) {
+							// Skip if it's just author + title repetition
+							var cleanAuthor = authorParts.slice(0, -enrichedData.title.split(' ').length).join(' ');
+							if (cleanAuthor.length > 0) descParts.push('Full Author: ' + cleanAuthor);
+						}
+					}
+					
+					// Show Goodreads links if available
+					if (enrichedData.links && enrichedData.links.length > 0) {
+						var goodreadsLinks = enrichedData.links.filter(function(link) { return link.name && link.name.includes('Goodreads'); });
+						if (goodreadsLinks.length > 0) {
+							var linkHtml = 'View on Goodreads for full description and reviews:<br>';
+							goodreadsLinks.forEach(function(link) {
+								linkHtml += '• <a href="' + link.url + '" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline">' + link.name + '</a><br>';
+							});
+							descParts.push(linkHtml);
+						}
+					}
+					
+					description = descParts.join('<br><br>');
+					console.log('Built description:', description);
+				}
+				
+				// Use innerHTML if we have HTML links, otherwise textContent
+				if (description && description.includes('<a href=')) {
+					desc.innerHTML = description || 'No description available.';
+				} else {
+					desc.textContent = description || 'No description available.';
+				}
+				console.log('Description element populated:', desc.textContent);
+				// Show modal
+				modal.classList.remove('hidden');
+				modal.setAttribute('aria-hidden', 'false');
+				console.log('Modal should now be visible!');
+				// focus close button for accessibility
+				setTimeout(function(){ var cb = document.getElementById('book-modal-close'); if(cb) cb.focus(); }, 50);
+			} catch(e) { console.error('openBookModal error', e); }
+		}
+
+		window.closeBookModal = function() {
+			var modal = document.getElementById('book-modal'); if(!modal) return;
+			modal.classList.add('hidden');
+			modal.setAttribute('aria-hidden', 'true');
+		}
+
+		// Helper: open modal from an element inside the search result item (li)
+		window.openBookModalFromElem = function(el){
+			console.log('openBookModalFromElem called with:', el);
+			try {
+				var li = el.closest('li');
+				if (!li) {
+					console.log('No li element found');
+					return;
+				}
+				console.log('Found li element:', li);
+				var form = li.querySelector('form');
+				if (!form) {
+					console.log('No form found in li');
+					return;
+				}
+				console.log('Found form:', form);
+				var data = {};
+				if (form) {
+					var ds = form.dataset || {};
+					data.title = ds.title || form.querySelector('input[name="title"]')?.value || '';
+					data.isbn10 = ds.isbn10 || form.querySelector('input[name="isbn10"]')?.value || '';
+					data.isbn13 = ds.isbn13 || form.querySelector('input[name="isbn13"]')?.value || '';
+					data.asin = ds.asin || form.querySelector('input[name="asin"]')?.value || '';
+					// authors: collect all hidden inputs
+					var authEls = form.querySelectorAll('input[name="authors"]');
+					if (authEls && authEls.length) { data.authors = Array.from(authEls).map(i=>i.value); }
+					// pick provider payload if present
+					var pIn = form.querySelector('input[name="provider_payload"]');
+					var ppe = form.querySelector('input[name="provider_payload_ebook"]');
+					var ppa = form.querySelector('input[name="provider_payload_audiobook"]');
+					if (ppe && ppe.value) data.provider_payload = ppe.value;
+					else if (ppa && ppa.value) data.provider_payload = ppa.value;
+					else if (pIn && pIn.value) data.provider_payload = pIn.value;
+				}
+				// also gather cover src if available in li
+				var img = li.querySelector('img'); if (img && img.src) data.cover = img.src;
+				console.log('Extracted data:', data);
+				
+				// Check if we have enough information for a good modal display
+				var hasDescription = false;
+				if (data.provider_payload) {
+					try {
+						var pp = typeof data.provider_payload === 'string' ? JSON.parse(data.provider_payload) : data.provider_payload;
+						hasDescription = !!(pp.description || pp.overview || pp.synopsis || pp.summary || pp.details);
+					} catch(e) { /* ignore parse errors */ }
+				}
+				
+				// If we don't have a description, try to fetch enriched data from API
+				if (!hasDescription && (data.provider_payload || data.isbn13 || data.isbn10 || data.asin)) {
+					console.log('Fetching additional book details from API...');
+					
+					// Show modal immediately with loading state
+					window.openBookModal(data, true);
+					
+					// Prepare payload for enriched API - send basic identifiers
+					var apiPayload = {
+						title: data.title,
+						authors: data.authors
+					};
+					if (data.isbn13) apiPayload.isbn13 = data.isbn13;
+					if (data.isbn10) apiPayload.isbn10 = data.isbn10;  
+					if (data.asin) apiPayload.asin = data.asin;
+					
+					console.log('Making enriched API call with payload:', apiPayload);
+					
+					fetch('/api/v1/book/enriched', {
+						method: 'POST',
+						headers: { 
+							'Content-Type': 'application/json',
+							'HX-Request': 'true'
+						},
+						body: JSON.stringify(apiPayload),
+						credentials: 'same-origin'
+					})
+					.then(function(resp) {
+						if (!resp.ok) {
+							console.log('Enriched API call failed, using original data');
+							window.openBookModal(data);
+							return;
+						}
+						return resp.json();
+					})
+					.then(function(enrichedData) {
+						if (enrichedData && !enrichedData.error) {
+							console.log('Got enriched Readarr data from API:', enrichedData);
+							// Use enriched data directly - it contains all the Readarr fields
+							// Add original cover URL if not present in enriched data
+							if (!enrichedData.cover && data.cover) {
+								enrichedData.cover = data.cover;
+							}
+							window.openBookModal(enrichedData);
+						} else {
+							console.log('Enriched API returned error or no data:', enrichedData);
+							window.openBookModal(data);
+						}
+					})
+					.catch(function(err) {
+						console.error('API fetch error:', err);
+						window.openBookModal(data);
+					});
+				} else {
+					// We have sufficient data or no way to fetch more, show modal directly
+					window.openBookModal(data);
+				}
+			} catch(e) { console.error('openBookModalFromElem error', e); }
+		}
+
+		// Close handlers
+		document.addEventListener('click', function(e){
+			var modal = document.getElementById('book-modal'); if(!modal) return;
+			var backdrop = document.getElementById('book-modal-backdrop');
+			if (backdrop && (e.target === backdrop)) { window.closeBookModal(); }
+			if (e.target && e.target.id === 'book-modal-close') { window.closeBookModal(); }
+		});
+		document.addEventListener('keydown', function(e){ if(e.key === 'Escape'){ window.closeBookModal(); } });
+
+		// Delegate clicks/key presses for opening book details on elements with data-open-book
+		document.addEventListener('click', function(e){
+			try {
+				var t = e.target;
+				// ignore if click is directly on interactive elements or their immediate children
+				if (t.tagName === 'BUTTON' || t.tagName === 'A' || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT') return;
+				// ignore if click is inside a form but allow clicks on the book data area
+				if (t.closest && t.closest('button, a, input, textarea, select')) return;
+				var el = t.closest && t.closest('[data-open-book]');
+				if (el) {
+					console.log('Opening modal from click on element:', el);
+					// open modal using the element (will locate nearest form)
+					openBookModalFromElem(el);
+				}
+			} catch(err) { console.error('Click handler error:', err); }
+		});
+		document.addEventListener('keydown', function(e){
+			if (e.key === 'Enter') {
+				var active = document.activeElement;
+				if (active && active.getAttribute && active.getAttribute('data-open-book') !== null) {
+					openBookModalFromElem(active);
+					e.preventDefault();
+				}
+			}
+		});
+	</script>
+
 	</main>
 	</body>
 	</html>

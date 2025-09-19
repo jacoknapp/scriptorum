@@ -84,6 +84,27 @@ type LookupBook struct {
 		Url       string `json:"url"`
 		RemoteUrl string `json:"remoteUrl"`
 	} `json:"images"`
+	// Additional enriched fields from Readarr API
+	SeriesTitle    string                 `json:"seriesTitle"`
+	Disambiguation string                 `json:"disambiguation"`
+	Monitored      bool                   `json:"monitored"`
+	AnyEditionOk   bool                   `json:"anyEditionOk"`
+	Ratings        map[string]interface{} `json:"ratings"`
+	ReleaseDate    string                 `json:"releaseDate"`
+	PageCount      int                    `json:"pageCount"`
+	Genres         []string               `json:"genres"`
+	Links          []map[string]any       `json:"links"`
+	Added          string                 `json:"added"`
+	LastSearchTime string                 `json:"lastSearchTime"`
+	Grabbed        bool                   `json:"grabbed"`
+	ID             int                    `json:"id"`
+	// Description/summary fields that might be available
+	Description string `json:"description"`
+	Overview    string `json:"overview"`
+	Synopsis    string `json:"synopsis"`
+	Summary     string `json:"summary"`
+	Details     string `json:"details"`
+	About       string `json:"about"`
 }
 
 type ReadarrInstance struct {
@@ -914,6 +935,66 @@ func (r *Readarr) LookupByTerm(ctx context.Context, term string) ([]LookupBook, 
 		fmt.Printf("DEBUG: Full Readarr lookup JSON: %s\n", string(body))
 	}
 	return arr, nil
+}
+
+// GetBookDetails fetches detailed book information by ID from Readarr
+func (r *Readarr) GetBookDetails(ctx context.Context, bookID int) (map[string]interface{}, error) {
+	// Check cache first
+	cacheKey := fmt.Sprintf("book_details:%d", bookID)
+	if cached, found := r.getCachedData(cacheKey, "book_details"); found {
+		var details map[string]interface{}
+		if err := json.Unmarshal([]byte(cached), &details); err == nil {
+			return details, nil
+		}
+	}
+
+	// Try both endpoints - overview and regular book detail
+	endpoints := []string{
+		fmt.Sprintf("/api/v1/book/%d/overview", bookID),
+		fmt.Sprintf("/api/v1/book/%d", bookID),
+	}
+
+	for _, endpoint := range endpoints {
+		u := r.inst.BaseURL + endpoint + "?apikey=" + url.QueryEscape(r.inst.APIKey)
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+		req.Header.Set("X-Api-Key", r.inst.APIKey)
+		req.Header.Set("User-Agent", "Scriptorum/1.0")
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := r.cl.Do(req)
+		if err != nil {
+			continue // Try next endpoint
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			continue // Try next endpoint
+		}
+
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			continue
+		}
+
+		var details map[string]interface{}
+		if err := json.Unmarshal(body, &details); err != nil {
+			continue
+		}
+
+		// Cache the results for 1 hour
+		if data, err := json.Marshal(details); err == nil {
+			r.setCachedData(cacheKey, "book_details", string(data), time.Hour)
+		}
+
+		// Debug: dump the full JSON response
+		if Debug {
+			fmt.Printf("DEBUG: Full Readarr book details JSON from %s: %s\n", endpoint, string(body))
+		}
+
+		return details, nil
+	}
+
+	return nil, fmt.Errorf("failed to fetch book details for ID %d", bookID)
 }
 
 // FindAuthorIDByName searches Readarr for an author by name. If found, returns the id.
