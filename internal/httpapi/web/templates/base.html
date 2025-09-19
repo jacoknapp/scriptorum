@@ -555,9 +555,15 @@
 						}
 						
 						if (declineBtn) {
-							console.log('Showing decline button');
-							declineBtn.classList.remove('hidden');
-							declineBtn.onclick = function() { handleRequestAction('decline', requestId); };
+							if (requestStatus === 'declined') {
+								console.log('Hiding decline button (already declined)');
+								declineBtn.classList.add('hidden');
+								declineBtn.onclick = null;
+							} else {
+								console.log('Showing decline button');
+								declineBtn.classList.remove('hidden');
+								declineBtn.onclick = function() { handleRequestAction('decline', requestId); };
+							}
 						}
 						
 						if (deleteBtn) {
@@ -770,8 +776,42 @@
 
 				if (resp.ok) {
 					// Mark only the clicked button as requested; leave the other available
-					if (btnTarget) { btnTarget.textContent = 'Requested ✓'; btnTarget.classList.add('bg-emerald-600'); btnTarget.disabled = true; }
+					if (btnTarget) {
+						btnTarget.textContent = 'Requested ✓';
+						btnTarget.classList.add('bg-emerald-600');
+						btnTarget.classList.remove('bg-royal-600','hover:bg-royal-700','hover:bg-royal-600','hover:bg-royal-500','opacity-60','pointer-events-none');
+						btnTarget.disabled = true;
+					}
 					scriptorumShowToast('Request submitted. Open Requests to view.');
+					// Also reflect the selection on the main search list (if visible)
+					try {
+						var matchForm = null;
+						var title = (data.title||'').trim();
+						var isbn13 = (data.isbn13||'').trim();
+						var isbn10 = (data.isbn10||'').trim();
+						var asin = (data.asin||'').trim();
+						document.querySelectorAll('form[data-isbn13], form[data-isbn10], form[data-asin], form[data-title]').forEach(function(f){
+							if (matchForm) return;
+							var fIsbn13 = (f.dataset.isbn13||'').trim();
+							var fIsbn10 = (f.dataset.isbn10||'').trim();
+							var fAsin = (f.dataset.asin||'').trim();
+							var fTitle = (f.dataset.title||'').trim();
+							if (isbn13 && fIsbn13 && isbn13 === fIsbn13) { matchForm = f; return; }
+							if (!matchForm && isbn10 && fIsbn10 && isbn10 === fIsbn10) { matchForm = f; return; }
+							if (!matchForm && asin && fAsin && asin === fAsin) { matchForm = f; return; }
+							if (!matchForm && title && fTitle && title === fTitle) { matchForm = f; return; }
+						});
+						if (matchForm) {
+							var sel = (format === 'audiobook') ? 'button[name="format"][value="audiobook"]' : 'button[name="format"][value="ebook"]';
+							var listBtn = matchForm.querySelector(sel);
+							if (listBtn) {
+								listBtn.textContent = 'Requested ✓';
+								listBtn.classList.add('bg-emerald-600');
+								listBtn.classList.remove('bg-royal-600','hover:bg-royal-700','hover:bg-royal-600','hover:bg-royal-500','opacity-60','pointer-events-none');
+								listBtn.disabled = true;
+							}
+						}
+					} catch(e) { /* ignore sync errors */ }
 					// Optionally refresh requests table if present
 					var reqTable = document.querySelector('#req-table');
 					if (reqTable && window.htmx) { htmx.trigger(reqTable, 'refresh'); }
