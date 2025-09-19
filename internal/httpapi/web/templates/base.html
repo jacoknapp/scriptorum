@@ -393,6 +393,79 @@
 	</div>
 
 	<script>
+		// Helper: smart-capitalize author names (hyphens, apostrophes, particles, numerals)
+		(function(){
+			// Common particles to keep lowercased when not the first token
+			var LOWER_PARTICLES = ['de','da','del','della','di','du','van','von','der','den','la','le','el','al','the','of','and'];
+			var ROMAN_NUMERALS = new Set(['i','ii','iii','iv','v','vi','vii','viii','ix','x','xi','xii','xiii','xiv','xv','xvi','xvii','xviii','xix','xx']);
+
+			function capFirst(s){ if(!s) return s; return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase(); }
+			function capHyphenated(token){
+				return token.split('-').map(function(part){ return capApostrophe(part); }).join('-');
+			}
+			function capApostrophe(token){
+				// Handle straight and curly apostrophes
+				var parts = token.split(/['’]/);
+				if (parts.length === 1) return capFirst(token);
+				return parts.map(function(p, idx){
+					return idx === 0 ? capFirst(p) : capFirst(p);
+				}).join("'");
+			}
+			function formatWord(word, idx){
+				if (!word) return '';
+				var w = word;
+				// Preserve initials like "j." or "j" -> "J." / "J"
+				if (/^[a-z]\.?$/.test(w)) return w.toUpperCase();
+				// All-caps acronyms of length<=4 remain as-is
+				if (/^[A-Z]{2,4}$/.test(w)) return w;
+				// Roman numerals -> uppercase
+				if (ROMAN_NUMERALS.has(w.toLowerCase())) return w.toUpperCase();
+				// Keep particles lower when not the first token
+				if (idx > 0 && LOWER_PARTICLES.indexOf(w.toLowerCase()) !== -1) return w.toLowerCase();
+				// Handle Mc/Mac prefixes
+				if (/^mc[a-z]+/i.test(w)) return 'Mc' + capFirst(w.slice(2));
+				if (/^mac[a-z]+/i.test(w)) return 'Mac' + capFirst(w.slice(3));
+				// Hyphenated and apostrophized names
+				if (w.indexOf('-') !== -1) return capHyphenated(w);
+				if (/[’']/.test(w)) return capApostrophe(w);
+				return capFirst(w);
+			}
+
+			window.formatAuthorName = function(name){
+				if (!name || typeof name !== 'string') return '';
+				var s = name.trim();
+				// If name contains a comma (e.g., "Last, First"), format each side but keep order
+				if (s.includes(',')) {
+					var parts = s.split(',');
+					var left = parts[0].trim();
+					var right = parts.slice(1).join(',').trim();
+					var leftFmt = left.split(/\s+/).map(function(w,i){ return formatWord(w, i); }).join(' ');
+					var rightFmt = right ? right.split(/\s+/).map(function(w,i){ return formatWord(w, i); }).join(' ') : '';
+					return rightFmt ? (leftFmt + ', ' + rightFmt) : leftFmt;
+				}
+				return s.split(/\s+/).map(function(w,i){ return formatWord(w, i); }).join(' ');
+			};
+
+			window.formatAuthorsDisplay = function(authorsVal){
+				if (Array.isArray(authorsVal)) {
+					return authorsVal.map(function(a){ return window.formatAuthorName(String(a||'')); }).filter(Boolean).join(', ');
+				}
+				if (typeof authorsVal === 'string') {
+					var s = authorsVal.trim();
+					// Split multi-author strings on " & " or " and " or "|" or ";" but NOT on commas (commas can denote last, first)
+					var parts = s.split(/\s+(?:&|and)\s+|[|;]+/i).map(function(p){ return p.trim(); }).filter(Boolean);
+					if (parts.length > 1) {
+						return parts.map(function(p){ return window.formatAuthorName(p); }).join(', ');
+					}
+					return window.formatAuthorName(s);
+				}
+				if (authorsVal && typeof authorsVal === 'object' && authorsVal.name) {
+					return window.formatAuthorName(String(authorsVal.name||''));
+				}
+				return 'Unknown author';
+			};
+		})();
+
 		// Test function to debug modal with sample request data
 		window.testRequestModal = function() {
 			var testData = {
@@ -616,15 +689,14 @@
 				}
 				cover.src = coverUrl || data.coverMedium || data.coverSmall || '/static/placeholder-cover.svg';
 				title.textContent = data.title || data.Title || 'No title';
-				if (data.authors && data.authors.length) {
-					authors.textContent = data.authors.join(', ');
-				} else if (data.authors && typeof data.authors === 'string') {
-					authors.textContent = data.authors;
-				} else if (data.author && typeof data.author === 'string') {
-					authors.textContent = data.author;
-				} else {
-					authors.textContent = 'Unknown author';
+				// Smart-capitalize author names for display
+				var authorsDisplay = 'Unknown author';
+				if (data.hasOwnProperty('authors')) {
+					authorsDisplay = window.formatAuthorsDisplay(data.authors);
+				} else if (typeof data.author === 'string' && data.author.trim() !== '') {
+					authorsDisplay = window.formatAuthorsDisplay(data.author);
 				}
+				authors.textContent = authorsDisplay;
 				
 				console.log('Basic info populated:', title.textContent, authors.textContent);
 				
