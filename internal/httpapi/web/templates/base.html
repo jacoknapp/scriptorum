@@ -73,6 +73,94 @@
 			} catch(e) {}
 		});
 
+		// Auto-enrich search results with "Unknown Author"
+		document.addEventListener('htmx:afterSwap', function(evt){
+			try {
+				// Only process if this was a search results swap
+				var target = evt.detail.target;
+				if (!target || target.id !== 'results') return;
+				
+				// Find all search result items with "Unknown Author"
+				var unknownAuthorItems = Array.from(document.querySelectorAll('#results li')).filter(function(li) {
+					var authorText = li.querySelector('.text-sm.text-slate-400');
+					return authorText && authorText.textContent.trim() === 'Unknown Author';
+				});
+				
+				// Enrich each unknown author item
+				unknownAuthorItems.forEach(function(li) {
+					enrichUnknownAuthor(li);
+				});
+			} catch(e) {
+				console.error('Error in search results enrichment:', e);
+			}
+		});
+
+		// Function to enrich a single search result item with unknown author
+		function enrichUnknownAuthor(li) {
+			try {
+				var form = li.querySelector('form');
+				if (!form) return;
+				
+				var ds = form.dataset || {};
+				var title = ds.title || form.querySelector('input[name="title"]')?.value || '';
+				var isbn13 = ds.isbn13 || form.querySelector('input[name="isbn13"]')?.value || '';
+				var isbn10 = ds.isbn10 || form.querySelector('input[name="isbn10"]')?.value || '';
+				var asin = ds.asin || form.querySelector('input[name="asin"]')?.value || '';
+				
+				// Skip if we don't have enough data to search
+				if (!title && !isbn13 && !isbn10 && !asin) return;
+				
+				// Prepare payload for enriched API
+				var payload = { title: title };
+				if (isbn13) payload.isbn13 = isbn13;
+				if (isbn10) payload.isbn10 = isbn10;
+				if (asin) payload.asin = asin;
+				
+				// Make enriched API call
+				fetch('/api/v1/book/enriched', {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify(payload)
+				})
+				.then(function(resp) {
+					if (!resp.ok) return null;
+					return resp.json();
+				})
+				.then(function(enrichedData) {
+					if (!enrichedData || !enrichedData.authors || enrichedData.authors.length === 0) return;
+					
+					// Update the author display in the search result
+					var authorElement = li.querySelector('.text-sm.text-slate-400');
+					if (authorElement && authorElement.textContent.trim() === 'Unknown Author') {
+						var authorsDisplay = window.formatAuthorsDisplay(enrichedData.authors);
+						authorElement.textContent = authorsDisplay;
+						
+						// Update the hidden author inputs in the form
+						var existingAuthorInputs = form.querySelectorAll('input[name="authors"]');
+						existingAuthorInputs.forEach(function(input) { input.remove(); });
+						
+						enrichedData.authors.forEach(function(author) {
+							var input = document.createElement('input');
+							input.type = 'hidden';
+							input.name = 'authors';
+							input.value = author;
+							form.appendChild(input);
+						});
+						
+						// Update form dataset with properly formatted first author
+						if (enrichedData.authors.length > 0) {
+							form.dataset.author = window.formatAuthorName(enrichedData.authors[0]);
+						}
+					}
+				})
+				.catch(function(err) {
+					console.error('Error enriching unknown author:', err);
+				});
+			} catch(e) {
+				console.error('Error in enrichUnknownAuthor:', e);
+			}
+		}
+
 		// JS fallback if HTMX failed to load
 		function scriptorumShowToast(msg, cls){
 			var toast = document.getElementById('toast');
