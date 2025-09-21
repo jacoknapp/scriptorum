@@ -570,7 +570,7 @@
 						}
 						
 						if (declineBtn) {
-							if (requestStatus === 'declined') {
+							if (requestStatus === 'declined' || requestStatus === 'queued') {
 								declineBtn.classList.add('hidden');
 								declineBtn.onclick = null;
 							} else {
