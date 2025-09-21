@@ -1,0 +1,12 @@
+{
+  "name": "scriptorum",
+  "version": "0.0.0",
+  "private": true,
+  "devDependencies": {
+    "tailwindcss": "^3.0.0"
+  },
+  "scripts": {
+    "build:css": "npx tailwindcss -i ./assets/tailwind.input.css -o ./internal/httpapi/web/static/css/tailwind.css --minify",
+    "watch:css": "npx tailwindcss -i ./assets/tailwind.input.css -o ./internal/httpapi/web/static/css/tailwind.css --watch"
+  }
+}

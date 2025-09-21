@@ -162,7 +162,9 @@ async function loadQPs(kind, selId, serverDefault) {
 			sel.appendChild(o);
 		}
 	} catch (e) {
+		{{if .Cfg.Debug}}
 		console.error('qp load', e);
+		{{end}}
 	}
 }
 document.addEventListener('DOMContentLoaded', ()=>{

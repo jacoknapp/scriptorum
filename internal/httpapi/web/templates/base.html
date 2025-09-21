@@ -6,26 +6,9 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
 	<title>Scriptorum</title>
 	<link rel="stylesheet" href="/static/styles.css">
-	<script src="https://cdn.tailwindcss.com"></script>
+		<!-- Use a locally built Tailwind CSS file for production: /static/css/tailwind.css -->
+		<link rel="stylesheet" href="/static/css/tailwind.css">
 	<script src="https://unpkg.com/htmx.org@1.9.12"></script>
-	<script>
-		tailwind.config = {
-			theme: {
-				extend: {
-					colors: {
-						royal: {50:'#f6f3ff',100:'#ede9fe',200:'#ddd6fe',300:'#c4b5fd',400:'#a78bfa',500:'#8b5cf6',600:'#7c3aed',700:'#6d28d9',800:'#5b21b6',900:'#4c1d95'},
-						surface: {50:'#0b0b13',100:'#11111a'},
-						night: {700:'#171725',800:'#11111a',900:'#0b0b13'}
-					},
-					boxShadow: {
-						card:'0 8px 24px rgba(20,20,35,.45)',
-						glow:'0 0 0 4px rgba(124,58,237,.25)'
-					},
-					borderRadius: { xl2:'1.25rem' }
-				}
-			}
-		}
-	</script>
 	<link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
 	<link rel="manifest" href="/static/site.webmanifest" />
 	<meta name="theme-color" content="#0b0b13" />
@@ -215,9 +198,7 @@
 		}
 		window.scriptorumRequestHtmx = async function(btn, format){
 			// Use HTMX for better integration, but fall back to fetch if needed
-			console.log('scriptorumRequestHtmx called with format:', format);
 			if (!window.htmx) {
-				console.log('HTMX not available, falling back to fetch');
 				return scriptorumRequestFallback(btn, format);
 			}
 			
@@ -477,16 +458,13 @@
 				isAdmin: true,
 				readarrRequest: true
 			};
-			console.log('Testing modal with data:', testData);
 			window.openBookModal(testData, false);
 		};
 		
 		// Open the book modal with a plain data object or parse provider payload
 		window.openBookModal = function(data, loading) {
-			console.log('openBookModal called with:', data, 'loading:', loading);
 			// Guard against non-object inputs (e.g., accidental numeric "1")
 			if (!data || typeof data !== 'object') {
-				console.warn('openBookModal received non-object data, coercing to empty object');
 				data = {};
 			}
 			try {
@@ -511,27 +489,8 @@
 				var deleteBtn = document.getElementById('book-modal-delete');
 				
 				if (!modal) {
-					console.log('Modal element not found!');
 					return;
 				}
-				
-				console.log('Modal elements found:', {
-					modal: !!modal,
-					cover: !!cover,
-					title: !!title,
-					authors: !!authors,
-					meta: !!meta,
-					desc: !!desc,
-					requestInfo: !!requestInfo,
-					requester: !!requester,
-					status: !!status,
-					actionsSection: !!actionsSection,
-					approveBtn: !!approveBtn,
-					attachBtn: !!attachBtn,
-					declineBtn: !!declineBtn,
-					deleteBtn: !!deleteBtn
-				});
-				console.log('Modal elements found:', {modal, cover, title, authors, meta, desc});
 				
 				// Show loading state if requested
 				if (loading) {
@@ -547,19 +506,15 @@
 					
 					modal.classList.remove('hidden');
 					modal.setAttribute('aria-hidden', 'false');
-					console.log('Modal opened in loading state');
 					return;
 				}
 				
 				// Check if this is request data (has requesterEmail or requestId)
 				var isRequest = data.requesterEmail || data.requestId || data.RequesterEmail;
-				console.log('Is request data:', isRequest, 'data keys:', Object.keys(data));
-				console.log('Full data object:', data);
 				
 				// Show/hide request-specific sections
 				if (requestInfo) {
 					if (isRequest) {
-						console.log('Showing request info section');
 						requestInfo.classList.remove('hidden');
 						if (requester) requester.textContent = data.requesterEmail || data.RequesterEmail || 'Unknown';
 						if (status) {
@@ -571,7 +526,6 @@
 							status.innerHTML = '<span class="' + statusColor + '">' + statusText + '</span>';
 						}
 					} else {
-						console.log('Hiding request info section');
 						requestInfo.classList.add('hidden');
 					}
 				}
@@ -580,24 +534,15 @@
 				if (actionsSection && isRequest) {
 					// Only show actions if user is admin
 					var isAdmin = data.isAdmin || false;
-					console.log('Is admin:', isAdmin, 'from data.isAdmin:', data.isAdmin);
 					if (isAdmin) {
-						console.log('User is admin, showing actions section');
 						actionsSection.classList.remove('hidden');
 						var requestStatus = data.status || data.Status || 'pending';
 						var hasReadarrReq = !!(data.readarrRequest || data.ReadarrReq);
 						var requestId = data.requestId || data.id || data.ID;
 						
-						console.log('Request details:', {
-							status: requestStatus,
-							hasReadarrReq: hasReadarrReq,
-							requestId: requestId
-						});
-						
 						// Show appropriate buttons based on status and data
 						if (approveBtn) {
 							if (requestStatus === 'pending') {
-								console.log('Showing approve button');
 								approveBtn.classList.remove('hidden');
 								if (!hasReadarrReq) {
 									approveBtn.classList.add('opacity-60', 'cursor-not-allowed');
@@ -610,37 +555,31 @@
 								}
 								approveBtn.onclick = function() { handleRequestAction('approve', requestId); };
 							} else {
-								console.log('Hiding approve button (status not pending)');
 								approveBtn.classList.add('hidden');
 							}
 						}
 						
 						if (attachBtn) {
 							if (requestStatus === 'pending' && !hasReadarrReq) {
-								console.log('Showing attach button');
 								attachBtn.classList.remove('hidden');
 								attachBtn.onclick = function() { handleRequestAction('hydrate', requestId); };
 								attachBtn.title = 'Attempt to attach a selection payload from Readarr';
 							} else {
-								console.log('Hiding attach button');
 								attachBtn.classList.add('hidden');
 							}
 						}
 						
 						if (declineBtn) {
 							if (requestStatus === 'declined') {
-								console.log('Hiding decline button (already declined)');
 								declineBtn.classList.add('hidden');
 								declineBtn.onclick = null;
 							} else {
-								console.log('Showing decline button');
 								declineBtn.classList.remove('hidden');
 								declineBtn.onclick = function() { handleRequestAction('decline', requestId); };
 							}
 						}
 						
 						if (deleteBtn) {
-							console.log('Showing delete button');
 							deleteBtn.classList.remove('hidden');
 							deleteBtn.onclick = function() { 
 								if (confirm('Are you sure you want to permanently delete this request?')) {
@@ -649,11 +588,9 @@
 							};
 						}
 					} else {
-						console.log('User is not admin, hiding actions section');
 						actionsSection.classList.add('hidden');
 					}
 				} else if (actionsSection) {
-					console.log('Not request data or no actions section, hiding actions');
 					actionsSection.classList.add('hidden');
 				}
 
@@ -698,11 +635,8 @@
 				}
 				authors.textContent = authorsDisplay;
 				
-				console.log('Basic info populated:', title.textContent, authors.textContent);
-				
 				// Data is already enriched from the new API endpoint, no need to extract provider_payload
 				var enrichedData = data;
-				console.log('Using data directly (should contain Readarr fields):', enrichedData);
 				
 				// Build metadata from actual Readarr data
 				var metaParts = [];
@@ -720,17 +654,7 @@
 				if (data.isbn10) metaParts.push('ISBN-10: ' + data.isbn10);
 				if (data.asin) metaParts.push('ASIN: ' + data.asin);
 				
-				console.log('Available data keys:', Object.keys(data));
-				console.log('Raw data object:', data);
-				console.log('Data type:', typeof data, 'Is array:', Array.isArray(data));
-				
-				if (data.rating || data.ratings) console.log('Ratings data:', data.rating || data.ratings);
-				if (data.genres) console.log('Genres data:', data.genres);
-				if (data.description) console.log('Description found:', data.description.length, 'chars');
-				if (data.overview) console.log('Overview found:', data.overview.length, 'chars');
-				
 				meta.textContent = metaParts.join(' • ');
-				console.log('Meta populated:', meta.textContent);
 				// Description: try common keys
 				var description = data.description || data.overview || data.synopsis || data.summary || data.desc || data.about || '';
 				// If provider payload nested description exists, handle it
@@ -749,19 +673,16 @@
 				
 				// If no description found, show other useful information
 				if (!description) {
-					console.log('No description found, building from other data...');
 					// Build a clean fallback description without a noisy header
 					var descParts = [];
 					
 					// Show genres if available
 					if (data.genres && data.genres.length > 0) {
-						console.log('Found genres:', data.genres);
 						descParts.push('Genres: ' + data.genres.slice(0, 5).join(', ') + (data.genres.length > 5 ? ', and more...' : ''));
 					}
 					
 					// Show series information if available
 					if (data.seriesTitle && data.seriesTitle.trim() !== '') {
-						console.log('Found series:', data.seriesTitle);
 						descParts.push('Series: ' + data.seriesTitle);
 					}
 					
@@ -788,7 +709,6 @@
 					}
 					
 					description = descParts.join('<br><br>');
-					console.log('Built description:', description);
 				}
 				
 				// Use innerHTML if we have HTML links, otherwise textContent
@@ -797,14 +717,12 @@
 				} else {
 					desc.textContent = description || 'No description available.';
 				}
-				console.log('Description element populated:', desc.textContent);
 				// Show modal
 				modal.classList.remove('hidden');
 				modal.setAttribute('aria-hidden', 'false');
-				console.log('Modal should now be visible!');
 				// focus close button for accessibility
 				setTimeout(function(){ var cb = document.getElementById('book-modal-close'); if(cb) cb.focus(); }, 50);
-			} catch(e) { console.error('openBookModal error', e); }
+			} catch(e) { /* ignore modal errors */ }
 		}
 
 		window.closeBookModal = function() {
@@ -907,11 +825,8 @@
 		// Handle request actions (approve, decline, delete, hydrate)
 		window.handleRequestAction = function(action, requestId) {
 			if (!requestId) {
-				console.error('No request ID provided for action:', action);
 				return;
 			}
-			
-			console.log('Handling request action:', action, 'for request ID:', requestId);
 			
 			var apiUrl;
 			var method = 'POST';
@@ -931,7 +846,6 @@
 					apiUrl = '/api/v1/requests/' + requestId + '/hydrate';
 					break;
 				default:
-					console.error('Unknown action:', action);
 					return;
 			}
 			
@@ -946,7 +860,6 @@
 			})
 			.then(function(resp) {
 				if (resp.ok) {
-					console.log('Action successful:', action);
 					// Close modal
 					window.closeBookModal();
 					// Refresh requests table if it exists
@@ -961,7 +874,6 @@
 									action === 'hydrate' ? 'updated' : action + 'd';
 					window.scriptorumShowToast && window.scriptorumShowToast('Request ' + actionText + ' successfully.');
 				} else {
-					console.error('Action failed:', action, resp.status, resp.statusText);
 					resp.text().then(function(text) {
 						var errorMsg = text || 'Action failed: ' + resp.status;
 						window.scriptorumShowToast && window.scriptorumShowToast('Error: ' + errorMsg, 'bg-rose-50 text-rose-800 ring-1 ring-rose-200');
@@ -969,27 +881,21 @@
 				}
 			})
 			.catch(function(err) {
-				console.error('Network error:', err);
 				window.scriptorumShowToast && window.scriptorumShowToast('Network error occurred.', 'bg-rose-50 text-rose-800 ring-1 ring-rose-200');
 			});
 		}
 
 		// Helper: open modal from an element inside the search result item (li)
 		window.openBookModalFromElem = function(el){
-			console.log('openBookModalFromElem called with:', el);
 			try {
 				var li = el.closest('li');
 				if (!li) {
-					console.log('No li element found');
 					return;
 				}
-				console.log('Found li element:', li);
 				var form = li.querySelector('form');
 				if (!form) {
-					console.log('No form found in li');
 					return;
 				}
-				console.log('Found form:', form);
 				var data = {};
 				if (form) {
 					var ds = form.dataset || {};
@@ -1013,7 +919,6 @@
 				}
 				// also gather cover src if available in li
 				var img = li.querySelector('img'); if (img && img.src) data.cover = img.src;
-				console.log('Extracted data:', data);
 				
 				// Check if we have enough information for a good modal display
 				var hasDescription = false;
@@ -1026,14 +931,6 @@
 				
 				// If we don't have a description, try to fetch enriched data from API
 				if (!hasDescription && (data.provider_payload || data.isbn13 || data.isbn10 || data.asin)) {
-					console.log('No description found, fetching enriched data from API...');
-					console.log('hasDescription:', hasDescription, 'identifiers:', {
-						provider_payload: !!data.provider_payload,
-						isbn13: data.isbn13,
-						isbn10: data.isbn10,
-						asin: data.asin
-					});
-					
 					// Show modal immediately with loading state
 					window.openBookModal(data, true);
 					
@@ -1046,8 +943,6 @@
 					if (data.isbn10) apiPayload.isbn10 = data.isbn10;  
 					if (data.asin) apiPayload.asin = data.asin;
 					
-					console.log('Making enriched API call with payload:', apiPayload);
-					
 					fetch('/api/v1/book/enriched', {
 						method: 'POST',
 						headers: { 
@@ -1059,7 +954,6 @@
 					})
 					.then(function(resp) {
 						if (!resp.ok) {
-							console.log('Enriched API call failed, using original data');
 							window.openBookModal(data);
 							return;
 						}
@@ -1067,7 +961,6 @@
 					})
 					.then(function(enrichedData) {
 						if (enrichedData && !enrichedData.error) {
-							console.log('Got enriched Readarr data from API:', enrichedData);
 							// Use enriched data directly - it contains all the Readarr fields
 							// Add original cover URL if not present in enriched data
 							if (!enrichedData.cover && data.cover) {
@@ -1075,20 +968,17 @@
 							}
 							window.openBookModal(enrichedData);
 						} else {
-							console.log('Enriched API returned error or no data:', enrichedData);
 							window.openBookModal(data);
 						}
 					})
 					.catch(function(err) {
-						console.error('API fetch error:', err);
 						window.openBookModal(data);
 					});
 				} else {
 					// We have sufficient data or no way to fetch more, show modal directly
-					console.log('Using existing data, not calling enriched API. hasDescription:', hasDescription, 'identifiers present:', !!(data.provider_payload || data.isbn13 || data.isbn10 || data.asin));
 					window.openBookModal(data);
 				}
-			} catch(e) { console.error('openBookModalFromElem error', e); }
+			} catch(e) { /* ignore errors */ }
 		}
 
 		// Close handlers
@@ -1198,8 +1088,6 @@
 				if (t.closest && t.closest('button, a, input, textarea, select')) return;
 				var el = t.closest && t.closest('[data-open-book]');
 				if (el) {
-					console.log('Opening modal from click on element:', el);
-					
 					// Check if this element has JSON data directly (requests table). Search results set a sentinel like "1".
 					var jsonData = el.getAttribute('data-open-book');
 					if (jsonData) {
@@ -1211,7 +1099,6 @@
 						}
 						try {
 							var bookData = JSON.parse(jsonData);
-							console.log('Parsed JSON book data:', bookData);
 							if (!bookData || typeof bookData !== 'object') {
 								openBookModalFromElem(el);
 								return;
@@ -1219,7 +1106,6 @@
 							// For requests table, call enriched API to get full details
 							if (bookData.title || bookData.isbn13 || bookData.isbn10 || bookData.asin) {
 								// Show modal with loading state first
-								console.log('Opening modal with request data for enrichment');
 								window.openBookModal(bookData, true);
 								// Make API call for enriched data
 								fetch('/api/v1/book/enriched', {
@@ -1228,31 +1114,27 @@
 									body: JSON.stringify(bookData),
 									credentials: 'same-origin'
 								})
-								.then(function(resp) { if (!resp.ok) { console.log('Enriched API call failed, using original data'); window.openBookModal(bookData); return; } return resp.json(); })
+								.then(function(resp) { if (!resp.ok) { window.openBookModal(bookData); return; } return resp.json(); })
 								.then(function(enrichedData) {
 									if (enrichedData && !enrichedData.error) {
-										console.log('Got enriched data from API:', enrichedData);
 										var mergedData = Object.assign({}, enrichedData);
 										if (bookData.requesterEmail) mergedData.requesterEmail = bookData.requesterEmail;
 										if (bookData.status) mergedData.status = bookData.status;
 										if (bookData.requestId) mergedData.requestId = bookData.requestId;
 										if (bookData.hasOwnProperty('isAdmin')) mergedData.isAdmin = bookData.isAdmin;
 										if (bookData.readarrRequest) mergedData.readarrRequest = bookData.readarrRequest;
-										console.log('Merged data with request fields:', mergedData);
 										window.openBookModal(mergedData);
 									} else {
-										console.log('Enriched API returned error or no data:', enrichedData);
 										window.openBookModal(bookData);
 									}
 								})
-								.catch(function(err) { console.error('API fetch error:', err); window.openBookModal(bookData); });
+								.catch(function(err) { window.openBookModal(bookData); });
 							} else {
 								// No identifiers, just open with basic data
 								window.openBookModal(bookData);
 							}
 							return;
 						} catch(parseError) {
-							console.log('Failed to parse JSON data, falling back to form extraction');
 							openBookModalFromElem(el);
 							return;
 						}
@@ -1260,7 +1142,7 @@
 					// Fallback to form extraction for search results
 					openBookModalFromElem(el);
 				}
-			} catch(err) { console.error('Click handler error:', err); }
+			} catch(err) { }
 		});
 		document.addEventListener('keydown', function(e){
 			if (e.key === 'Enter') {
@@ -1277,7 +1159,6 @@
 						}
 						try {
 							var bookData = JSON.parse(jsonData);
-							console.log('Parsed JSON book data from keyboard:', bookData);
 							if (!bookData || typeof bookData !== 'object') { openBookModalFromElem(active); e.preventDefault(); return; }
 							// For requests table, call enriched API to get full details
 							if (bookData.title || bookData.isbn13 || bookData.isbn10 || bookData.asin) {
@@ -1290,24 +1171,21 @@
 									body: JSON.stringify(bookData),
 									credentials: 'same-origin'
 								})
-								.then(function(resp) { if (!resp.ok) { console.log('Enriched API call failed, using original data'); window.openBookModal(bookData); return; } return resp.json(); })
+								.then(function(resp) { if (!resp.ok) { window.openBookModal(bookData); return; } return resp.json(); })
 								.then(function(enrichedData) {
 									if (enrichedData && !enrichedData.error) {
-										console.log('Got enriched data from API:', enrichedData);
 										var mergedData = Object.assign({}, enrichedData);
 										if (bookData.requesterEmail) mergedData.requesterEmail = bookData.requesterEmail;
 										if (bookData.status) mergedData.status = bookData.status;
 										if (bookData.requestId) mergedData.requestId = bookData.requestId;
 										if (bookData.hasOwnProperty('isAdmin')) mergedData.isAdmin = bookData.isAdmin;
 										if (bookData.readarrRequest) mergedData.readarrRequest = bookData.readarrRequest;
-										console.log('Merged data with request fields:', mergedData);
 										window.openBookModal(mergedData);
 									} else {
-										console.log('Enriched API returned error or no data:', enrichedData);
 										window.openBookModal(bookData);
 									}
 								})
-								.catch(function(err) { console.error('API fetch error:', err); window.openBookModal(bookData); });
+								.catch(function(err) { window.openBookModal(bookData); });
 							} else {
 								// No identifiers, just open with basic data
 								window.openBookModal(bookData);
@@ -1315,7 +1193,6 @@
 							e.preventDefault();
 							return;
 						} catch(parseError) {
-							console.log('Failed to parse JSON data, falling back to form extraction');
 							openBookModalFromElem(active);
 							e.preventDefault();
 							return;

@@ -52,7 +52,9 @@ func (s *Server) generateApprovalToken(requestID int64) string {
 	}
 	s.tokenMutex.Unlock()
 
-	fmt.Printf("DEBUG: Generated approval token %s for request %d\n", token, requestID)
+	if s.settings.Get().Debug {
+		fmt.Printf("DEBUG: Generated approval token %s for request %d\n", token, requestID)
+	}
 	return token
 }
 
@@ -91,7 +93,9 @@ func (s *Server) handleApprovalToken(w http.ResponseWriter, r *http.Request) {
 
 	if !exists {
 		// Log for debugging
-		fmt.Printf("DEBUG: Token not found: %s. Available tokens: %d\n", token, len(s.approvalTokens))
+		if s.settings.Get().Debug {
+			fmt.Printf("DEBUG: Token not found: %s. Available tokens: %d\n", token, len(s.approvalTokens))
+		}
 		http.Error(w, "Invalid approval token", 404)
 		return
 	}
@@ -100,7 +104,9 @@ func (s *Server) handleApprovalToken(w http.ResponseWriter, r *http.Request) {
 		s.tokenMutex.Lock()
 		delete(s.approvalTokens, token)
 		s.tokenMutex.Unlock()
-		fmt.Printf("DEBUG: Token expired: %s\n", token)
+		if s.settings.Get().Debug {
+			fmt.Printf("DEBUG: Token expired: %s\n", token)
+		}
 		http.Error(w, "Approval token has expired", http.StatusGone)
 		return
 	}

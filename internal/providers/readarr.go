@@ -347,18 +347,26 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 			}
 			if am["foreignAuthorId"] == nil || am["foreignAuthorId"] == "" {
 				if nm, _ := am["name"].(string); nm != "" {
-					fmt.Printf("DEBUG: Author missing foreignAuthorId, trying to resolve name='%s'\n", nm)
+					if Debug {
+						fmt.Printf("DEBUG: Author missing foreignAuthorId, trying to resolve name='%s'\n", nm)
+					}
 					if fid := r.LookupForeignAuthorIDString(ctx, nm); fid != "" {
-						fmt.Printf("DEBUG: Found foreignAuthorId via lookup: %s\n", fid)
+						if Debug {
+							fmt.Printf("DEBUG: Found foreignAuthorId via lookup: %s\n", fid)
+						}
 						am["foreignAuthorId"] = fid
 					} else {
-						fmt.Printf("DEBUG: Lookup failed, creating synthetic foreignAuthorId\n")
+						if Debug {
+							fmt.Printf("DEBUG: Lookup failed, creating synthetic foreignAuthorId\n")
+						}
 						// Instead of using a fake foreign ID, try to find an existing author with a similar name
 						// and use their foreign ID, or create a synthetic one based on the author name
 						cleanedName := strings.ReplaceAll(strings.ToLower(strings.TrimSpace(nm)), " ", "-")
 						syntheticId := "local-" + cleanedName
 						am["foreignAuthorId"] = syntheticId
-						fmt.Printf("DEBUG: Set synthetic foreignAuthorId: %s\n", syntheticId)
+						if Debug {
+							fmt.Printf("DEBUG: Set synthetic foreignAuthorId: %s\n", syntheticId)
+						}
 					}
 				} else if idv, ok := am["id"]; ok {
 					// No name; fetch details by id
