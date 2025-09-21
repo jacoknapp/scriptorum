@@ -1,33 +1,18 @@
 {{ template "header" . }}
 <div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6">
 	<h1 class="text-xl font-semibold mb-3">Search books</h1>
-	<form id="searchForm" hx-get="/ui/search" hx-target="#results" hx-swap="innerHTML" class="flex flex-col sm:flex-row gap-2">
+	<form id="searchForm" class="flex flex-col sm:flex-row gap-2">
 		<input name="q" class="flex-1 border border-white/10 bg-night-900 text-slate-100 placeholder-slate-400 rounded px-3 py-2 min-w-0"
 			   placeholder="Title / Author / ISBN / ASIN / paste Amazon URL"
-			   hx-trigger="keyup changed delay:400ms, search"
-			   hx-include="#searchForm"
-			   hx-get="/ui/search"
-			   hx-target="#results"
-			   hx-indicator="#searchIndicator"
-			   hx-swap="innerHTML">
+			   id="searchInput"
+			   autocomplete="off">
 		<input type="hidden" name="page" value="1">
 		<input type="hidden" name="limit" value="20">
 		<button class="px-4 py-2 rounded bg-royal-600 hover:bg-royal-500 text-white">Search</button>
 	</form>
-	<div id="searchIndicator" class="text-sm text-slate-400 htmx-indicator mt-2">Searching…</div>
+	<div id="searchIndicator" class="text-sm text-slate-400 mt-2" style="display: none;">Searching…</div>
 	</div>
-<div id="results" class="mt-4"
-		 hx-get="/ui/search"
-		 hx-trigger="revealed, intersect once from:top delay:100ms"
-		 hx-vals='js:(function(){
-			 const f=document.getElementById("searchForm");
-			 if(!f) return {};
-			 const data=new FormData(f);
-			 const pageInput=f.querySelector("input[name=page]");
-			 pageInput.value = String((parseInt(pageInput.value||"1")||1));
-			 return Object.fromEntries(data.entries());
-		 })()'
-		 hx-swap="innerHTML">
+<div id="results" class="mt-4">
 	<!-- results will render here -->
 </div>
 <div id="more" class="md:block"
@@ -47,4 +32,55 @@
 			 return obj;
 		 })()'>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+	console.log('Search page: DOM loaded, initializing search...');
+	
+	var searchInput = document.getElementById('searchInput');
+	var searchForm = document.getElementById('searchForm');
+	
+	if (!searchInput) {
+		console.error('Search input not found!');
+		return;
+	}
+	
+	if (!searchForm) {
+		console.error('Search form not found!');
+		return;
+	}
+	
+	// Wait for debouncedSearch to be available
+	var initSearch = function() {
+		if (typeof window.debouncedSearch !== 'function') {
+			console.log('debouncedSearch not ready, waiting...');
+			setTimeout(initSearch, 100);
+			return;
+		}
+		
+		console.log('Setting up search event listeners...');
+		
+		// Input event for typing
+		searchInput.addEventListener('input', function(e) {
+			console.log('Search input:', e.target.value);
+			window.debouncedSearch(e.target.value);
+		});
+		
+		// Form submit event
+		searchForm.addEventListener('submit', function(e) {
+			e.preventDefault();
+			console.log('Search form submitted:', searchInput.value);
+			window.debouncedSearch(searchInput.value, 0); // Immediate search
+		});
+		
+		console.log('Search initialization complete!');
+		
+		// Focus on search input for better UX
+		searchInput.focus();
+	};
+	
+	initSearch();
+});
+</script>
+
 {{ template "footer" . }}

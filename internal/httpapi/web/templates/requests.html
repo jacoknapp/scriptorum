@@ -13,4 +13,74 @@
 		{{ template "requests_table" . }}
 	</div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+	formatRequestAuthors();
+});
+
+// Also format authors after HTMX updates the table
+document.addEventListener('htmx:afterSwap', function(evt) {
+	if (evt.detail.target && evt.detail.target.id === 'req-table') {
+		formatRequestAuthors();
+	}
+});
+
+function formatRequestAuthors() {
+	// Format authors in desktop table
+	var tableRows = document.querySelectorAll('#req-table table tbody tr');
+	tableRows.forEach(function(row) {
+		var authorElement = row.querySelector('td:first-child .text-slate-400');
+		if (authorElement && authorElement.textContent.trim()) {
+			var originalAuthor = authorElement.textContent.trim();
+			if (originalAuthor && typeof window.formatAuthorName === 'function') {
+				var formattedAuthor = window.formatAuthorName(originalAuthor);
+				authorElement.textContent = formattedAuthor;
+				
+				// Also update the data-open-book JSON if it contains author info
+				var clickableElement = row.querySelector('[data-open-book]');
+				if (clickableElement) {
+					try {
+						var bookData = JSON.parse(clickableElement.getAttribute('data-open-book'));
+						if (bookData.authors && bookData.authors.length > 0) {
+							bookData.authors[0] = formattedAuthor;
+							clickableElement.setAttribute('data-open-book', JSON.stringify(bookData));
+						}
+					} catch(e) {
+						// Ignore JSON parsing errors
+					}
+				}
+			}
+		}
+	});
+	
+	// Format authors in mobile cards  
+	var mobileCards = document.querySelectorAll('#req-table .grid.gap-3 > div');
+	mobileCards.forEach(function(card) {
+		var authorElement = card.querySelector('.text-sm.text-slate-400');
+		if (authorElement && authorElement.textContent.trim()) {
+			var originalAuthor = authorElement.textContent.trim();
+			if (originalAuthor && typeof window.formatAuthorName === 'function') {
+				var formattedAuthor = window.formatAuthorName(originalAuthor);
+				authorElement.textContent = formattedAuthor;
+				
+				// Also update the data-open-book JSON if it contains author info
+				var clickableElement = card.querySelector('[data-open-book]');
+				if (clickableElement) {
+					try {
+						var bookData = JSON.parse(clickableElement.getAttribute('data-open-book'));
+						if (bookData.authors && bookData.authors.length > 0) {
+							bookData.authors[0] = formattedAuthor;
+							clickableElement.setAttribute('data-open-book', JSON.stringify(bookData));
+						}
+					} catch(e) {
+						// Ignore JSON parsing errors
+					}
+				}
+			}
+		}
+	});
+}
+</script>
+
 {{ template "footer" . }}

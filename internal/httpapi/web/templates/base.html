@@ -161,6 +161,111 @@
 			}
 		}
 
+		// Debounced search with request cancellation
+		(function() {
+			var searchTimeout = null;
+			var currentSearchRequest = null;
+			
+			window.debouncedSearch = function(query, delay) {
+				delay = delay || 600; // Default 600ms delay
+				
+				console.log('debouncedSearch called with query:', query, 'delay:', delay);
+				
+				// Clear previous timeout
+				if (searchTimeout) {
+					console.log('Clearing previous search timeout');
+					clearTimeout(searchTimeout);
+					searchTimeout = null;
+				}
+				
+				// Cancel previous request if it's still running
+				if (currentSearchRequest) {
+					console.log('Aborting previous search request');
+					currentSearchRequest.abort();
+					currentSearchRequest = null;
+				}
+				
+				// Don't search if query is too short
+				if (!query || query.trim().length < 2) {
+					console.log('Query too short, clearing results');
+					var resultsContainer = document.getElementById('results');
+					if (resultsContainer) {
+						resultsContainer.innerHTML = '';
+					}
+					return;
+				}
+				
+				console.log('Setting search timeout for', delay, 'ms');
+				// Set new timeout
+				searchTimeout = setTimeout(function() {
+					console.log('Search timeout triggered, starting search for:', query);
+					var resultsContainer = document.getElementById('results');
+					var indicator = document.getElementById('searchIndicator');
+					
+					if (indicator) {
+						console.log('Showing search indicator');
+						indicator.style.display = 'block';
+					} else {
+						console.warn('Search indicator not found');
+					}
+					
+					// Create new AbortController for this request
+					var controller = new AbortController();
+					currentSearchRequest = controller;
+					
+					// Prepare search URL
+					var searchForm = document.getElementById('searchForm');
+					if (!searchForm) {
+						console.error('Search form not found!');
+						return;
+					}
+					
+					var formData = new FormData(searchForm);
+					formData.set('q', query);
+					
+					var params = new URLSearchParams(formData);
+					var url = '/ui/search?' + params.toString();
+					
+					console.log('Making search request to:', url);
+					
+					// Make the search request
+					fetch(url, { signal: controller.signal })
+						.then(function(response) {
+							console.log('Search response status:', response.status);
+							if (!response.ok) {
+								throw new Error('Search failed: ' + response.status);
+							}
+							return response.text();
+						})
+						.then(function(html) {
+							console.log('Search completed, updating results');
+							if (resultsContainer) {
+								resultsContainer.innerHTML = html;
+								// Trigger HTMX afterSwap event manually for enrichment
+								var event = new CustomEvent('htmx:afterSwap', {
+									detail: { target: resultsContainer }
+								});
+								document.dispatchEvent(event);
+							}
+						})
+						.catch(function(error) {
+							if (error.name !== 'AbortError') {
+								console.error('Search error:', error);
+							} else {
+								console.log('Search request aborted');
+							}
+						})
+						.finally(function() {
+							console.log('Search request finished, hiding indicator');
+							if (indicator) {
+								indicator.style.display = 'none';
+							}
+							currentSearchRequest = null;
+						});
+				}, delay);
+			};
+		})();
+
 		// JS fallback if HTMX failed to load
 		function scriptorumShowToast(msg, cls){
 			var toast = document.getElementById('toast');
@@ -335,8 +440,9 @@
 				if (ind) ind.style.display = 'none';
 				if (resp.ok) {
 					btn.textContent = 'Requested ✓';
+					btn.classList.remove('bg-royal-600', 'hover:bg-royal-500', 'hover:bg-royal-700', 'hover:bg-royal-600');
 					btn.classList.add('bg-emerald-600');
-					btn.classList.remove('hover:bg-royal-700','hover:bg-royal-600');
+					btn.disabled = true;
 					scriptorumShowToast('Request submitted. Open Requests to view.');
 					// Trigger HTMX refresh of requests table if it exists
 					var reqTable = document.querySelector('#req-table');
