@@ -332,7 +332,7 @@
 		<div id="book-modal-backdrop" class="absolute inset-0 bg-black/60" tabindex="-1"></div>
 		<div class="relative max-w-3xl w-full bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden z-10 max-h-[90vh] overflow-y-auto">
 			<div class="flex gap-4 p-4">
-				<img id="book-modal-cover" src="/static/placeholder-cover.svg" class="w-28 h-40 object-cover rounded-md border border-white/10 bg-night-900" alt="Cover">
+				<img id="book-modal-cover" src="/static/placeholder-cover.svg" class="w-28 h-40 object-cover rounded-md border border-white/10 bg-night-900" alt="Cover" onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
 				<div class="min-w-0 flex-1">
 					<h3 id="book-modal-title" class="font-semibold text-lg truncate"></h3>
 					<div id="book-modal-authors" class="text-sm text-slate-400 mt-1"></div>
@@ -494,7 +494,8 @@
 				
 				// Show loading state if requested
 				if (loading) {
-					cover.src = data.cover || data.coverMedium || data.coverSmall || '/static/placeholder-cover.svg';
+					var loadingCover = (data.cover && data.cover.trim()) || (data.coverMedium && data.coverMedium.trim()) || (data.coverSmall && data.coverSmall.trim()) || '/static/placeholder-cover.svg';
+					cover.src = loadingCover;
 					title.textContent = data.title || data.Title || 'Loading...';
 					authors.textContent = 'Loading...';
 					meta.textContent = 'Loading metadata...';
@@ -624,7 +625,8 @@
 						coverUrl = coverImage.remoteUrl || coverImage.url;
 					}
 				}
-				cover.src = coverUrl || data.coverMedium || data.coverSmall || '/static/placeholder-cover.svg';
+				var finalCover = (coverUrl && coverUrl.trim()) || (data.coverMedium && data.coverMedium.trim()) || (data.coverSmall && data.coverSmall.trim()) || '/static/placeholder-cover.svg';
+				cover.src = finalCover;
 				title.textContent = data.title || data.Title || 'No title';
 				// Smart-capitalize author names for display
 				var authorsDisplay = 'Unknown author';
