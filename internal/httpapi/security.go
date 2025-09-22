@@ -143,12 +143,12 @@ func (s *Server) csrfProtection(next http.Handler) http.Handler {
 
 		// Validate and consume CSRF token for regular form submissions
 		if token == "" {
-			http.Error(w, "CSRF token invalid or missing", http.StatusForbidden)
+			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
 
 		if !s.csrf.validateToken(token) {
-			http.Error(w, "CSRF token invalid or missing", http.StatusForbidden)
+			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
 

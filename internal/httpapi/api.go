@@ -39,8 +39,8 @@ func (s *Server) mountAPI(r chi.Router) {
 	})
 	// Book details endpoint used by UI to fetch richer metadata on-demand
 	r.Route("/api/v1/book", func(br chi.Router) {
-		br.Post("/details", s.apiBookDetails)
-		br.Post("/enriched", s.apiBookEnriched)
+		br.Post("/details", s.requireLogin(s.apiBookDetails))
+		br.Post("/enriched", s.requireLogin(s.apiBookEnriched))
 	})
 }
 
