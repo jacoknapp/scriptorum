@@ -498,6 +498,121 @@ func TestApprovalToken(t *testing.T) {
 	}
 }
 
+func TestNotificationProviderSelection(t *testing.T) {
+	server := newServerForTest(t)
+
+	// Set up test servers for ntfy and Discord
+	ntfyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Just respond OK for ntfy
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ntfyServer.Close()
+
+	discordServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Just respond OK for Discord
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer discordServer.Close()
+
+	// Configure different notification settings for each provider
+	cfg := server.settings.Get()
+
+	// Ntfy: enabled, only request notifications
+	cfg.Notifications.Ntfy.Enabled = true
+	cfg.Notifications.Ntfy.Server = ntfyServer.URL
+	cfg.Notifications.Ntfy.Topic = "test-topic"
+	cfg.Notifications.Ntfy.EnableRequestNotifications = true
+	cfg.Notifications.Ntfy.EnableApprovalNotifications = false
+	cfg.Notifications.Ntfy.EnableSystemNotifications = false
+
+	// SMTP: enabled, only approval notifications (we'll skip actual SMTP testing)
+	cfg.Notifications.SMTP.Enabled = true
+	cfg.Notifications.SMTP.Host = "smtp.example.com"
+	cfg.Notifications.SMTP.Port = 587
+	cfg.Notifications.SMTP.Username = "test@example.com"
+	cfg.Notifications.SMTP.Password = "password"
+	cfg.Notifications.SMTP.FromEmail = "from@example.com"
+	cfg.Notifications.SMTP.ToEmail = "to@example.com"
+	cfg.Notifications.SMTP.EnableRequestNotifications = false
+	cfg.Notifications.SMTP.EnableApprovalNotifications = true
+	cfg.Notifications.SMTP.EnableSystemNotifications = false
+
+	// Discord: enabled, only system notifications
+	cfg.Notifications.Discord.Enabled = true
+	cfg.Notifications.Discord.WebhookURL = discordServer.URL + "/webhook"
+	cfg.Notifications.Discord.Username = "TestBot"
+	cfg.Notifications.Discord.EnableRequestNotifications = false
+	cfg.Notifications.Discord.EnableApprovalNotifications = false
+	cfg.Notifications.Discord.EnableSystemNotifications = true
+
+	server.settings.Update(cfg)
+
+	// Track HTTP requests made to our test servers
+	var ntfyRequests, discordRequests int
+	originalNtfyHandler := ntfyServer.Config.Handler
+	ntfyServer.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ntfyRequests++
+		if originalNtfyHandler != nil {
+			originalNtfyHandler.ServeHTTP(w, r)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+
+	originalDiscordHandler := discordServer.Config.Handler
+	discordServer.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		discordRequests++
+		if originalDiscordHandler != nil {
+			originalDiscordHandler.ServeHTTP(w, r)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
+	})
+
+	// Test request notifications - should only call ntfy
+	ntfyRequests = 0
+	discordRequests = 0
+	server.SendRequestNotification(1, "testuser", "Test Book", []string{"Test Author"})
+
+	// Wait a bit for async calls to complete
+	time.Sleep(100 * time.Millisecond)
+
+	if ntfyRequests != 1 {
+		t.Errorf("Expected 1 ntfy request for request notification, got %d", ntfyRequests)
+	}
+	if discordRequests != 0 {
+		t.Errorf("Expected 0 discord requests for request notification, got %d", discordRequests)
+	}
+
+	// Test approval notifications - should only call smtp (no HTTP request)
+	ntfyRequests = 0
+	discordRequests = 0
+	server.SendApprovalNotification("testuser", "Test Book", []string{"Test Author"})
+
+	time.Sleep(100 * time.Millisecond)
+
+	if ntfyRequests != 0 {
+		t.Errorf("Expected 0 ntfy requests for approval notification, got %d", ntfyRequests)
+	}
+	if discordRequests != 0 {
+		t.Errorf("Expected 0 discord requests for approval notification, got %d", discordRequests)
+	}
+
+	// Test system notifications - should only call discord
+	ntfyRequests = 0
+	discordRequests = 0
+	server.SendSystemNotification("Test Alert", "Test message")
+
+	time.Sleep(100 * time.Millisecond)
+
+	if ntfyRequests != 0 {
+		t.Errorf("Expected 0 ntfy requests for system notification, got %d", ntfyRequests)
+	}
+	if discordRequests != 1 {
+		t.Errorf("Expected 1 discord request for system notification, got %d", discordRequests)
+	}
+}
+
 func TestApprovalHandler(t *testing.T) {
 	server := newServerForTest(t)
 
