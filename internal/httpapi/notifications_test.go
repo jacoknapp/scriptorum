@@ -34,12 +34,16 @@ func TestNotificationsPage(t *testing.T) {
 		t.Error("Page should contain 'Notifications' title")
 	}
 
-	if !strings.Contains(body, "ntfy.sh") {
-		t.Error("Page should contain ntfy.sh option")
+	if !strings.Contains(body, "ntfy_enabled") {
+		t.Error("Page should contain ntfy enable checkbox")
 	}
 
-	if !strings.Contains(body, "notification_provider") {
-		t.Error("Page should contain notification provider select")
+	if !strings.Contains(body, "smtp_enabled") {
+		t.Error("Page should contain SMTP enable checkbox")
+	}
+
+	if !strings.Contains(body, "discord_enabled") {
+		t.Error("Page should contain Discord enable checkbox")
 	}
 }
 
@@ -70,7 +74,7 @@ func TestNotificationsSave(t *testing.T) {
 	// Prepare form data
 	formData := url.Values{
 		"_csrf_token":                        {server.getCSRFToken(httptest.NewRequest("GET", "/", nil))},
-		"notification_provider":              {"ntfy"},
+		"ntfy_enabled":                       {"on"},
 		"ntfy_server":                        {"https://ntfy.example.com"},
 		"ntfy_topic":                         {"scriptorum-test"},
 		"ntfy_username":                      {"testuser"},
@@ -94,8 +98,8 @@ func TestNotificationsSave(t *testing.T) {
 
 	// Verify settings were saved
 	cfg := server.settings.Get()
-	if cfg.Notifications.Provider != "ntfy" {
-		t.Errorf("Expected provider 'ntfy', got '%s'", cfg.Notifications.Provider)
+	if !cfg.Notifications.Ntfy.Enabled {
+		t.Error("Expected ntfy to be enabled")
 	}
 
 	if cfg.Notifications.Ntfy.Server != "https://ntfy.example.com" {
@@ -366,7 +370,7 @@ func TestNotificationIntegrationWithRequests(t *testing.T) {
 
 	// Configure notifications
 	cfg := server.settings.Get()
-	cfg.Notifications.Provider = "ntfy"
+	cfg.Notifications.Ntfy.Enabled = true
 	cfg.Notifications.Ntfy.Server = "https://ntfy.example.com"
 	cfg.Notifications.Ntfy.Topic = "test-topic"
 	cfg.Notifications.Ntfy.EnableRequestNotifications = true
@@ -391,7 +395,9 @@ func TestNotificationDisabled(t *testing.T) {
 
 	// Ensure notifications are disabled
 	cfg := server.settings.Get()
-	cfg.Notifications.Provider = ""
+	cfg.Notifications.Ntfy.Enabled = false
+	cfg.Notifications.SMTP.Enabled = false
+	cfg.Notifications.Discord.Enabled = false
 	server.settings.Update(cfg)
 
 	// These should not send anything and not panic
@@ -406,8 +412,16 @@ func TestNotificationConfigDefaults(t *testing.T) {
 	cfg := server.settings.Get()
 
 	// Test default notification settings
-	if cfg.Notifications.Provider != "" {
-		t.Errorf("Expected default provider to be empty, got %s", cfg.Notifications.Provider)
+	if cfg.Notifications.Ntfy.Enabled {
+		t.Error("Expected default ntfy to be disabled")
+	}
+
+	if cfg.Notifications.SMTP.Enabled {
+		t.Error("Expected default SMTP to be disabled")
+	}
+
+	if cfg.Notifications.Discord.Enabled {
+		t.Error("Expected default Discord to be disabled")
 	}
 
 	if cfg.Notifications.Ntfy.Server != "https://ntfy.sh" {

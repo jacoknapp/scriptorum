@@ -7,21 +7,154 @@
 		<!-- Notification Provider Selection -->
 		<div class="border border-white/20 rounded-lg bg-night-750 p-5">
 			<section class="mb-6">
-				<h2 class="font-semibold mb-2">Notification Provider</h2>
+				<h2 class="font-semibold mb-2">Notification Providers</h2>
+				<div class="text-sm text-slate-400 mb-4">Enable multiple notification providers to receive alerts for book requests and system events.</div>
+				
+				<!-- ntfy.sh Provider -->
+				<div class="border border-white/10 rounded p-3 mb-4">
+					<div class="flex items-center gap-3 mb-3">
+						<input type="checkbox" id="ntfy_enabled" name="ntfy_enabled" value="on" {{ if .Notifications.Ntfy.Enabled }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500" onclick="toggleNtfySettings()">
+						<label for="ntfy_enabled" class="font-medium text-slate-200">ntfy.sh</label>
+					</div>
+					<div id="ntfy_settings" class="ml-6"{{ if not .Notifications.Ntfy.Enabled }} style="display: none;"{{ end }}>
+						<div class="grid md:grid-cols-2 gap-3">
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">Server URL</label>
+								<input name="ntfy_server" placeholder="https://ntfy.sh" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.Ntfy.Server }}">
+								<div class="text-xs text-slate-400 mt-1">Use https://ntfy.sh or your own ntfy server</div>
+							</div>
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">Topic</label>
+								<input name="ntfy_topic" placeholder="scriptorum-notifications" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.Ntfy.Topic }}">
+								<div class="text-xs text-slate-400 mt-1">Unique topic name for your notifications</div>
+							</div>
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">Username (Optional)</label>
+								<input name="ntfy_username" placeholder="username" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.Ntfy.Username }}">
+								<div class="text-xs text-slate-400 mt-1">For protected topics</div>
+							</div>
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">Password (Optional)</label>
+								<input type="password" name="ntfy_password" placeholder="password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.Ntfy.Password }}">
+								<div class="text-xs text-slate-400 mt-1">For protected topics</div>
+							</div>
+						</div>
+						<div class="mt-3">
+							<label class="inline-flex items-center gap-2">
+								<input type="checkbox" name="ntfy_enable_request_notifications" value="on" {{ if .Notifications.Ntfy.EnableRequestNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">New request notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="ntfy_enable_approval_notifications" value="on" {{ if .Notifications.Ntfy.EnableApprovalNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">Approval notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="ntfy_enable_system_notifications" value="on" {{ if .Notifications.Ntfy.EnableSystemNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">System notifications</span>
+							</label>
+						</div>
+					</div>
+				</div>
+
+				<!-- SMTP Provider -->
+				<div class="border border-white/10 rounded p-3 mb-4">
+					<div class="flex items-center gap-3 mb-3">
+						<input type="checkbox" id="smtp_enabled" name="smtp_enabled" value="on" {{ if .Notifications.SMTP.Enabled }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500" onclick="toggleSMTPSettings()">
+						<label for="smtp_enabled" class="font-medium text-slate-200">SMTP Email</label>
+					</div>
+					<div id="smtp_settings" class="ml-6"{{ if not .Notifications.SMTP.Enabled }} style="display: none;"{{ end }}>
+						<div class="grid md:grid-cols-2 gap-3">
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">SMTP Host</label>
+								<input name="smtp_host" placeholder="smtp.gmail.com" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.Host }}">
+							</div>
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">SMTP Port</label>
+								<input name="smtp_port" type="number" placeholder="587" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.Port }}">
+							</div>
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">Username</label>
+								<input name="smtp_username" placeholder="your-email@gmail.com" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.Username }}">
+							</div>
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">Password</label>
+								<input type="password" name="smtp_password" placeholder="your-app-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.Password }}">
+							</div>
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">From Email</label>
+								<input name="smtp_from_email" placeholder="noreply@yourdomain.com" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.FromEmail }}">
+							</div>
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">From Name</label>
+								<input name="smtp_from_name" placeholder="Scriptorum" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.FromName }}">
+							</div>
+							<div class="md:col-span-2">
+								<label class="block text-sm font-medium text-slate-200 mb-1">To Email</label>
+								<input name="smtp_to_email" placeholder="admin@yourdomain.com" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.SMTP.ToEmail }}">
+							</div>
+						</div>
+						<div class="mt-3">
+							<label class="inline-flex items-center gap-2">
+								<input type="checkbox" name="smtp_enable_tls" value="on" {{ if .Notifications.SMTP.EnableTLS }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">Enable TLS</span>
+							</label>
+						</div>
+						<div class="mt-3">
+							<label class="inline-flex items-center gap-2">
+								<input type="checkbox" name="smtp_enable_request_notifications" value="on" {{ if .Notifications.SMTP.EnableRequestNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">New request notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="smtp_enable_approval_notifications" value="on" {{ if .Notifications.SMTP.EnableApprovalNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">Approval notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="smtp_enable_system_notifications" value="on" {{ if .Notifications.SMTP.EnableSystemNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">System notifications</span>
+							</label>
+						</div>
+					</div>
+				</div>
+
+				<!-- Discord Provider -->
 				<div class="border border-white/10 rounded p-3">
-					<label class="block text-sm font-medium text-slate-200 mb-2">Select Provider</label>
-					<select id="notification_provider" name="notification_provider" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" onchange="toggleNotificationSettings()">
-						<option value="">Disabled</option>
-						<option value="ntfy" {{ if eq .Notifications.Provider "ntfy" }}selected{{ end }}>ntfy.sh</option>
-						<option value="smtp" {{ if eq .Notifications.Provider "smtp" }}selected{{ end }}>SMTP Email</option>
-						<option value="discord" {{ if eq .Notifications.Provider "discord" }}selected{{ end }}>Discord Webhook</option>
-					</select>
-					<div class="text-sm text-slate-400 mt-1">Choose a notification service to receive alerts for book requests and system events.</div>
+					<div class="flex items-center gap-3 mb-3">
+						<input type="checkbox" id="discord_enabled" name="discord_enabled" value="on" {{ if .Notifications.Discord.Enabled }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500" onclick="toggleDiscordSettings()">
+						<label for="discord_enabled" class="font-medium text-slate-200">Discord Webhook</label>
+					</div>
+					<div id="discord_settings" class="ml-6"{{ if not .Notifications.Discord.Enabled }} style="display: none;"{{ end }}>
+						<div class="grid md:grid-cols-2 gap-3">
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">Webhook URL</label>
+								<input name="discord_webhook_url" placeholder="https://discord.com/api/webhooks/..." class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.Discord.WebhookURL }}">
+								<div class="text-xs text-slate-400 mt-1">Discord webhook URL for notifications</div>
+							</div>
+							<div>
+								<label class="block text-sm font-medium text-slate-200 mb-1">Username (Optional)</label>
+								<input name="discord_username" placeholder="Scriptorum" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.Discord.Username }}">
+								<div class="text-xs text-slate-400 mt-1">Bot username for Discord messages</div>
+							</div>
+						</div>
+						<div class="mt-3">
+							<label class="inline-flex items-center gap-2">
+								<input type="checkbox" name="discord_enable_request_notifications" value="on" {{ if .Notifications.Discord.EnableRequestNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">New request notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="discord_enable_approval_notifications" value="on" {{ if .Notifications.Discord.EnableApprovalNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">Approval notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="discord_enable_system_notifications" value="on" {{ if .Notifications.Discord.EnableSystemNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">System notifications</span>
+							</label>
+						</div>
+					</div>
 				</div>
 			</section>
 
 			<!-- ntfy.sh Configuration -->
-			<section id="ntfy_settings" class="mb-6"{{ if ne .Notifications.Provider "ntfy" }} style="display: none;"{{ end }}>
+			<section id="ntfy_settings" class="mb-6"{{ if not .Notifications.Ntfy.Enabled }} style="display: none;"{{ end }}>
 				<h2 class="font-semibold mb-2">ntfy.sh Configuration</h2>
 				<div class="border border-white/10 rounded p-3">
 					<div class="grid md:grid-cols-2 gap-3">
@@ -72,7 +205,7 @@
 			</section>
 
 			<!-- SMTP Configuration -->
-			<section id="smtp_settings" class="mb-6"{{ if ne .Notifications.Provider "smtp" }} style="display: none;"{{ end }}>
+			<section id="smtp_settings" class="mb-6"{{ if not .Notifications.SMTP.Enabled }} style="display: none;"{{ end }}>
 				<h2 class="font-semibold mb-2">SMTP Email Configuration</h2>
 				<div class="border border-white/10 rounded p-3">
 					<div class="grid md:grid-cols-2 gap-3">
@@ -144,7 +277,7 @@
 			</section>
 
 			<!-- Discord Configuration -->
-			<section id="discord_settings" class="mb-6"{{ if ne .Notifications.Provider "discord" }} style="display: none;"{{ end }}>
+			<section id="discord_settings" class="mb-6"{{ if not .Notifications.Discord.Enabled }} style="display: none;"{{ end }}>
 				<h2 class="font-semibold mb-2">Discord Webhook Configuration</h2>
 				<div class="border border-white/10 rounded p-3">
 					<div class="grid gap-3">
@@ -195,26 +328,30 @@
 </div>
 
 <script>
-function toggleNotificationSettings() {
-	const provider = document.getElementById('notification_provider').value;
-	const ntfySettings = document.getElementById('ntfy_settings');
-	const smtpSettings = document.getElementById('smtp_settings');
-	const discordSettings = document.getElementById('discord_settings');
-	
-	// Hide all settings first
-	ntfySettings.style.display = 'none';
-	smtpSettings.style.display = 'none';
-	discordSettings.style.display = 'none';
-	
-	// Show the selected provider settings
-	if (provider === 'ntfy') {
-		ntfySettings.style.display = 'block';
-	} else if (provider === 'smtp') {
-		smtpSettings.style.display = 'block';
-	} else if (provider === 'discord') {
-		discordSettings.style.display = 'block';
-	}
+function toggleNtfySettings() {
+	const checkbox = document.getElementById('ntfy_enabled');
+	const settings = document.getElementById('ntfy_settings');
+	settings.style.display = checkbox.checked ? 'block' : 'none';
 }
+
+function toggleSMTPSettings() {
+	const checkbox = document.getElementById('smtp_enabled');
+	const settings = document.getElementById('smtp_settings');
+	settings.style.display = checkbox.checked ? 'block' : 'none';
+}
+
+function toggleDiscordSettings() {
+	const checkbox = document.getElementById('discord_enabled');
+	const settings = document.getElementById('discord_settings');
+	settings.style.display = checkbox.checked ? 'block' : 'none';
+}
+
+// Initialize settings visibility on page load
+document.addEventListener('DOMContentLoaded', function() {
+	toggleNtfySettings();
+	toggleSMTPSettings();
+	toggleDiscordSettings();
+});
 
 function testNtfy() {
 	const testSpan = document.getElementById('ntfy_test');

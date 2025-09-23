@@ -66,14 +66,14 @@ type Config struct {
 	} `yaml:"readarr"`
 
 	Notifications struct {
-		Provider string        `yaml:"provider"`
-		Ntfy     NtfyConfig    `yaml:"ntfy"`
-		SMTP     SMTPConfig    `yaml:"smtp"`
-		Discord  DiscordConfig `yaml:"discord"`
+		Ntfy    NtfyConfig    `yaml:"ntfy"`
+		SMTP    SMTPConfig    `yaml:"smtp"`
+		Discord DiscordConfig `yaml:"discord"`
 	} `yaml:"notifications"`
 }
 
 type NtfyConfig struct {
+	Enabled                     bool   `yaml:"enabled"`
 	Server                      string `yaml:"server"`
 	Topic                       string `yaml:"topic"`
 	Username                    string `yaml:"username"`
@@ -84,6 +84,7 @@ type NtfyConfig struct {
 }
 
 type SMTPConfig struct {
+	Enabled                     bool   `yaml:"enabled"`
 	Host                        string `yaml:"host"`
 	Port                        int    `yaml:"port"`
 	Username                    string `yaml:"username"`
@@ -98,6 +99,7 @@ type SMTPConfig struct {
 }
 
 type DiscordConfig struct {
+	Enabled                     bool   `yaml:"enabled"`
 	WebhookURL                  string `yaml:"webhook_url"`
 	Username                    string `yaml:"username"`
 	EnableRequestNotifications  bool   `yaml:"enable_request_notifications"`

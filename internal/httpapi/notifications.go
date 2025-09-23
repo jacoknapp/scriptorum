@@ -400,8 +400,10 @@ func (u *notificationsUI) handleNotificationsSave(s *Server) http.HandlerFunc {
 		_ = r.ParseForm()
 		cur := *s.settings.Get()
 
-		// Update notification settings
-		cur.Notifications.Provider = strings.TrimSpace(r.FormValue("notification_provider"))
+		// Update notification settings - enable/disable providers
+		cur.Notifications.Ntfy.Enabled = r.FormValue("ntfy_enabled") == "on"
+		cur.Notifications.SMTP.Enabled = r.FormValue("smtp_enabled") == "on"
+		cur.Notifications.Discord.Enabled = r.FormValue("discord_enabled") == "on"
 
 		// Update ntfy settings
 		cur.Notifications.Ntfy.Server = strings.TrimSpace(r.FormValue("ntfy_server"))
@@ -787,30 +789,18 @@ func (s *Server) apiTestDiscord() http.HandlerFunc {
 func (s *Server) SendRequestNotification(requestID int64, username, title string, authors []string) {
 	cfg := s.settings.Get()
 
-	// Check if any notifications are enabled
-	if cfg.Notifications.Provider == "" {
-		return
-	}
-
 	authorsStr := strings.Join(authors, ", ")
 
-	switch cfg.Notifications.Provider {
-	case "ntfy":
-		if !cfg.Notifications.Ntfy.EnableRequestNotifications {
-			return
-		}
+	// Send to all enabled providers
+	if cfg.Notifications.Ntfy.Enabled && cfg.Notifications.Ntfy.EnableRequestNotifications {
 		s.sendRequestNotificationNtfy(cfg, requestID, username, title, authorsStr)
+	}
 
-	case "smtp":
-		if !cfg.Notifications.SMTP.EnableRequestNotifications {
-			return
-		}
+	if cfg.Notifications.SMTP.Enabled && cfg.Notifications.SMTP.EnableRequestNotifications {
 		s.sendRequestNotificationSMTP(cfg, requestID, username, title, authorsStr)
+	}
 
-	case "discord":
-		if !cfg.Notifications.Discord.EnableRequestNotifications {
-			return
-		}
+	if cfg.Notifications.Discord.Enabled && cfg.Notifications.Discord.EnableRequestNotifications {
 		s.sendRequestNotificationDiscord(cfg, requestID, username, title, authorsStr)
 	}
 }
@@ -968,30 +958,18 @@ func (s *Server) sendRequestNotificationDiscord(cfg *config.Config, requestID in
 func (s *Server) SendApprovalNotification(username, title string, authors []string) {
 	cfg := s.settings.Get()
 
-	// Check if any notifications are enabled
-	if cfg.Notifications.Provider == "" {
-		return
-	}
-
 	authorsStr := strings.Join(authors, ", ")
 
-	switch cfg.Notifications.Provider {
-	case "ntfy":
-		if !cfg.Notifications.Ntfy.EnableApprovalNotifications {
-			return
-		}
+	// Send to all enabled providers
+	if cfg.Notifications.Ntfy.Enabled && cfg.Notifications.Ntfy.EnableApprovalNotifications {
 		s.sendApprovalNotificationNtfy(cfg, username, title, authorsStr)
+	}
 
-	case "smtp":
-		if !cfg.Notifications.SMTP.EnableApprovalNotifications {
-			return
-		}
+	if cfg.Notifications.SMTP.Enabled && cfg.Notifications.SMTP.EnableApprovalNotifications {
 		s.sendApprovalNotificationSMTP(cfg, username, title, authorsStr)
+	}
 
-	case "discord":
-		if !cfg.Notifications.Discord.EnableApprovalNotifications {
-			return
-		}
+	if cfg.Notifications.Discord.Enabled && cfg.Notifications.Discord.EnableApprovalNotifications {
 		s.sendApprovalNotificationDiscord(cfg, username, title, authorsStr)
 	}
 }
@@ -1120,28 +1098,16 @@ func (s *Server) sendApprovalNotificationDiscord(cfg *config.Config, username, t
 func (s *Server) SendSystemNotification(title, message string) {
 	cfg := s.settings.Get()
 
-	// Check if any notifications are enabled
-	if cfg.Notifications.Provider == "" {
-		return
+	// Send to all enabled providers
+	if cfg.Notifications.Ntfy.Enabled && cfg.Notifications.Ntfy.EnableSystemNotifications {
+		s.sendSystemNotificationNtfy(cfg, title, message)
 	}
 
-	switch cfg.Notifications.Provider {
-	case "ntfy":
-		if !cfg.Notifications.Ntfy.EnableSystemNotifications {
-			return
-		}
-		s.sendSystemNotificationNtfy(cfg, title, message)
-
-	case "smtp":
-		if !cfg.Notifications.SMTP.EnableSystemNotifications {
-			return
-		}
+	if cfg.Notifications.SMTP.Enabled && cfg.Notifications.SMTP.EnableSystemNotifications {
 		s.sendSystemNotificationSMTP(cfg, title, message)
+	}
 
-	case "discord":
-		if !cfg.Notifications.Discord.EnableSystemNotifications {
-			return
-		}
+	if cfg.Notifications.Discord.Enabled && cfg.Notifications.Discord.EnableSystemNotifications {
 		s.sendSystemNotificationDiscord(cfg, title, message)
 	}
 }

@@ -100,7 +100,9 @@ func defaultConfig(dbPath string) *config.Config {
 	c.Readarr.Audiobooks.DefaultTags = []string{}
 
 	// Notifications defaults
-	c.Notifications.Provider = ""
+	c.Notifications.Ntfy.Enabled = false
+	c.Notifications.SMTP.Enabled = false
+	c.Notifications.Discord.Enabled = false
 	c.Notifications.Ntfy.Server = "https://ntfy.sh"
 	c.Notifications.Ntfy.Topic = ""
 	c.Notifications.Ntfy.Username = ""
