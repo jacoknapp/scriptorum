@@ -127,10 +127,6 @@ oauth:
   scopes: ["openid", "profile", "email"]
   username_claim: "preferred_username"
   auto_create_users: true
-  cookie_name: "scriptorum_session"
-  cookie_domain: ""
-  cookie_secure: false
-  cookie_secret: ""
 
 # Amazon Public Search Configuration
 amazon_public:

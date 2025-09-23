@@ -17,10 +17,6 @@ oauth:
   auto_create_users: false
   allow_email_domains: []
   allow_emails: []
-  cookie_name: "scriptorum_session"
-  cookie_domain: ""
-  cookie_secure: false
-  cookie_secret: ""
 amazon_public:
   enabled: true
 readarr:

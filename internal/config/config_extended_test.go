@@ -107,10 +107,6 @@ func TestSaveConfig(t *testing.T) {
 			UsernameClaim   string   `yaml:"username_claim"`
 			AllowDomains    []string `yaml:"allow_email_domains,omitempty"`
 			AllowEmails     []string `yaml:"allow_emails,omitempty"`
-			CookieName      string   `yaml:"cookie_name,omitempty"`
-			CookieDomain    string   `yaml:"cookie_domain,omitempty"`
-			CookieSecure    bool     `yaml:"cookie_secure,omitempty"`
-			CookieSecret    string   `yaml:"cookie_secret,omitempty"`
 			AutoCreateUsers bool     `yaml:"auto_create_users"`
 		}{
 			Enabled: false,
@@ -300,9 +296,6 @@ func TestOAuthConfig(t *testing.T) {
     - profile
     - email
   username_claim: preferred_username
-  cookie_name: auth_session
-  cookie_domain: .example.com
-  cookie_secure: true
 `
 
 	err := os.WriteFile(configPath, []byte(configContent), 0644)
@@ -333,13 +326,5 @@ func TestOAuthConfig(t *testing.T) {
 
 	if cfg.OAuth.UsernameClaim != "preferred_username" {
 		t.Errorf("Expected username claim, got %s", cfg.OAuth.UsernameClaim)
-	}
-
-	if cfg.OAuth.CookieName != "auth_session" {
-		t.Errorf("Expected cookie name, got %s", cfg.OAuth.CookieName)
-	}
-
-	if !cfg.OAuth.CookieSecure {
-		t.Error("Expected cookie secure to be true")
 	}
 }

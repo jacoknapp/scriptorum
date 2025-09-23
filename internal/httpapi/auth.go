@@ -47,10 +47,10 @@ func (s *Server) initOIDC() error {
 		clientID:     cfg.OAuth.ClientID,
 		clientSecret: cfg.OAuth.ClientSecret,
 		redirectURL:  cfg.OAuth.RedirectURL,
-		cookieName:   defaultIf(cfg.OAuth.CookieName, "scriptorum_session"),
-		cookieDomain: cfg.OAuth.CookieDomain,
-		cookieSecure: cfg.OAuth.CookieSecure,
-		cookieSecret: defaultIf(cfg.OAuth.CookieSecret, cfg.Auth.Salt),
+		cookieName:   "scriptorum_session",
+		cookieDomain: "",
+		cookieSecure: false,
+		cookieSecret: cfg.Auth.Salt,
 	}
 	if !s.oidc.enabled {
 		return nil
@@ -643,9 +643,6 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	// Clear the main session cookie
 	sessionCookieName := "scriptorum_session"
-	if s.oidc != nil && s.oidc.cookieName != "" {
-		sessionCookieName = s.oidc.cookieName
-	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1})
 
 	// Clear OAuth-related cookies
