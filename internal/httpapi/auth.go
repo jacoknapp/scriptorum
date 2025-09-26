@@ -274,19 +274,34 @@ func (s *Server) handleWelcome(tpl *template.Template) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Check if we're coming from logout (no auto-redirect to OAuth)
 		fromLogout := r.URL.Query().Get("from_logout") == "true"
-		forceLocal := r.FormValue("force_local") == "true"
+		// Accept both force_local (form or query) and legacy force_welcome query param
+		forceLocal := r.FormValue("force_local") == "true" || r.URL.Query().Get("force_welcome") == "true"
+
+		// Use the configured OAuth setting to decide whether to show OAuth
+		// as the login option (this reflects operator intent). AutoRedirect
+		// still depends on the operational OIDC discovery/state (s.oidc).
+		cfg := s.settings.Get()
+		oauthConfigured := false
+		if cfg != nil {
+			oauthConfigured = cfg.OAuth.Enabled
+		}
+		oauthOperational := s.oidc != nil && s.oidc.enabled
 
 		data := map[string]interface{}{
-			"OAuthEnabled": s.oidc != nil && s.oidc.enabled,
-			"LoginError":   r.URL.Query().Get("error"),
-			"Username":     r.URL.Query().Get("username"),
-			"CurrentYear":  time.Now().Year(),
-			"FromLogout":   fromLogout,
-			"ForceLocal":   forceLocal,
-			"AutoRedirect": s.oidc != nil && s.oidc.enabled && !fromLogout && !forceLocal,
-			"Debug":        s.cfg.Debug,
-			"CSRFToken":    s.getCSRFToken(r),
-			"Request":      r,
+			// reflect the configured selection so the UI hides local login when
+			// OAuth is selected in settings even if discovery failed temporarily
+			"OAuthEnabled": oauthConfigured,
+			// operational flag used for automatic redirect decision
+			"OAuthOperational": oauthOperational,
+			"LoginError":       r.URL.Query().Get("error"),
+			"Username":         r.URL.Query().Get("username"),
+			"CurrentYear":      time.Now().Year(),
+			"FromLogout":       fromLogout,
+			"ForceLocal":       forceLocal,
+			"AutoRedirect":     oauthOperational && !fromLogout && !forceLocal,
+			"Debug":            s.cfg.Debug,
+			"CSRFToken":        s.getCSRFToken(r),
+			"Request":          r,
 		}
 
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
