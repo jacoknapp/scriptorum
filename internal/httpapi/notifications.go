@@ -24,9 +24,6 @@ func (s *Server) mountNotifications(r chi.Router) {
 	funcMap := template.FuncMap{"toJSON": func(v any) string { b, _ := json.Marshal(v); return string(b) }}
 	u := &notificationsUI{tpl: template.Must(template.New("tpl").Funcs(funcMap).ParseFS(tplFS, "web/templates/*.html"))}
 
-	// Public approval endpoint for one-click approvals from notifications
-	r.Get("/approve/{token}", s.handleApprovalToken)
-
 	r.Group(func(rt chi.Router) {
 		rt.Use(func(next http.Handler) http.Handler { return s.requireAdmin(next.ServeHTTP) })
 		rt.Get("/notifications", u.handleNotifications(s))

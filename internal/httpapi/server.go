@@ -84,14 +84,36 @@ func (s *Server) Router() http.Handler {
 	sub, _ := fs.Sub(staticFS, "web/static")
 	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(sub))))
 
+	// Protect the main application routes behind authentication by default.
+	// Individual sub-mounts may still apply admin middleware where needed.
 	r.Group(func(rt chi.Router) {
 		rt.Use(s.setupGate)
+		// Require login for everything inside this group; allow OPTIONS
+		// preflight requests through so CORS checks succeed without forcing
+		// an authentication redirect.
+		rt.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method == http.MethodOptions {
+					// Allow preflight to proceed without login
+					next.ServeHTTP(w, r)
+					return
+				}
+				// Use the existing requireLogin wrapper to authenticate other methods
+				s.requireLogin(func(w2 http.ResponseWriter, r2 *http.Request) {
+					next.ServeHTTP(w2, r2)
+				})(w, r)
+			})
+		})
 		s.mountUI(rt)
 		s.mountAPI(rt)
 		s.mountSearch(rt)
 		s.mountSettings(rt)
 		s.mountNotifications(rt)
 	})
+
+	// Public approval token endpoint for one-click approvals from notifications
+	// Keep this public so emailed/ntfy approval links can be used without login.
+	r.Get("/approve/{token}", s.handleApprovalToken)
 
 	return r
 }

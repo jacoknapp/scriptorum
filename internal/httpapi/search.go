@@ -25,7 +25,7 @@ func (s *Server) mountSearch(r chi.Router) {
 	u := &searchUI{tpl: template.Must(template.New("tpl").Funcs(funcMap).ParseFS(tplFS, "web/templates/*.html"))}
 	r.Get("/ui/search", u.handleSearch(s))
 	// Readarr cover proxy (fetch fresh each call). Search UI will link images here
-	r.Get("/ui/readarr-cover", s.serveReadarrCover())
+	r.Get("/ui/readarr-cover", s.requireLogin(s.serveReadarrCover()))
 }
 
 type searchUI struct{ tpl *template.Template }
@@ -309,19 +309,32 @@ func (s *Server) serveReadarrCover() http.HandlerFunc {
 			http.Error(w, "invalid url", http.StatusBadRequest)
 			return
 		}
+		// Restrict this proxy endpoint to configured Readarr hosts only to
+		// avoid acting as an open proxy. Also determine whether we should
+		// skip TLS verification for that configured host.
+		cfg := s.settings.Get()
+		if cfg == nil {
+			http.Error(w, "cover proxy disabled", http.StatusForbidden)
+			return
+		}
+		ebookHost := urlHost(cfg.Readarr.Ebooks.BaseURL)
+		audioHost := urlHost(cfg.Readarr.Audiobooks.BaseURL)
+
+		// Only allow fetching from one of the configured Readarr hosts
+		if !strings.EqualFold(ru.Host, ebookHost) && !strings.EqualFold(ru.Host, audioHost) {
+			http.Error(w, "host not permitted", http.StatusForbidden)
+			return
+		}
+
 		// Build HTTP client; if this URL targets a configured Readarr host that has
 		// InsecureSkipVerify enabled, use a client that skips TLS verification.
 		client := &http.Client{Timeout: 12 * time.Second}
-		cfg := s.settings.Get()
 		wantsInsecure := false
-		remoteHost := ru.Host
-		if cfg != nil {
-			if strings.EqualFold(remoteHost, urlHost(cfg.Readarr.Ebooks.BaseURL)) && cfg.Readarr.Ebooks.InsecureSkipVerify {
-				wantsInsecure = true
-			}
-			if strings.EqualFold(remoteHost, urlHost(cfg.Readarr.Audiobooks.BaseURL)) && cfg.Readarr.Audiobooks.InsecureSkipVerify {
-				wantsInsecure = true
-			}
+		if strings.EqualFold(ru.Host, ebookHost) && cfg.Readarr.Ebooks.InsecureSkipVerify {
+			wantsInsecure = true
+		}
+		if strings.EqualFold(ru.Host, audioHost) && cfg.Readarr.Audiobooks.InsecureSkipVerify {
+			wantsInsecure = true
 		}
 		if wantsInsecure && ru.Scheme == "https" {
 			tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
@@ -347,8 +360,10 @@ func (s *Server) serveReadarrCover() http.HandlerFunc {
 		}
 		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
 		w.Header().Set("Pragma", "no-cache")
-		// stream body
-		_, _ = io.Copy(w, resp.Body)
+		// stream body with a reasonable size limit to avoid resource abuse
+		const maxCoverBytes = int64(5 * 1024 * 1024) // 5 MB
+		lr := io.LimitReader(resp.Body, maxCoverBytes)
+		_, _ = io.Copy(w, lr)
 	}
 }
 
