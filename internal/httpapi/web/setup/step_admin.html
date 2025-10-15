@@ -1,17 +1,17 @@
 <div class="grid gap-4">
-	<h2 class="text-lg font-semibold">Admin</h2>
-	<p class="text-sm text-slate-600">Create a local admin user. OIDC admins are matched by username (preferred_username claim).</p>
+	<h2 class="text-lg font-semibold text-slate-100">Admin</h2>
+	<p class="text-sm text-slate-300">Create a local admin user. OIDC admins are matched by username (preferred_username claim).</p>
 	<form hx-post="/setup/save" hx-target="#admin-result" hx-swap="innerHTML" class="grid gap-2">
-		<fieldset class="border rounded p-3">
-			<legend class="px-1 text-slate-700">Local admin</legend>
-			<label class="block">Username
-				<input name="admin_username" id="admin_username" class="border rounded px-3 py-2 w-full" autocomplete="username">
+		<fieldset class="rounded p-3 bg-night-900/40 border border-white/5">
+			<legend class="px-1 text-slate-200">Local admin</legend>
+			<label class="block text-slate-200">Username
+				<input name="admin_username" id="admin_username" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" autocomplete="username">
 			</label>
-			<label class="block">Password
-				<input name="admin_password" id="admin_password" type="password" class="border rounded px-3 py-2 w-full" autocomplete="new-password">
+			<label class="block text-slate-200">Password
+				<input name="admin_password" id="admin_password" type="password" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" autocomplete="new-password">
 			</label>
 		</fieldset>
-		<button class="px-4 py-2 rounded-lg bg-royal-600 text-white">Save</button>
+		<button class="px-4 py-2 rounded-lg bg-gradient-to-r from-royal-600 to-royal-500 text-white">Save</button>
 	</form>
 	<div id="admin-result"></div>
 </div>

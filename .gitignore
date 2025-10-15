@@ -3,6 +3,7 @@
 
 # Local runtime data
 /data/
+/data-old/
 *.db
 *.sqlite*
 

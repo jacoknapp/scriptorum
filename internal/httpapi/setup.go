@@ -39,7 +39,10 @@ func (s *Server) mountSetup(r chi.Router) {
 type setupUI struct{ tpl *template.Template }
 
 func (u *setupUI) handleSetupHome(s *Server) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) { _ = u.tpl.ExecuteTemplate(w, "wizard.html", nil) }
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_ = u.tpl.ExecuteTemplate(w, "wizard.html", nil)
+	}
 }
 
 func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
@@ -121,13 +124,61 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 
 func (u *setupUI) handleTestOAuth(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.settings.Get().OAuth.Enabled {
-			stepFlags["oauth"] = true
-			w.Header().Set("HX-Trigger", "setup-saved")
-			writeProbeHTML(w, true, "disabled")
+		// Prefer form/query values that may be in the test button's include
+		_ = r.ParseForm()
+		issuer := strings.TrimSpace(r.FormValue("oauth_issuer"))
+		clientID := strings.TrimSpace(r.FormValue("oauth_client_id"))
+		clientSecret := strings.TrimSpace(r.FormValue("oauth_client_secret"))
+		redirect := strings.TrimSpace(r.FormValue("oauth_redirect"))
+		// allow optional overrides
+		authURL := strings.TrimSpace(r.FormValue("oauth_auth_url"))
+		tokenURL := strings.TrimSpace(r.FormValue("oauth_token_url"))
+
+		// Fall back to saved settings when fields are empty
+		cfg := s.settings.Get()
+		if issuer == "" && cfg != nil {
+			issuer = cfg.OAuth.Issuer
+		}
+		if clientID == "" && cfg != nil {
+			clientID = cfg.OAuth.ClientID
+		}
+		if clientSecret == "" && cfg != nil {
+			clientSecret = cfg.OAuth.ClientSecret
+		}
+		if redirect == "" && cfg != nil {
+			redirect = cfg.OAuth.RedirectURL
+		}
+		if authURL == "" && cfg != nil {
+			authURL = cfg.OAuth.AuthURL
+		}
+		if tokenURL == "" && cfg != nil {
+			tokenURL = cfg.OAuth.TokenURL
+		}
+
+		// Quick validation
+		if issuer == "" || clientID == "" || redirect == "" {
+			writeProbeHTML(w, false, "missing issuer/client_id/redirect")
 			return
 		}
+
+		// Build a temporary OIDC manager-like config and attempt discovery
+		// Use a temporary Server copy of settings for discovery via initOIDC-like logic
+		// For simplicity, temporarily update settings in memory only
+		tmpCfg := *s.settings.Get()
+		tmpCfg.OAuth.Issuer = issuer
+		tmpCfg.OAuth.ClientID = clientID
+		tmpCfg.OAuth.ClientSecret = clientSecret
+		tmpCfg.OAuth.RedirectURL = redirect
+		tmpCfg.OAuth.AuthURL = authURL
+		tmpCfg.OAuth.TokenURL = tokenURL
+
+		// Apply to s temporarily for initOIDC to read
+		oldCfg := s.settings.Get()
+		_ = s.settings.Update(&tmpCfg)
 		err := s.initOIDC()
+		// restore original settings
+		_ = s.settings.Update(oldCfg)
+
 		ok := err == nil
 		stepFlags["oauth"] = ok
 		w.Header().Set("HX-Trigger", "setup-saved")
@@ -140,13 +191,32 @@ func (u *setupUI) handleTestOAuth(s *Server) http.HandlerFunc {
 func (u *setupUI) handleTestReadarr(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tag := r.URL.Query().Get("tag")
+		// Prefer values included from the form via hx-include
+		_ = r.ParseForm()
 		var inst providers.ReadarrInstance
 		if tag == "ebooks" {
-			c := s.settings.Get().Readarr.Ebooks
-			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, InsecureSkipVerify: c.InsecureSkipVerify}
+			base := strings.TrimSpace(r.FormValue("ra_ebooks_base"))
+			key := strings.TrimSpace(r.FormValue("ra_ebooks_key"))
+			insecure := r.FormValue("ra_ebooks_insecure") == "on"
+			if base == "" || key == "" {
+				// fall back to saved settings
+				c := s.settings.Get().Readarr.Ebooks
+				base = defaultIf(base, c.BaseURL)
+				key = defaultIf(key, c.APIKey)
+				insecure = insecure || c.InsecureSkipVerify
+			}
+			inst = providers.ReadarrInstance{BaseURL: base, APIKey: key, InsecureSkipVerify: insecure}
 		} else {
-			c := s.settings.Get().Readarr.Audiobooks
-			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, InsecureSkipVerify: c.InsecureSkipVerify}
+			base := strings.TrimSpace(r.FormValue("ra_audio_base"))
+			key := strings.TrimSpace(r.FormValue("ra_audio_key"))
+			insecure := r.FormValue("ra_audio_insecure") == "on"
+			if base == "" || key == "" {
+				c := s.settings.Get().Readarr.Audiobooks
+				base = defaultIf(base, c.BaseURL)
+				key = defaultIf(key, c.APIKey)
+				insecure = insecure || c.InsecureSkipVerify
+			}
+			inst = providers.ReadarrInstance{BaseURL: base, APIKey: key, InsecureSkipVerify: insecure}
 		}
 		ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 		ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
@@ -248,12 +318,16 @@ func (u *setupUI) handleStep(s *Server) http.HandlerFunc {
 		n := chi.URLParam(r, "n")
 		switch n {
 		case "1":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_ = u.tpl.ExecuteTemplate(w, "step_admin.html", nil)
 		case "2":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_ = u.tpl.ExecuteTemplate(w, "step_oauth.html", s.settings.Get())
 		case "3":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_ = u.tpl.ExecuteTemplate(w, "step_readarr.html", s.settings.Get())
 		case "4":
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_ = u.tpl.ExecuteTemplate(w, "step_finish.html", nil)
 		default:
 			http.Error(w, "unknown", 404)

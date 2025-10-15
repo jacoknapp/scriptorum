@@ -1,25 +1,25 @@
 <div class="grid gap-4">
-  <h2 class="text-lg font-semibold">OAuth</h2>
-  <p class="text-sm text-slate-600">Configure OAuth/OIDC authentication. Leave OAuth disabled to use only local username/password authentication.</p>
-  <form hx-post="/setup/save" hx-trigger="submit" hx-target="#oauth-status" hx-swap="outerHTML" class="grid gap-2">
-    <label class="inline-flex items-center gap-2">
+  <h2 class="text-lg font-semibold text-slate-100">OAuth</h2>
+  <p class="text-sm text-slate-300">Configure OAuth/OIDC authentication. Leave OAuth disabled to use only local username/password authentication.</p>
+  <form id="oauth-form" hx-post="/setup/save" hx-trigger="submit" hx-target="#oauth-status" hx-swap="outerHTML" class="grid gap-2">
+    <label class="inline-flex items-center gap-2 text-slate-200">
       <input type="checkbox" name="oauth_enabled" {{if .OAuth.Enabled}}checked{{end}}> Enable OAuth
     </label>
-    <input name="oauth_issuer" placeholder="Issuer URL (e.g. https://auth.example.com/application/o/scriptorum/)" class="border rounded px-3 py-2 w-full" value="{{.OAuth.Issuer}}">
-    <input name="oauth_client_id" placeholder="Client ID" class="border rounded px-3 py-2 w-full" value="{{.OAuth.ClientID}}">
-    <input name="oauth_redirect" placeholder="Redirect URL (e.g. http://localhost:8080/oauth/callback)" class="border rounded px-3 py-2 w-full" value="{{.OAuth.RedirectURL}}">
-    <input name="oauth_auth_url" placeholder="Authorization URL (optional, will use discovery if not provided)" class="border rounded px-3 py-2 w-full" value="{{.OAuth.AuthURL}}">
-    <input name="oauth_token_url" placeholder="Token URL (optional, will use discovery if not provided)" class="border rounded px-3 py-2 w-full" value="{{.OAuth.TokenURL}}">
-    <input name="oauth_scopes" placeholder="Scopes (default: openid,profile,email)" class="border rounded px-3 py-2 w-full" value="{{if .OAuth.Scopes}}{{range $i, $scope := .OAuth.Scopes}}{{if $i}},{{end}}{{$scope}}{{end}}{{end}}">
-    <input name="oauth_username_claim" placeholder="Username Claim (default: preferred_username)" class="border rounded px-3 py-2 w-full" value="{{.OAuth.UsernameClaim}}">
-    <label class="inline-flex items-center gap-2">
+    <input name="oauth_issuer" placeholder="Issuer URL (e.g. https://auth.example.com/application/o/scriptorum/)" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.OAuth.Issuer}}">
+    <input name="oauth_client_id" placeholder="Client ID" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.OAuth.ClientID}}">
+    <input name="oauth_redirect" placeholder="Redirect URL (e.g. http://localhost:8080/oauth/callback)" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.OAuth.RedirectURL}}">
+    <input name="oauth_auth_url" placeholder="Authorization URL (optional, will use discovery if not provided)" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.OAuth.AuthURL}}">
+    <input name="oauth_token_url" placeholder="Token URL (optional, will use discovery if not provided)" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.OAuth.TokenURL}}">
+    <input name="oauth_scopes" placeholder="Scopes (default: openid,profile,email)" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{if .OAuth.Scopes}}{{range $i, $scope := .OAuth.Scopes}}{{if $i}},{{end}}{{$scope}}{{end}}{{end}}">
+    <input name="oauth_username_claim" placeholder="Username Claim (default: preferred_username)" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.OAuth.UsernameClaim}}">
+    <label class="inline-flex items-center gap-2 text-slate-200">
       <input type="checkbox" name="oauth_auto_create" {{if .OAuth.AutoCreateUsers}}checked{{end}}> Auto-create users from OAuth
     </label>
-    <button class="px-4 py-2 rounded-lg bg-royal-600 text-white">Save</button>
+    <button class="px-4 py-2 rounded-lg bg-gradient-to-r from-royal-600 to-royal-500 text-white">Save</button>
   </form>
   <div class="flex items-center gap-2">
-    <button class="px-3 py-1.5 rounded-lg bg-royal-50 text-royal-800 ring-1 ring-royal-200 hover:bg-royal-100" hx-get="/setup/test/oauth" hx-target="#oauth-probe" hx-swap="innerHTML">Test</button>
-    <div id="oauth-probe" class="text-sm text-slate-600">—</div>
+  <button class="px-3 py-1.5 rounded-lg bg-night-900 text-royal-200 ring-1 ring-white/5 hover:bg-night-800" hx-get="/setup/test/oauth" hx-include="#oauth-form" hx-target="#oauth-probe" hx-swap="innerHTML">Test</button>
+    <div id="oauth-probe" class="text-sm text-slate-400">—</div>
   </div>
   <div id="oauth-status"></div>
 </div>

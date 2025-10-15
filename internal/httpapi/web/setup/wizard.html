@@ -1,59 +1,48 @@
-<!doct    <!-- Use a locally built Tailwind CSS file for production: /static/css/tailwind.css -->
-    <link rel="stylesheet" href="/static/css/tailwind.css">
-    <meta name="theme-color" content="#7c3aed" />>
+<!DOCTYPE html>
+<html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Scriptorum • Setup</title>
     <script src="https://unpkg.com/htmx.org@1.9.12"></script>
-  <!-- Use a locally built Tailwind CSS file for production: /static/css/tailwind.css -->
-  <link rel="stylesheet" href="/static/css/tailwind.css">
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              royal: {50: '#f6f3ff', 100: '#ede9fe', 200: '#ddd6fe', 300: '#c4b5fd', 400: '#a78bfa', 500: '#8b5cf6', 600: '#7c3aed', 700: '#6d28d9', 800: '#5b21b6', 900: '#4c1d95'}
-            },
-            boxShadow: { card: '0 8px 24px rgba(93,63,211,.12)' },
-            borderRadius: { xl2: '1.25rem' }
-          }
-        }
-      };
-    </script>
+    <!-- Use a locally built Tailwind CSS file for production: /static/css/tailwind.css -->
+    <link rel="stylesheet" href="/static/css/tailwind.css">
     <meta name="theme-color" content="#7c3aed" />
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
     <link rel="manifest" href="/static/site.webmanifest">
   </head>
-  <body class="bg-surface-50 text-slate-900">
-    <div class="max-w-3xl mx-auto p-6">
+  <body class="min-h-screen bg-night-900 text-slate-100">
+  <div class="min-h-screen bg-gradient-to-br from-night-900 via-surface-100 to-night-800 flex items-center justify-center px-4">
+    <div class="max-w-3xl w-full p-6">
       <div class="flex flex-col items-center mb-4">
         <img src="/static/icon.svg" class="w-20 h-20 mb-2"/>
-        <h1 class="text-2xl font-semibold text-royal-700">Scriptorum — Initial Setup</h1>
-        <p class="text-sm text-slate-600 mt-2 text-center">This guided wizard will walk you through the essential settings to get Scriptorum running. You can save progress on each step.</p>
+        <h1 class="text-2xl font-semibold bg-clip-text text-transparent bg-gradient-to-r from-royal-400 to-royal-300">Scriptorum — Initial Setup</h1>
+        <p class="text-sm text-slate-300 mt-2 text-center">This guided wizard will walk you through the essential settings to get Scriptorum running. You can save progress on each step.</p>
       </div>
 
-      <div id="stepper" class="bg-white rounded-xl2 shadow-card">
-        <div class="p-4 border-b">
+      <div id="stepper" class="bg-night-800/70 rounded-xl2 shadow-card border border-white/5">
+        <div class="p-4 border-b border-white/5">
           <div class="flex items-center justify-between">
-            <div class="text-sm text-slate-500">Configuration</div>
-            <div class="text-sm text-slate-600" id="step-counter" aria-live="polite">Step 1 of 4</div>
+            <div class="text-sm text-slate-400">Configuration</div>
+            <div class="text-sm text-slate-300" id="step-counter" aria-live="polite">Step 1 of 4</div>
           </div>
-          <div class="w-full bg-slate-100 h-2 rounded mt-3 overflow-hidden">
+          <div class="w-full bg-night-900/30 h-2 rounded mt-3 overflow-hidden">
             <div id="step-progress" class="bg-royal-500 h-2 w-1/4"></div>
           </div>
         </div>
 
         <div id="step-body" hx-get="/setup/step/1" hx-trigger="load" class="p-4" aria-live="polite">Loading setup step…</div>
 
-        <div class="flex items-center justify-between border-t p-3">
-          <button id="btn-prev" class="px-3 py-1.5 rounded-lg bg-white text-royal-700 ring-1 ring-royal-200 disabled:opacity-50" disabled>Previous</button>
+        <div class="flex items-center justify-between border-t border-white/5 p-3">
+          <button id="btn-prev" class="px-3 py-1.5 rounded-lg bg-night-900 text-royal-200 ring-1 ring-white/5 disabled:opacity-50" disabled>Previous</button>
           <div class="flex items-center gap-3">
-            <span id="gate-note" class="text-sm text-slate-500" aria-live="polite">Please complete required fields and save this step before continuing.</span>
-            <button id="btn-next" class="px-4 py-2 rounded-lg bg-royal-600 text-white disabled:opacity-50" disabled>Next</button>
+            <span id="gate-note" class="text-sm text-slate-400" aria-live="polite">Please complete required fields and save this step before continuing.</span>
+            <button id="btn-next" class="px-4 py-2 rounded-lg bg-gradient-to-r from-royal-600 to-royal-500 text-white disabled:opacity-50" disabled>Next</button>
           </div>
         </div>
       </div>
     </div>
+  </div>
 
     <script>
       let step = 1, maxStep = 4;
@@ -93,19 +82,251 @@
         refreshGate();
       }
 
-      prev.onclick = () => loadStep(Math.max(1, step - 1));
-      next.onclick = () => {
-        if (step < maxStep) {
-          fetch('/setup/can-advance/' + step).then(r => r.json()).then(j => { if (j.ok) loadStep(step + 1); });
-        } else {
-          fetch('/setup/finish',{method:'POST'}).then(async r => {
-            if (r.ok) location.href = '/login';
-            else alert(await r.text());
-          });
+
+  // Unsaved-change tracking for current step form
+  let dirty = false;
+  let currentForm = null;
+  let pendingNav = null; // store a function to call when user confirms
+  let initialSnapshot = null; // serialized snapshot of the step when last saved/loaded
+
+      function attachFormListener() {
+        // Attach listeners to inputs anywhere inside the step body to mark dirty.
+        // Some steps may not use a <form>, so target all editable controls.
+        dirty = false;
+        currentForm = body.querySelector('form');
+  const elems = Array.from(body.querySelectorAll('input, textarea, select, [contenteditable="true"]'));
+        if (elems.length === 0) return;
+        const markDirty = () => { dirty = true; };
+        elems.forEach(el => {
+          // Clean previous handlers by cloning the node's listeners via removal using a stable handler
+          // (we recreate markDirty each call, so best-effort: remove using same function reference not possible)
+          el.removeEventListener('input', markDirty);
+          el.removeEventListener('change', markDirty);
+          el.addEventListener('input', markDirty);
+          el.addEventListener('change', markDirty);
+          // For contenteditable elements, listen for keyup as well
+          if (el.hasAttribute && el.hasAttribute('contenteditable')) {
+            el.removeEventListener('keyup', markDirty);
+            el.addEventListener('keyup', markDirty);
+          }
+        });
+      }
+
+      // Serialize the current step's editable fields into a canonical string for comparison.
+      function serializeStepState() {
+        const pairs = [];
+        const elems = Array.from(body.querySelectorAll('input, textarea, select, [contenteditable="true"]'));
+        elems.forEach((el, idx) => {
+          let key = el.name || el.id || el.getAttribute('data-field');
+          if (!key) key = `${el.tagName.toLowerCase()}#${idx}`;
+          let val = '';
+          if (el.matches && el.matches('input')) {
+            const type = el.type;
+            if (type === 'checkbox' || type === 'radio') {
+              val = el.checked ? '1' : '0';
+            } else {
+              val = el.value ?? '';
+            }
+          } else if (el.matches && el.matches('select')) {
+            val = Array.from(el.selectedOptions).map(o => o.value).join(',');
+          } else if (el.matches && el.matches('textarea')) {
+            val = el.value ?? '';
+          } else if (el.isContentEditable) {
+            val = el.innerText ?? '';
+          }
+          pairs.push([key, String(val)]);
+        });
+        pairs.sort((a,b) => a[0].localeCompare(b[0]));
+        return JSON.stringify(pairs);
+      }
+
+      // HTMX fires after content swaps; attach listeners when the step body is updated
+      document.addEventListener('htmx:afterSwap', function(evt) {
+        try {
+          if (evt && evt.detail && evt.detail.target && evt.detail.target.id === 'step-body') {
+            attachFormListener();
+            // capture a snapshot of the freshly loaded step as the baseline (clean) state
+            initialSnapshot = serializeStepState();
+          }
+        } catch (e) { /* ignore */ }
+      });
+
+      // Delegated listener on the step body to reliably catch edits anywhere inside it.
+      // This is more robust than attaching per-element listeners which can miss dynamically
+      // swapped content. We keep a single handler reference so we can remove/re-add safely.
+      let _delegatedDirtyHandler = null;
+      function ensureDelegatedListener() {
+        if (_delegatedDirtyHandler) return;
+        _delegatedDirtyHandler = function(e) {
+          const t = e.target;
+          if (!t) return;
+          // Only mark dirty for form controls or contenteditable elements
+          if (t.matches && (t.matches('input, textarea, select') || t.isContentEditable)) {
+            dirty = true;
+          }
+        };
+        body.addEventListener('input', _delegatedDirtyHandler, true);
+        body.addEventListener('change', _delegatedDirtyHandler, true);
+        // keyup helps capture contenteditable changes
+        body.addEventListener('keyup', _delegatedDirtyHandler, true);
+      }
+
+      // Install delegated listener immediately so changes are caught even before first swap
+      ensureDelegatedListener();
+
+      // When server triggers setup-saved (via HX-Trigger), refresh gating and clear dirty flag
+      htmx.on('setup-saved', () => {
+        refreshGate();
+        dirty = false;
+        // update the saved snapshot to the current state after a successful save
+        try { initialSnapshot = serializeStepState(); } catch (e) { /* ignore */ }
+      });
+
+      // Themed modal markup (hidden by default). Tailwind classes used by other templates.
+        const modalHtml = `
+        <style>
+          /* Local modal button active/pressed state for stronger visual feedback */
+          #unsaved-modal .modal-btn:active, #unsaved-modal .modal-btn.active {
+            transform: translateY(1px);
+            box-shadow: 0 1px 0 rgba(0,0,0,0.5) inset;
+            opacity: 0.95;
+          }
+          #unsaved-modal .modal-btn:focus { outline: 2px solid rgba(124,58,237,0.6); outline-offset: 2px; }
+        </style>
+        <div id="unsaved-modal" style="display:none;pointer-events:none;" aria-hidden="true" class="fixed inset-0 z-50 items-center justify-center px-4 py-6">
+          <!-- Backdrop dims slightly; keep opacity/density constant as requested -->
+          <div class="fixed inset-0 backdrop-blur-sm" data-modal-backdrop style="pointer-events:none;background-color:rgba(2,6,23,0.45);"></div>
+  <div role="dialog" aria-modal="true" aria-labelledby="unsaved-title" class="border border-gray-700 rounded-lg w-full p-6 shadow-lg" style="pointer-events:auto;max-width:40rem;min-width:20rem;margin:0 1rem;background-color:#111827;z-index:1;">
+          <h3 id="unsaved-title" class="text-lg font-semibold text-white">You have unsaved changes</h3>
+          <p class="mt-2 text-sm text-gray-300">If you continue, your unsaved changes on this step will be lost. Do you want to continue without saving?</p>
+          <div class="mt-4 flex justify-end gap-2">
+            <button id="unsaved-cancel" class="modal-btn px-4 py-2 rounded bg-gray-800 text-gray-200 border border-gray-700 hover:bg-gray-700">Cancel</button>
+            <button id="unsaved-confirm" class="modal-btn px-4 py-2 rounded bg-rose-600 text-white hover:bg-rose-500">Continue</button>
+          </div>
+        </div>
+      </div>`;
+
+      // Insert modal into the DOM once
+      if (!document.getElementById('unsaved-modal')) {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = modalHtml.trim();
+        const styleEl = wrapper.querySelector('style');
+        const modalEl = wrapper.querySelector('#unsaved-modal');
+        if (styleEl && !document.head.querySelector('#unsaved-modal-styles')) {
+          styleEl.id = 'unsaved-modal-styles';
+          document.head.appendChild(styleEl);
+        } else if (styleEl) {
+          styleEl.remove();
         }
+        if (modalEl) {
+          document.body.appendChild(modalEl);
+        }
+      }
+
+      const unsavedModal = document.getElementById('unsaved-modal');
+      const unsavedCancel = unsavedModal ? unsavedModal.querySelector('#unsaved-cancel') : null;
+      const unsavedConfirm = unsavedModal ? unsavedModal.querySelector('#unsaved-confirm') : null;
+
+      // add visual pressed/active cues: toggle .active on mousedown and remove on mouseup/blur
+      if (unsavedCancel) {
+        unsavedCancel.addEventListener('mousedown', (e) => { unsavedCancel.classList.add('active'); });
+        unsavedCancel.addEventListener('mouseup', (e) => { unsavedCancel.classList.remove('active'); });
+        unsavedCancel.addEventListener('mouseleave', (e) => { unsavedCancel.classList.remove('active'); });
+        unsavedCancel.addEventListener('blur', (e) => { unsavedCancel.classList.remove('active'); });
+      }
+      if (unsavedConfirm) {
+        unsavedConfirm.addEventListener('mousedown', (e) => { unsavedConfirm.classList.add('active'); });
+        unsavedConfirm.addEventListener('mouseup', (e) => { unsavedConfirm.classList.remove('active'); });
+        unsavedConfirm.addEventListener('mouseleave', (e) => { unsavedConfirm.classList.remove('active'); });
+        unsavedConfirm.addEventListener('blur', (e) => { unsavedConfirm.classList.remove('active'); });
+      }
+
+
+      // find the backdrop element (may be null until modal inserted)
+      function _getBackdrop() {
+        return unsavedModal ? unsavedModal.querySelector('[data-modal-backdrop]') : null;
+      }
+
+      function openUnsavedModal(onConfirm) {
+        if (!unsavedModal) return; // safety: modal not initialized
+        pendingNav = onConfirm;
+        // Use inline display style so we don't depend on generated Tailwind utilities
+        unsavedModal.style.display = 'flex';
+        unsavedModal.style.pointerEvents = 'auto';
+        unsavedModal.setAttribute('aria-hidden','false');
+        // Bring modal to front in case Tailwind utilities aren't applied
+        unsavedModal.style.zIndex = '99999';
+        const bd = _getBackdrop(); if (bd) bd.style.pointerEvents = 'auto';
+        // simple focus management
+        try { unsavedConfirm.focus(); } catch (e) {}
+        // handle Escape to cancel
+        const esc = (e) => { if (e.key === 'Escape') { closeUnsavedModal(); } };
+        unsavedModal._esc = esc;
+        document.addEventListener('keydown', esc);
+      }
+
+      function closeUnsavedModal() {
+        if (!unsavedModal) return; // safety: modal not initialized
+        unsavedModal.style.display = 'none';
+        unsavedModal.style.pointerEvents = 'none';
+        unsavedModal.setAttribute('aria-hidden','true');
+        // reset z-index so hidden modal cannot intercept
+        unsavedModal.style.zIndex = '';
+        const bd = _getBackdrop(); if (bd) bd.style.pointerEvents = 'none';
+        pendingNav = null;
+        if (unsavedModal._esc) {
+          document.removeEventListener('keydown', unsavedModal._esc);
+          delete unsavedModal._esc;
+        }
+      }
+
+      // Clicking on the backdrop should cancel/close the modal
+      // attach backdrop listener safely (query at runtime)
+      const _bd = _getBackdrop(); if (_bd) _bd.addEventListener('click', closeUnsavedModal);
+
+      if (unsavedCancel) unsavedCancel.addEventListener('click', () => { closeUnsavedModal(); });
+      if (unsavedConfirm) unsavedConfirm.addEventListener('click', () => { if (pendingNav) pendingNav(); closeUnsavedModal(); });
+
+      function handleUnsavedNavigation(action) {
+        // Step 1 (user creation) intentionally skips the unsaved prompt so users
+        // aren’t interrupted while experimenting with credentials.
+        if (step === 1) {
+          return false;
+        }
+        const currentSnapshot = serializeStepState();
+        const hasSnapshotChanges = initialSnapshot !== null && currentSnapshot !== initialSnapshot;
+        const hasUnsavedChanges = hasSnapshotChanges || dirty;
+        if (hasUnsavedChanges) {
+          if (!unsavedModal) {
+            console.warn('Unsaved modal is missing; changes may be lost');
+            return false;
+          }
+          openUnsavedModal(action);
+          return true;
+        }
+        return false;
+      }
+
+      prev.onclick = () => {
+        const doNav = () => loadStep(Math.max(1, step - 1));
+        if (handleUnsavedNavigation(doNav)) return;
+        doNav();
       };
 
-      htmx.on('setup-saved', () => refreshGate());
+      next.onclick = () => {
+        const doNext = () => {
+          if (step < maxStep) {
+            fetch('/setup/can-advance/' + step).then(r => r.json()).then(j => { if (j.ok) loadStep(step + 1); });
+          } else {
+            fetch('/setup/finish',{method:'POST'}).then(async r => {
+              if (r.ok) location.href = '/login';
+              else alert(await r.text());
+            });
+          }
+        };
+        if (handleUnsavedNavigation(doNext)) return;
+        doNext();
+      };
 
       // initialize UI
       updateProgress();
