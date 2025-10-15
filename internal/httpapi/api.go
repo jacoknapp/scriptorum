@@ -31,6 +31,7 @@ func (s *Server) mountAPI(r chi.Router) {
 		rr.Post("/", s.requireLogin(s.apiCreateRequest))
 		rr.Get("/", s.requireLogin(s.apiListRequests))
 		rr.Post("/{id}/approve", s.requireAdmin(s.apiApproveRequest))
+		rr.Post("/{id}/retry", s.requireAdmin(s.apiRetryRequest))
 		rr.Post("/{id}/hydrate", s.requireAdmin(s.apiHydrateRequest))
 		rr.Post("/{id}/decline", s.requireAdmin(s.apiDeclineRequest))
 		rr.Delete("/{id}", s.requireAdmin(s.apiDeleteRequest))
@@ -743,6 +744,60 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "processing"}, 200)
 
 	// Process approval asynchronously
+	go s.processAsyncApproval(id, req, inst, username)
+}
+
+// apiRetryRequest retries processing of an already-approved request by
+// re-submitting the stored selection payload to Readarr. Only allowed for
+// requests that are in the "approved" state and that have a stored
+// selection payload.
+func (s *Server) apiRetryRequest(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+
+	req, err := s.db.GetRequest(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+
+	// Only allow retry for requests that have been approved or previously queued
+	// (some approvals move to 'queued' after being sent to Readarr). Match the
+	// UI which shows the Retry action for both 'approved' and 'queued'.
+	if req.Status != "approved" && req.Status != "queued" {
+		http.Error(w, "can only retry approved or queued requests", 400)
+		return
+	}
+
+	// Must have a stored selection payload
+	if len(req.ReadarrReq) == 0 {
+		http.Error(w, "request has no stored selection payload", 400)
+		return
+	}
+
+	// Pick Readarr instance based on format
+	var inst providers.ReadarrInstance
+	if req.Format == "audiobook" {
+		c := s.settings.Get().Readarr.Audiobooks
+		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
+	} else {
+		c := s.settings.Get().Readarr.Ebooks
+		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
+	}
+
+	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+		http.Error(w, "readarr not configured", 400)
+		return
+	}
+
+	username := r.Context().Value(ctxUser).(*session).Username
+	// Update status to processing so UI reflects action immediately
+	_ = s.db.UpdateRequestStatus(r.Context(), id, "processing", "retrying approval", username, nil, nil)
+
+	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
+	writeJSON(w, map[string]string{"status": "processing"}, 200)
+
+	// Re-run async approval using the stored request payload
 	go s.processAsyncApproval(id, req, inst, username)
 }
 

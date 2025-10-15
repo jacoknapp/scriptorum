@@ -557,6 +557,7 @@
 				<div class="flex flex-wrap gap-2 justify-end">
 					<button id="book-modal-approve" class="hidden px-3 py-1.5 text-xs rounded bg-royal-600 text-white hover:bg-royal-500">Approve</button>
 					<button id="book-modal-attach" class="hidden px-3 py-1.5 text-xs rounded bg-amber-600 text-white hover:bg-amber-500">Attach</button>
+					<button id="book-modal-retry" class="hidden px-3 py-1.5 text-xs rounded bg-amber-600 text-white hover:bg-amber-500">Retry</button>
 					<button id="book-modal-decline" class="hidden px-3 py-1.5 text-xs rounded bg-orange-600 text-white hover:bg-orange-500">Decline</button>
 					<button id="book-modal-delete" class="hidden px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500">Delete</button>
 				</div>
@@ -781,6 +782,15 @@
 									handleRequestAction('delete', requestId); 
 								}
 							};
+						}
+						var retryBtn = document.getElementById('book-modal-retry');
+						if (retryBtn) {
+							if (requestStatus === 'approved' || requestStatus === 'queued') {
+								retryBtn.classList.remove('hidden');
+								retryBtn.onclick = function() { handleRequestAction('retry', requestId); };
+							} else {
+								retryBtn.classList.add('hidden');
+							}
 						}
 					} else {
 						actionsSection.classList.add('hidden');
@@ -1030,6 +1040,9 @@
 			switch (action) {
 				case 'approve':
 					apiUrl = '/api/v1/requests/' + requestId + '/approve';
+					break;
+				case 'retry':
+					apiUrl = '/api/v1/requests/' + requestId + '/retry';
 					break;
 				case 'decline':
 					apiUrl = '/api/v1/requests/' + requestId + '/decline';

@@ -56,6 +56,15 @@
 						<button class="px-2 py-1 text-xs rounded bg-orange-600 text-white hover:bg-orange-500 whitespace-nowrap">Decline</button>
 					</form>
 					{{ end }}
+					{{ if eq .Status "approved" }}
+					<form hx-post="/api/v1/requests/{{ .ID }}/retry" hx-target="this" hx-swap="none">
+						<button class="px-2 py-1 text-xs rounded bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" title="Retry processing of this approved request">Retry</button>
+					</form>
+					{{ else if eq .Status "queued" }}
+					<form hx-post="/api/v1/requests/{{ .ID }}/retry" hx-target="this" hx-swap="none">
+						<button class="px-2 py-1 text-xs rounded bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" title="Retry processing of this approved request">Retry</button>
+					</form>
+					{{ end }}
 					<form hx-delete="/api/v1/requests/{{ .ID }}" hx-target="closest tr" hx-swap="delete"
 						  hx-confirm="Are you sure you want to permanently delete this request?">
 						<button class="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-500 whitespace-nowrap">Delete</button>
@@ -119,6 +128,11 @@
 			<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest div.rounded-xl" hx-swap="none">
 				<button class="px-3 py-1.5 rounded bg-orange-600 text-white hover:bg-orange-500">Decline</button>
 			</form>
+			{{ if eq .Status "approved" }}
+			<form hx-post="/api/v1/requests/{{ .ID }}/retry" hx-target="this" hx-swap="none">
+				<button class="px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-500">Retry</button>
+			</form>
+			{{ end }}
 			{{ end }}
 			<form hx-delete="/api/v1/requests/{{ .ID }}" hx-target="closest div.rounded-xl" hx-swap="delete"
 				  hx-confirm="Are you sure you want to permanently delete this request?">
