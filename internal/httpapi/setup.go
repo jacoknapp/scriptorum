@@ -49,6 +49,8 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		cur := *s.settings.Get()
+		// General settings
+		cur.ServerURL = strings.TrimSpace(r.FormValue("server_url"))
 		// Ensure we have a config salt for password hashing
 		if strings.TrimSpace(cur.Auth.Salt) == "" {
 			cur.Auth.Salt = genSalt()
@@ -319,7 +321,7 @@ func (u *setupUI) handleStep(s *Server) http.HandlerFunc {
 		switch n {
 		case "1":
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_ = u.tpl.ExecuteTemplate(w, "step_admin.html", nil)
+			_ = u.tpl.ExecuteTemplate(w, "step_admin.html", s.settings.Get())
 		case "2":
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_ = u.tpl.ExecuteTemplate(w, "step_oauth.html", s.settings.Get())

@@ -67,7 +67,8 @@ func defaultConfig(dbPath string) *config.Config {
 	} else {
 		c.Auth.Salt = "default_salt"
 	}
-	c.Admins.Usernames = []string{"admin"}
+	// Do not pre-populate a default admin. Admins will be created during the setup wizard.
+	c.Admins.Usernames = []string{}
 
 	c.OAuth.Enabled = false
 	c.OAuth.Issuer = ""

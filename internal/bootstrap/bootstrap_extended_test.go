@@ -102,8 +102,9 @@ func TestBootstrapEssentialSections(t *testing.T) {
 		t.Error("Database path configuration is missing")
 	}
 
-	if len(cfg.Admins.Usernames) == 0 {
-		t.Error("Admin usernames configuration is missing")
+	// No default admins should exist prior to setup; setup flow will create them
+	if len(cfg.Admins.Usernames) != 0 {
+		t.Error("Expected no default admin usernames before setup")
 	}
 }
 

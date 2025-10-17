@@ -1,7 +1,13 @@
 <div class="grid gap-4">
 	<h2 class="text-lg font-semibold text-slate-100">Admin</h2>
 	<p class="text-sm text-slate-300">Create a local admin user. OIDC admins are matched by username (preferred_username claim).</p>
-	<form hx-post="/setup/save" hx-target="#admin-result" hx-swap="innerHTML" class="grid gap-2">
+	<form hx-post="/setup/save" hx-target="#admin-result" hx-swap="innerHTML" class="grid gap-3">
+		<fieldset class="rounded p-3 bg-night-900/40 border border-white/5">
+			<legend class="px-1 text-slate-200">General</legend>
+			<label class="block text-slate-200">Server URL
+				<input name="server_url" id="server_url" placeholder="http://example.com:8080" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.ServerURL}}">
+			</label>
+		</fieldset>
 		<fieldset class="rounded p-3 bg-night-900/40 border border-white/5">
 			<legend class="px-1 text-slate-200">Local admin</legend>
 			<label class="block text-slate-200">Username
