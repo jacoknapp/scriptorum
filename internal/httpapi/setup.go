@@ -106,6 +106,8 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		cur.Readarr.Audiobooks.APIKey = r.FormValue("ra_audio_key")
 		cur.Readarr.Audiobooks.InsecureSkipVerify = r.FormValue("ra_audio_insecure") == "on"
 		_ = s.settings.Update(&cur)
+		// Reinitialize OIDC with the (potentially) updated OAuth settings so /oauth/login works immediately
+		_ = s.initOIDC()
 
 		// Admin step satisfied if at least one local admin user exists
 		if n, err := s.db.CountAdmins(r.Context()); err == nil && n > 0 {
@@ -274,6 +276,8 @@ func (u *setupUI) handleSetupFinish(s *Server) http.HandlerFunc {
 		// Readarr instances are optional - no validation required
 		cur.Setup.Completed = true
 		_ = s.settings.Update(&cur)
+		// Ensure OIDC is (re)initialized with final settings after setup completes
+		_ = s.initOIDC()
 		http.Redirect(w, r, "/login", http.StatusFound)
 	}
 }
