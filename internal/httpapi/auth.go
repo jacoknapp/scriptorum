@@ -26,6 +26,7 @@ import (
 
 type oidcMgr struct {
 	enabled      bool
+	operational  bool
 	issuer       string
 	clientID     string
 	clientSecret string
@@ -42,7 +43,8 @@ type oidcMgr struct {
 func (s *Server) initOIDC() error {
 	cfg := s.settings.Get()
 	s.oidc = &oidcMgr{
-		enabled:      cfg.OAuth.Enabled,
+		enabled:      cfg.OAuth.Enabled, // reflects configured intent
+		operational:  false,             // set true after successful discovery/init
 		issuer:       cfg.OAuth.Issuer,
 		clientID:     cfg.OAuth.ClientID,
 		clientSecret: cfg.OAuth.ClientSecret,
@@ -53,15 +55,18 @@ func (s *Server) initOIDC() error {
 		cookieSecret: cfg.Auth.Salt,
 	}
 	if !s.oidc.enabled {
+		// Configured off; leave operational=false and return cleanly
 		return nil
 	}
 
 	// Normalize issuer URL to handle common misconfigurations
 	issuer := strings.TrimSpace(s.oidc.issuer)
 	if issuer == "" {
-		fmt.Printf("OIDC disabled: missing issuer in config.\n")
-		s.oidc.enabled = false
-		return nil
+		// Keep enabled reflecting config but mark non-operational and return an error
+		if s.cfg.Debug {
+			fmt.Printf("OIDC init: missing issuer in config; leaving non-operational.\n")
+		}
+		return fmt.Errorf("missing issuer in oauth config")
 	}
 
 	// Remove trailing slash from issuer to avoid issuer mismatch errors
@@ -70,9 +75,10 @@ func (s *Server) initOIDC() error {
 
 	// Basic validation
 	if strings.TrimSpace(s.oidc.clientID) == "" || strings.TrimSpace(s.oidc.redirectURL) == "" {
-		fmt.Printf("OIDC disabled: missing client_id/redirect_url in config.\n")
-		s.oidc.enabled = false
-		return nil
+		if s.cfg.Debug {
+			fmt.Printf("OIDC init: missing client_id/redirect_url; leaving non-operational.\n")
+		}
+		return fmt.Errorf("missing client_id/redirect_url in oauth config")
 	}
 	// Use a discovery client with sane timeouts
 	discCtx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Timeout: 10 * time.Second})
@@ -97,9 +103,10 @@ func (s *Server) initOIDC() error {
 		}
 
 		if err != nil {
-			fmt.Printf("OIDC disabled: discovery failed for issuer %s: %v\n", issuer, err)
-			s.oidc.enabled = false
-			return nil
+			if s.cfg.Debug {
+				fmt.Printf("OIDC init: discovery failed for issuer %s: %v\n", issuer, err)
+			}
+			return fmt.Errorf("oidc discovery failed: %w", err)
 		}
 	}
 	s.oidc.provider = p
@@ -163,6 +170,8 @@ func (s *Server) initOIDC() error {
 		fmt.Printf("OIDC provider endpoints: auth=%s token=%s\n", ep.AuthURL, ep.TokenURL)
 		fmt.Printf("OAuth redirect URL configured: %s\n", s.oidc.redirectURL)
 	}
+	// Success
+	s.oidc.operational = true
 	return nil
 }
 
@@ -285,7 +294,7 @@ func (s *Server) handleWelcome(tpl *template.Template) http.HandlerFunc {
 		if cfg != nil {
 			oauthConfigured = cfg.OAuth.Enabled
 		}
-		oauthOperational := s.oidc != nil && s.oidc.enabled
+		oauthOperational := s.oidc != nil && s.oidc.operational
 
 		data := map[string]interface{}{
 			// reflect the configured selection so the UI hides local login when
@@ -314,9 +323,19 @@ func (s *Server) handleWelcome(tpl *template.Template) http.HandlerFunc {
 
 // handleOAuthLogin initiates OAuth login flow
 func (s *Server) handleOAuthLogin(w http.ResponseWriter, r *http.Request) {
-	if !s.oidc.enabled {
-		// OAuth not enabled, redirect to welcome page
-		http.Redirect(w, r, "/login?error=OAuth+not+enabled", http.StatusFound)
+	cfg := s.settings.Get()
+	if cfg == nil || !cfg.OAuth.Enabled {
+		// OAuth disabled by configuration
+		http.Redirect(w, r, "/login?error=OAuth+disabled+by+configuration", http.StatusFound)
+		return
+	}
+
+	// Ensure OIDC is operational; try a lazy init on demand
+	if s.oidc == nil || !s.oidc.operational {
+		_ = s.initOIDC()
+	}
+	if s.oidc == nil || !s.oidc.operational {
+		http.Redirect(w, r, "/login?error=OAuth+temporarily+unavailable", http.StatusFound)
 		return
 	}
 
@@ -389,9 +408,13 @@ func generatePKCE() (verifier string, challenge string, err error) {
 }
 
 func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
-	if !s.oidc.enabled {
-		http.Redirect(w, r, "/", http.StatusFound)
-		return
+	// If not operational, attempt to initialize before processing callback
+	if s.oidc == nil || !s.oidc.operational {
+		_ = s.initOIDC()
+		if s.oidc == nil || !s.oidc.operational {
+			http.Redirect(w, r, "/login?error=OAuth+temporarily+unavailable", http.StatusFound)
+			return
+		}
 	}
 	code := r.URL.Query().Get("code")
 	// Validate state to prevent CSRF
