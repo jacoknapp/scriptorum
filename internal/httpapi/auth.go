@@ -335,7 +335,11 @@ func (s *Server) handleOAuthLogin(w http.ResponseWriter, r *http.Request) {
 		_ = s.initOIDC()
 	}
 	if s.oidc == nil || !s.oidc.operational {
-		http.Redirect(w, r, "/login?error=OAuth+temporarily+unavailable", http.StatusFound)
+		// If OIDC is not operational after a lazy init, don't surface an explicit error.
+		// Redirect back to the login page without an error query so the UI does not show
+		// an OAuth-unavailable message. This allows the UI button to remain clickable
+		// and avoids exposing an error string.
+		http.Redirect(w, r, "/login", http.StatusFound)
 		return
 	}
 
