@@ -1,5 +1,7 @@
 # Scriptorum — Book request manager
 
+![Scriptorum logo](internal/httpapi/web/static/icon.svg)
+
 [![Go 1.25+](https://img.shields.io/badge/go-1.25+-blue)](https://go.dev)
 [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
@@ -118,6 +120,9 @@ $env:SCRIPTORUM_DB_PATH = "C:\data\scriptorum.db"
 ---
 
 ## Configuration basics
+
+- **DON'T PANIC — the setup wizard writes this for you.** On first launch Scriptorum generates `data/scriptorum.yaml` with sensible defaults, so you only need to edit it if you want to tweak things later.
+- **Everything works out of the box.** Skip straight to running the container if you just want the defaults; the wizard will prompt for anything essential.
 
 - Example config: `scriptorum.example.yaml` (repo root). Copy it to `data/scriptorum.yaml` and edit.
 - Key fields you’ll likely touch:
