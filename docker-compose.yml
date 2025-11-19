@@ -1,22 +1,11 @@
 version: "3.9"
 services:
   scriptorum:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: scriptorum:dev
+    image: jacoknapp/scriptorum:latest
     restart: unless-stopped
-    environment:
-      SCRIPTORUM_CONFIG_PATH: /data/scriptorum.yaml
     volumes:
       - data:/data
     ports:
       - "8491:8491"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8491/healthz || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 volumes:
   data:
