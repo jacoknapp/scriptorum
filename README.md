@@ -1,6 +1,6 @@
 # Scriptorum — Book request manager
 
-![Scriptorum logo](internal/httpapi/web/static/icon.svg)
+![Scriptorum banner](assets/banner.svg)
 
 [![Go 1.25+](https://img.shields.io/badge/go-1.25+-blue)](https://go.dev)
 [![License: GPLv3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
