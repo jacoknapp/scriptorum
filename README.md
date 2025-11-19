@@ -29,7 +29,7 @@ All of these are implemented in this repo today.
 
 1. Users search for titles, pick a result, and submit a request (kind = ebook or audiobook).
 2. Requests land on the admin queue where bulk or single approvals push books into the matching Readarr instance using pre-set profiles/root folders/tags.
-3. Readarr handles the download/monitoring; Scriptorum tracks request status and shows it back to the requester.
+3. Readarr handles the monitoring; Scriptorum tracks request status and shows it back to the requester.
 4. Notifications (optional) ping admins or requesters via ntfy/email/Discord with one-click approval links.
 
 The UI sits on top of a single SQLite database (`data/scriptorum.db`) and a YAML config (`data/scriptorum.yaml`).
@@ -121,7 +121,6 @@ $env:SCRIPTORUM_DB_PATH = "C:\data\scriptorum.db"
 
 ## Configuration basics
 
-- **DON'T PANIC — the setup wizard writes this for you.** On first launch Scriptorum generates `data/scriptorum.yaml` with sensible defaults, so you only need to edit it if you want to tweak things later.
 - **Everything works out of the box.** Skip straight to running the container if you just want the defaults; the wizard will prompt for anything essential.
 
 - Example config: `scriptorum.example.yaml` (repo root). Copy it to `data/scriptorum.yaml` and edit.
