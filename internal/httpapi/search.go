@@ -52,6 +52,8 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			ProviderPayload          string // generic payload (when only one provider exists)
 			ProviderEbookPayload     string // exact rendition for ebooks
 			ProviderAudiobookPayload string // exact rendition for audiobooks
+			EbookState               string
+			AudiobookState           string
 		}
 		items := []SearchItem{}
 		// Index by dedupe key to merge ebook/audiobook payloads for the same work
@@ -288,6 +290,8 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			if items[i].ProviderPayload == "" {
 				items[i].ProviderPayload = mergeProviderPayloads(items[i].ProviderEbookPayload, items[i].ProviderAudiobookPayload)
 			}
+			items[i].EbookState = s.loadCatalogState("ebook", items[i].Title, items[i].Authors, items[i].ISBN10, items[i].ISBN13, items[i].ASIN, items[i].ProviderEbookPayload)
+			items[i].AudiobookState = s.loadCatalogState("audiobook", items[i].Title, items[i].Authors, items[i].ISBN10, items[i].ISBN13, items[i].ASIN, items[i].ProviderAudiobookPayload)
 		}
 		_ = u.tpl.ExecuteTemplate(w, "search_partial.html", data)
 	}

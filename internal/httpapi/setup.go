@@ -41,7 +41,8 @@ type setupUI struct{ tpl *template.Template }
 func (u *setupUI) handleSetupHome(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		_ = u.tpl.ExecuteTemplate(w, "wizard.html", nil)
+		data := map[string]any{"CSRFToken": s.getCSRFToken(r)}
+		_ = u.tpl.ExecuteTemplate(w, "wizard.html", data)
 	}
 }
 

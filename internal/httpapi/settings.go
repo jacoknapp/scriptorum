@@ -19,6 +19,7 @@ func (s *Server) mountSettings(r chi.Router) {
 		rt.Get("/settings", u.handleSettings(s))
 		rt.Post("/settings/save", u.handleSettingsSave(s))
 		rt.Get("/api/readarr/profiles", s.apiReadarrProfiles())
+		rt.Post("/api/readarr/sync", s.apiReadarrSync())
 		// Debug endpoint for admins to inspect runtime Readarr settings (API keys redacted)
 		rt.Get("/api/readarr/debug", s.apiReadarrDebug())
 	})

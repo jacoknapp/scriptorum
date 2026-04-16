@@ -35,6 +35,9 @@
 					{{ end }}
 					<span>{{ if eq .Status "queued" }}requested{{ else if eq .Status "processing" }}approving...{{ else }}{{ .Status }}{{ end }}</span>
 				</div>
+				{{ if .ExternalStatus }}
+				<div class="text-xs text-emerald-300 mt-1">Readarr: {{ .ExternalStatus }}</div>
+				{{ end }}
 				{{ if .StatusReason }}
 				<div class="text-xs text-slate-400 max-w-xs truncate" title="{{ .StatusReason }}">{{ .StatusReason }}</div>
 				{{ end }}
@@ -109,6 +112,9 @@
 				{{ end }}
 				{{ if eq .Status "queued" }}requested{{ else if eq .Status "processing" }}approving...{{ else }}{{ .Status }}{{ end }}
 			</span>
+			{{ if .ExternalStatus }}
+			<span class="px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30">Readarr: {{ .ExternalStatus }}</span>
+			{{ end }}
 		</div>
 		{{ if .StatusReason }}
 		<div class="mt-1 text-xs text-slate-400">{{ .StatusReason }}</div>

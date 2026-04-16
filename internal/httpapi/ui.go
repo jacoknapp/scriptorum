@@ -25,7 +25,7 @@ func (s *Server) mountUI(r chi.Router) {
 				mine = s.userEmail(r)
 			}
 			items, _ := s.db.ListRequests(r.Context(), mine, 200)
-			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": false}
+			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": false, "CSRFToken": s.getCSRFToken(r)}
 			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
 		}))
 		rt.Get("/dashboard", s.requireLogin(u.handleDashboard(s)))
@@ -37,7 +37,7 @@ func (s *Server) mountUI(r chi.Router) {
 				mine = s.userEmail(r)
 			}
 			items, _ := s.db.ListRequests(r.Context(), mine, 200)
-			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": false}
+			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": false, "CSRFToken": s.getCSRFToken(r)}
 			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
 		}))
 		rt.HandleFunc("/users", s.requireAdmin(u.handleUsers(s)))
@@ -102,7 +102,7 @@ func (u *ui) handleHome(s *Server) http.HandlerFunc {
 		if ses, ok := r.Context().Value(ctxUser).(*session); ok && ses != nil {
 			name, isAdmin = ses.Name, ses.Admin
 		}
-		data := map[string]any{"UserName": name, "IsAdmin": isAdmin}
+		data := map[string]any{"UserName": name, "IsAdmin": isAdmin, "CSRFToken": s.getCSRFToken(r)}
 		_ = u.tpl.ExecuteTemplate(w, "home.html", data)
 	}
 }
@@ -110,7 +110,7 @@ func (u *ui) handleHome(s *Server) http.HandlerFunc {
 func (u *ui) handleDashboard(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ses := r.Context().Value(ctxUser).(*session)
-		data := map[string]any{"UserName": ses.Name, "IsAdmin": ses.Admin}
+		data := map[string]any{"UserName": ses.Name, "IsAdmin": ses.Admin, "CSRFToken": s.getCSRFToken(r)}
 		_ = u.tpl.ExecuteTemplate(w, "dashboard.html", data)
 	}
 }

@@ -22,9 +22,18 @@ CREATE TABLE IF NOT EXISTS requests (
   status_reason TEXT,
   approver_email TEXT,
   approved_at TEXT,
+  external_status TEXT,
+  matched_readarr_id INTEGER,
   readarr_request TEXT,
   readarr_response TEXT
 );`); err != nil {
+		return err
+	}
+
+	if err := d.ensureRequestColumn(ctx, "external_status", "TEXT"); err != nil {
+		return err
+	}
+	if err := d.ensureRequestColumn(ctx, "matched_readarr_id", "INTEGER"); err != nil {
 		return err
 	}
 
@@ -83,11 +92,19 @@ CREATE TABLE IF NOT EXISTS readarr_authors (
 	if err := d.Exec(ctx, `
 CREATE TABLE IF NOT EXISTS readarr_books (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_kind TEXT NOT NULL DEFAULT '',
+  readarr_id INTEGER NOT NULL DEFAULT 0,
   title TEXT NOT NULL,
+  author_name TEXT,
   author_id INTEGER,
   isbn13 TEXT,
   isbn10 TEXT,
   asin TEXT,
+  foreign_book_id TEXT,
+  foreign_edition_id TEXT,
+  monitored INTEGER NOT NULL DEFAULT 0,
+  grabbed INTEGER NOT NULL DEFAULT 0,
+  book_file_count INTEGER NOT NULL DEFAULT 0,
   readarr_data TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -96,13 +113,50 @@ CREATE TABLE IF NOT EXISTS readarr_books (
 		return err
 	}
 
+	if err := d.ensureReadarrBooksColumn(ctx, "source_kind", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := d.ensureReadarrBooksColumn(ctx, "readarr_id", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := d.ensureReadarrBooksColumn(ctx, "author_name", "TEXT"); err != nil {
+		return err
+	}
+	if err := d.ensureReadarrBooksColumn(ctx, "foreign_book_id", "TEXT"); err != nil {
+		return err
+	}
+	if err := d.ensureReadarrBooksColumn(ctx, "foreign_edition_id", "TEXT"); err != nil {
+		return err
+	}
+	if err := d.ensureReadarrBooksColumn(ctx, "monitored", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := d.ensureReadarrBooksColumn(ctx, "grabbed", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := d.ensureReadarrBooksColumn(ctx, "book_file_count", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // ensureUserColumn ensures a column exists on the users table; if missing, it adds it.
 func (d *DB) ensureUserColumn(ctx context.Context, name, colDef string) error {
+	return d.ensureTableColumn(ctx, "users", name, colDef)
+}
+
+func (d *DB) ensureRequestColumn(ctx context.Context, name, colDef string) error {
+	return d.ensureTableColumn(ctx, "requests", name, colDef)
+}
+
+func (d *DB) ensureReadarrBooksColumn(ctx context.Context, name, colDef string) error {
+	return d.ensureTableColumn(ctx, "readarr_books", name, colDef)
+}
+
+func (d *DB) ensureTableColumn(ctx context.Context, table, name, colDef string) error {
 	// Check existing columns via PRAGMA table_info(users)
-	rows, err := d.sql.QueryContext(ctx, "PRAGMA table_info(users)")
+	rows, err := d.sql.QueryContext(ctx, "PRAGMA table_info("+table+")")
 	if err != nil {
 		return err
 	}
@@ -124,6 +178,6 @@ func (d *DB) ensureUserColumn(ctx context.Context, name, colDef string) error {
 		return nil
 	}
 	// Add the column
-	stmt := fmt.Sprintf("ALTER TABLE users ADD COLUMN %s %s", name, colDef)
+	stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, name, colDef)
 	return d.Exec(ctx, stmt)
 }

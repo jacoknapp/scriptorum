@@ -12,8 +12,117 @@
 	<link rel="icon" href="/static/icon.svg" type="image/svg+xml" />
 	<link rel="manifest" href="/static/site.webmanifest" />
 	<meta name="theme-color" content="#0b0b13" />
+	{{ if .CSRFToken }}<meta name="csrf-token" content="{{ .CSRFToken }}" />{{ end }}
 	<style>html,body{height:100%;}</style>
 	<script>
+		window.scriptorumGetCSRFToken = function() {
+			var meta = document.querySelector('meta[name="csrf-token"]');
+			return meta ? (meta.getAttribute('content') || '') : '';
+		};
+		window.scriptorumAuthRedirecting = false;
+		window.scriptorumRedirectToLogin = function(url) {
+			if (window.scriptorumAuthRedirecting) return;
+			window.scriptorumAuthRedirecting = true;
+			window.location.replace(url || '/login');
+		};
+		window.scriptorumHandleAuthResponse = function(resp) {
+			if (!resp || !resp.headers) return resp;
+			var redirect = resp.headers.get('HX-Redirect');
+			if (redirect) {
+				window.scriptorumRedirectToLogin(redirect);
+				return resp;
+			}
+			if ((resp.status === 401 || resp.status === 403) && resp.headers.get('X-Login-Required') === 'true') {
+				window.scriptorumRedirectToLogin('/login');
+				return resp;
+			}
+			if (resp.redirected && resp.url) {
+				try {
+					var redirectedUrl = new URL(resp.url, window.location.href);
+					if (redirectedUrl.origin === window.location.origin && redirectedUrl.pathname === '/login') {
+						window.scriptorumRedirectToLogin(redirectedUrl.pathname + redirectedUrl.search + redirectedUrl.hash);
+					}
+				} catch (e) {}
+			}
+			return resp;
+		};
+		window.addEventListener('pageshow', function(evt) {
+			if (evt && evt.persisted) {
+				window.location.reload();
+			}
+		});
+		(function() {
+			var originalFetch = window.fetch ? window.fetch.bind(window) : null;
+			if (originalFetch) {
+				window.fetch = function(input, init) {
+					init = init || {};
+					var method = (init.method || (input && typeof input !== 'string' && input.method) || 'GET').toUpperCase();
+					try {
+						var url = new URL(typeof input === 'string' ? input : input.url, window.location.href);
+						if (url.origin === window.location.origin) {
+							var headers = new Headers(init.headers || (input && typeof input !== 'string' ? input.headers : undefined) || {});
+							if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+								var token = window.scriptorumGetCSRFToken();
+								if (token && !headers.has('X-CSRF-Token')) {
+									headers.set('X-CSRF-Token', token);
+								}
+							}
+							if (!('credentials' in init)) {
+								init.credentials = 'same-origin';
+							}
+							init.headers = headers;
+						}
+					} catch (e) {}
+					return originalFetch(input, init).then(function(resp) {
+						return window.scriptorumHandleAuthResponse(resp);
+					});
+				};
+			}
+			document.addEventListener('htmx:configRequest', function(evt) {
+				if (!evt || !evt.detail) return;
+				var verb = String(evt.detail.verb || evt.detail.method || 'GET').toUpperCase();
+				if (verb === 'GET' || verb === 'HEAD' || verb === 'OPTIONS') return;
+				var token = window.scriptorumGetCSRFToken();
+				if (token) {
+					evt.detail.headers['X-CSRF-Token'] = token;
+				}
+			});
+			document.addEventListener('htmx:beforeSwap', function(evt) {
+				try {
+					var xhr = evt && evt.detail && evt.detail.xhr;
+					if (!xhr) return;
+					var redirect = xhr.getResponseHeader('HX-Redirect');
+					if (redirect) {
+						evt.detail.shouldSwap = false;
+						evt.detail.isError = false;
+						if (evt.preventDefault) evt.preventDefault();
+						window.scriptorumRedirectToLogin(redirect);
+						return;
+					}
+					if ((xhr.status === 401 || xhr.status === 403) && xhr.getResponseHeader('X-Login-Required') === 'true') {
+						evt.detail.shouldSwap = false;
+						evt.detail.isError = false;
+						if (evt.preventDefault) evt.preventDefault();
+						window.scriptorumRedirectToLogin('/login');
+					}
+				} catch (e) {}
+			});
+			document.addEventListener('htmx:responseError', function(evt) {
+				try {
+					var xhr = evt && evt.detail && evt.detail.xhr;
+					if (!xhr) return;
+					var redirect = xhr.getResponseHeader('HX-Redirect');
+					if (redirect) {
+						window.scriptorumRedirectToLogin(redirect);
+						return;
+					}
+					if ((xhr.status === 401 || xhr.status === 403) && xhr.getResponseHeader('X-Login-Required') === 'true') {
+						window.scriptorumRedirectToLogin('/login');
+					}
+				} catch (e) {}
+			});
+		})();
+
 		// Refresh requests table if present when request events occur
 		document.addEventListener('htmx:afterOnLoad', function(evt){
 			try {
@@ -1224,6 +1333,7 @@
 		});
 		document.body.addEventListener('htmx:responseError', function(evt){
 			try {
+				if (window.scriptorumAuthRedirecting) return;
 				var form = evt.target;
 				if (!form || !form.classList || !form.classList.contains('js-approve-form')) return;
 				var btn = form.querySelector('button');
@@ -1266,6 +1376,7 @@
 		});
 		document.body.addEventListener('htmx:responseError', function(evt){
 			try {
+				if (window.scriptorumAuthRedirecting) return;
 				var el = evt.target;
 				if (!el || !el.classList || !el.classList.contains('js-notify-on-htmx')) return;
 				var btn = el;

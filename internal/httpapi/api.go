@@ -536,6 +536,22 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 	if format != "ebook" && format != "audiobook" {
 		format = "ebook"
 	}
+	if match, err := s.findCatalogMatchForPayload(format, p); err == nil && match != nil {
+		msg := fmt.Sprintf("already in Readarr as %s", match.Availability())
+		if strings.Contains(r.Header.Get("HX-Request"), "true") || r.Header.Get("HX-Request") == "true" {
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			w.WriteHeader(http.StatusConflict)
+			w.Write([]byte(`<li class="p-3 bg-amber-50 text-amber-800 rounded mb-2">This title is already in Readarr (` + match.Availability() + `). No duplicate request was created.</li>`))
+			return
+		}
+		writeJSON(w, map[string]any{
+			"status":          "exists",
+			"message":         msg,
+			"external_status": match.Availability(),
+			"readarr_id":      match.ReadarrID,
+		}, http.StatusConflict)
+		return
+	}
 
 	u := r.Context().Value(ctxUser).(*session)
 	req := &db.Request{

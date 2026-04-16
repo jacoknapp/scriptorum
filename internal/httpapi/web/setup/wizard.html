@@ -8,6 +8,7 @@
     <!-- Use a locally built Tailwind CSS file for production: /static/css/tailwind.css -->
     <link rel="stylesheet" href="/static/css/tailwind.css">
     <meta name="theme-color" content="#7c3aed" />
+    {{ if .CSRFToken }}<meta name="csrf-token" content="{{ .CSRFToken }}" />{{ end }}
     <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
     <link rel="manifest" href="/static/site.webmanifest">
   </head>
@@ -45,6 +46,46 @@
   </div>
 
     <script>
+      window.scriptorumGetCSRFToken = function() {
+        var meta = document.querySelector('meta[name="csrf-token"]');
+        return meta ? (meta.getAttribute('content') || '') : '';
+      };
+      (function() {
+        var originalFetch = window.fetch ? window.fetch.bind(window) : null;
+        if (originalFetch) {
+          window.fetch = function(input, init) {
+            init = init || {};
+            var method = (init.method || (input && typeof input !== 'string' && input.method) || 'GET').toUpperCase();
+            try {
+              var url = new URL(typeof input === 'string' ? input : input.url, window.location.href);
+              if (url.origin === window.location.origin) {
+                var headers = new Headers(init.headers || (input && typeof input !== 'string' ? input.headers : undefined) || {});
+                if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+                  var token = window.scriptorumGetCSRFToken();
+                  if (token && !headers.has('X-CSRF-Token')) {
+                    headers.set('X-CSRF-Token', token);
+                  }
+                }
+                if (!('credentials' in init)) {
+                  init.credentials = 'same-origin';
+                }
+                init.headers = headers;
+              }
+            } catch (e) {}
+            return originalFetch(input, init);
+          };
+        }
+        document.addEventListener('htmx:configRequest', function(evt) {
+          if (!evt || !evt.detail) return;
+          var verb = String(evt.detail.verb || evt.detail.method || 'GET').toUpperCase();
+          if (verb === 'GET' || verb === 'HEAD' || verb === 'OPTIONS') return;
+          var token = window.scriptorumGetCSRFToken();
+          if (token) {
+            evt.detail.headers['X-CSRF-Token'] = token;
+          }
+        });
+      })();
+
       let step = 1, maxStep = 4;
       const body = document.getElementById('step-body');
       const prev = document.getElementById('btn-prev');

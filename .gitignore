@@ -10,6 +10,7 @@
 # Logs & coverage
 *.log
 *.out
+/coverage
 coverage.*
 
 # OS/Editor
@@ -25,3 +26,7 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Local build/test caches
+/.gocache/
+/node_modules/

@@ -59,6 +59,7 @@ func (s *Server) Router() http.Handler {
 
 	// Add security middleware first
 	r.Use(s.securityHeaders)
+	r.Use(s.dynamicNoStore)
 	r.Use(s.rateLimiting)
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Logger, middleware.Recoverer)
 	r.Use(s.withUser)

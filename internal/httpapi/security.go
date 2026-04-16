@@ -16,7 +16,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Content Security Policy - restrictive policy that allows HTMX and inline styles
 		csp := "default-src 'self'; " +
-			"script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com/htmx.org@1.9.12; " +
+			"script-src 'self' 'unsafe-inline' https://unpkg.com/htmx.org@1.9.12; " +
 			"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; " +
 			"font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; " +
 			"img-src 'self' data: https:; " +
@@ -38,6 +38,19 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 			w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
 		}
 
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) dynamicNoStore(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/static/") {
+			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+			w.Header().Set("Pragma", "no-cache")
+			w.Header().Set("Expires", "0")
+			w.Header().Add("Vary", "Cookie")
+			w.Header().Add("Vary", "HX-Request")
+		}
 		next.ServeHTTP(w, r)
 	})
 }
@@ -110,50 +123,40 @@ func (s *Server) csrfProtection(next http.Handler) http.Handler {
 			return
 		}
 
-		// Allow HTMX same-origin requests
 		var token string
-		if token = r.FormValue("_csrf_token"); token == "" {
-			if token = r.Header.Get("X-CSRF-Token"); token == "" {
-				token = r.Header.Get("X-Requested-With") // HTMX sets this
-			}
+		if token = r.Header.Get("X-CSRF-Token"); token == "" {
+			token = r.FormValue("_csrf_token")
 		}
 
-		// For HTMX requests, we can be more lenient and just check the HX-Request header
-		if r.Header.Get("HX-Request") == "true" {
-			// HTMX requests from same origin are considered safe due to CORS
+		if token != "" && s.csrf.validateToken(token) {
 			next.ServeHTTP(w, r)
 			return
 		}
 
-		// Permit same-origin POSTs (standard HTML forms) using Origin/Referer check
-		if r.Method == http.MethodPost {
-			if origin := r.Header.Get("Origin"); origin != "" {
-				if u, err := url.Parse(origin); err == nil && u.Host == r.Host {
-					next.ServeHTTP(w, r)
-					return
-				}
-			}
-			if ref := r.Header.Get("Referer"); ref != "" {
-				if u, err := url.Parse(ref); err == nil && u.Host == r.Host {
-					next.ServeHTTP(w, r)
-					return
-				}
-			}
-		}
-
-		// Validate and consume CSRF token for regular form submissions
-		if token == "" {
-			http.Redirect(w, r, "/login", http.StatusFound)
+		// Permit same-origin state-changing requests as a fallback. This keeps
+		// regular browser forms and same-origin JS clients working even when a
+		// token is missing, while no longer trusting HX-Request by itself.
+		if sameOriginRequest(r) {
+			next.ServeHTTP(w, r)
 			return
 		}
 
-		if !s.csrf.validateToken(token) {
-			http.Redirect(w, r, "/login", http.StatusFound)
-			return
-		}
-
-		next.ServeHTTP(w, r)
+		http.Error(w, "csrf validation failed", http.StatusForbidden)
 	})
+}
+
+func sameOriginRequest(r *http.Request) bool {
+	if origin := r.Header.Get("Origin"); origin != "" {
+		if u, err := url.Parse(origin); err == nil && u.Host == r.Host {
+			return true
+		}
+	}
+	if ref := r.Header.Get("Referer"); ref != "" {
+		if u, err := url.Parse(ref); err == nil && u.Host == r.Host {
+			return true
+		}
+	}
+	return false
 }
 
 // Rate limiting

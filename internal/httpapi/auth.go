@@ -683,6 +683,11 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 // No manual token exchange; rely on oauth2 client
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, private")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.Header().Set("Clear-Site-Data", "\"cache\"")
+
 	// Clear the main session cookie
 	sessionCookieName := "scriptorum_session"
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", MaxAge: -1})

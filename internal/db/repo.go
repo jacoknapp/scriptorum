@@ -9,21 +9,23 @@ import (
 )
 
 type Request struct {
-	ID             int64           `json:"id"`
-	CreatedAt      time.Time       `json:"createdAt"`
-	UpdatedAt      time.Time       `json:"updatedAt"`
-	RequesterEmail string          `json:"requesterEmail"`
-	Title          string          `json:"title"`
-	Authors        []string        `json:"authors"`
-	ISBN10         string          `json:"isbn10"`
-	ISBN13         string          `json:"isbn13"`
-	Format         string          `json:"format"`
-	Status         string          `json:"status"`
-	StatusReason   string          `json:"statusReason"`
-	ApproverEmail  string          `json:"approverEmail"`
-	ApprovedAt     *time.Time      `json:"approvedAt,omitempty"`
-	ReadarrReq     json.RawMessage `json:"readarrRequest,omitempty"`
-	ReadarrResp    json.RawMessage `json:"readarrResponse,omitempty"`
+	ID               int64           `json:"id"`
+	CreatedAt        time.Time       `json:"createdAt"`
+	UpdatedAt        time.Time       `json:"updatedAt"`
+	RequesterEmail   string          `json:"requesterEmail"`
+	Title            string          `json:"title"`
+	Authors          []string        `json:"authors"`
+	ISBN10           string          `json:"isbn10"`
+	ISBN13           string          `json:"isbn13"`
+	Format           string          `json:"format"`
+	Status           string          `json:"status"`
+	StatusReason     string          `json:"statusReason"`
+	ExternalStatus   string          `json:"externalStatus"`
+	MatchedReadarrID int64           `json:"matchedReadarrId"`
+	ApproverEmail    string          `json:"approverEmail"`
+	ApprovedAt       *time.Time      `json:"approvedAt,omitempty"`
+	ReadarrReq       json.RawMessage `json:"readarrRequest,omitempty"`
+	ReadarrResp      json.RawMessage `json:"readarrResponse,omitempty"`
 }
 
 func (d *DB) CreateRequest(ctx context.Context, r *Request) (int64, error) {
@@ -32,11 +34,11 @@ func (d *DB) CreateRequest(ctx context.Context, r *Request) (int64, error) {
 	authorsJSON, _ := json.Marshal(r.Authors)
 	res, err := d.sql.ExecContext(ctx, `
 INSERT INTO requests
-(created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, readarr_request, readarr_response)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+(created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, readarr_request, readarr_response)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
 		strings.ToLower(r.RequesterEmail), r.Title, string(authorsJSON),
-		r.ISBN10, r.ISBN13, r.Format, r.Status, r.StatusReason,
+		r.ISBN10, r.ISBN13, r.Format, r.Status, r.StatusReason, r.ExternalStatus, r.MatchedReadarrID,
 		bytesOrNil(r.ReadarrReq), bytesOrNil(r.ReadarrResp),
 	)
 	if err != nil {
@@ -77,15 +79,23 @@ WHERE id=?`,
 
 func (d *DB) GetRequest(ctx context.Context, id int64) (*Request, error) {
 	row := d.sql.QueryRowContext(ctx, `
-SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, approver_email, approved_at, readarr_request, readarr_response
+SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, readarr_request, readarr_response
 FROM requests WHERE id=?`, id)
 	var rr Request
 	var created, updated, approved sql.NullString
 	var authorsStr sql.NullString
 	var approver sql.NullString
+	var externalStatus sql.NullString
+	var matchedReadarrID sql.NullInt64
 	var readarrReqStr, readarrRespStr sql.NullString
-	if err := row.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &approver, &approved, &readarrReqStr, &readarrRespStr); err != nil {
+	if err := row.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &externalStatus, &matchedReadarrID, &approver, &approved, &readarrReqStr, &readarrRespStr); err != nil {
 		return nil, err
+	}
+	if externalStatus.Valid {
+		rr.ExternalStatus = externalStatus.String
+	}
+	if matchedReadarrID.Valid {
+		rr.MatchedReadarrID = matchedReadarrID.Int64
 	}
 	if approver.Valid {
 		rr.ApproverEmail = approver.String
@@ -116,13 +126,13 @@ func (d *DB) ListRequests(ctx context.Context, mine string, limit int) ([]Reques
 	var err error
 	if mine != "" {
 		rows, err = d.sql.QueryContext(ctx, `
-SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, approver_email, approved_at, readarr_request, readarr_response
+SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, readarr_request, readarr_response
 FROM requests
 WHERE requester_email=?
 ORDER BY id DESC LIMIT ?`, strings.ToLower(mine), limit)
 	} else {
 		rows, err = d.sql.QueryContext(ctx, `
-SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, approver_email, approved_at, readarr_request, readarr_response
+SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, readarr_request, readarr_response
 FROM requests
 ORDER BY id DESC LIMIT ?`, limit)
 	}
@@ -137,9 +147,17 @@ ORDER BY id DESC LIMIT ?`, limit)
 		var created, updated, approved sql.NullString
 		var authorsStr sql.NullString
 		var approver sql.NullString
+		var externalStatus sql.NullString
+		var matchedReadarrID sql.NullInt64
 		var readarrReqStr, readarrRespStr sql.NullString
-		if err := rows.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &approver, &approved, &readarrReqStr, &readarrRespStr); err != nil {
+		if err := rows.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &externalStatus, &matchedReadarrID, &approver, &approved, &readarrReqStr, &readarrRespStr); err != nil {
 			return nil, err
+		}
+		if externalStatus.Valid {
+			rr.ExternalStatus = externalStatus.String
+		}
+		if matchedReadarrID.Valid {
+			rr.MatchedReadarrID = matchedReadarrID.Int64
 		}
 		if approver.Valid {
 			rr.ApproverEmail = approver.String
