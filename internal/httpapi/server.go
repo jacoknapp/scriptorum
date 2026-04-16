@@ -26,17 +26,21 @@ var tplFS embed.FS
 var setupFS embed.FS
 
 type Server struct {
-	cfg            *config.Config
-	db             *db.DB
-	cfgPath        string
-	settings       *settings.Store
-	chi            *chi.Mux
-	oidc           *oidcMgr
-	csrf           *csrfManager
-	rateLimiter    *rateLimiter
-	disableCSRF    bool // For testing purposes
-	approvalTokens map[string]approvalTokenData
-	tokenMutex     sync.RWMutex
+	cfg                *config.Config
+	db                 *db.DB
+	cfgPath            string
+	settings           *settings.Store
+	chi                *chi.Mux
+	backgroundTasks    sync.Once
+	oidc               *oidcMgr
+	csrf               *csrfManager
+	rateLimiter        *rateLimiter
+	readarrSyncMu      sync.Mutex
+	readarrSyncStateMu sync.RWMutex
+	readarrSyncState   readarrSyncRuntimeState
+	disableCSRF        bool // For testing purposes
+	approvalTokens     map[string]approvalTokenData
+	tokenMutex         sync.RWMutex
 }
 
 func NewServer(cfg *config.Config, database *db.DB, cfgPath string) *Server {

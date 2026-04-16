@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -20,11 +21,168 @@ type readarrSyncSummary struct {
 	MatchedRequests int    `json:"matchedRequests"`
 }
 
+const (
+	readarrAutoSyncInterval     = 30 * time.Minute
+	readarrAutoSyncStartupDelay = 45 * time.Second
+	readarrAutoSyncTimeout      = 10 * time.Minute
+)
+
+var errReadarrSyncInProgress = errors.New("readarr sync already in progress")
+
+type readarrSyncRuntimeState struct {
+	Running         bool
+	Trigger         string
+	LastStartedAt   time.Time
+	LastCompletedAt time.Time
+	LastError       string
+	LastSummaries   []readarrSyncSummary
+}
+
+type readarrSyncViewData struct {
+	AutoInterval    string
+	ScheduleNote    string
+	LastRunLabel    string
+	LastResultLabel string
+	LastResultClass string
+	Running         bool
+}
+
+func (s *Server) StartBackgroundTasks(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.backgroundTasks.Do(func() {
+		go s.runReadarrSyncLoop(ctx, readarrAutoSyncStartupDelay, readarrAutoSyncInterval)
+	})
+}
+
+func (s *Server) runReadarrSyncLoop(ctx context.Context, initialDelay, interval time.Duration) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if initialDelay < 0 {
+		initialDelay = 0
+	}
+	if interval <= 0 {
+		interval = readarrAutoSyncInterval
+	}
+	timer := time.NewTimer(initialDelay)
+	defer timer.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-timer.C:
+			s.runAutomaticReadarrSync(ctx)
+			timer.Reset(interval)
+		}
+	}
+}
+
+func (s *Server) runAutomaticReadarrSync(parent context.Context) {
+	if s.needsSetup() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctxOrBackground(parent), readarrAutoSyncTimeout)
+	defer cancel()
+	if _, err := s.runReadarrSync(ctx, "all", "automatic"); err != nil {
+		if errors.Is(err, errReadarrSyncInProgress) || errors.Is(err, context.Canceled) {
+			return
+		}
+		if s.settings.Get().Debug {
+			fmt.Printf("DEBUG: automatic readarr sync failed: %v\n", err)
+		}
+	}
+}
+
+func (s *Server) runReadarrSync(ctx context.Context, requestedKind, trigger string) ([]readarrSyncSummary, error) {
+	if !s.readarrSyncMu.TryLock() {
+		return nil, errReadarrSyncInProgress
+	}
+	s.markReadarrSyncStart(trigger)
+	defer s.readarrSyncMu.Unlock()
+
+	summaries, err := s.syncReadarrCatalog(ctxOrBackground(ctx), requestedKind)
+	s.markReadarrSyncComplete(trigger, summaries, err)
+	return summaries, err
+}
+
+func (s *Server) markReadarrSyncStart(trigger string) {
+	s.readarrSyncStateMu.Lock()
+	defer s.readarrSyncStateMu.Unlock()
+	s.readarrSyncState.Running = true
+	s.readarrSyncState.Trigger = strings.TrimSpace(trigger)
+	s.readarrSyncState.LastStartedAt = time.Now()
+}
+
+func (s *Server) markReadarrSyncComplete(trigger string, summaries []readarrSyncSummary, err error) {
+	s.readarrSyncStateMu.Lock()
+	defer s.readarrSyncStateMu.Unlock()
+	s.readarrSyncState.Running = false
+	s.readarrSyncState.Trigger = strings.TrimSpace(trigger)
+	s.readarrSyncState.LastCompletedAt = time.Now()
+	s.readarrSyncState.LastSummaries = append([]readarrSyncSummary(nil), summaries...)
+	if err != nil {
+		s.readarrSyncState.LastError = err.Error()
+		return
+	}
+	s.readarrSyncState.LastError = ""
+}
+
+func (s *Server) readarrSyncSnapshot() readarrSyncRuntimeState {
+	s.readarrSyncStateMu.RLock()
+	defer s.readarrSyncStateMu.RUnlock()
+	state := s.readarrSyncState
+	state.LastSummaries = append([]readarrSyncSummary(nil), s.readarrSyncState.LastSummaries...)
+	return state
+}
+
+func (s *Server) readarrSyncView() readarrSyncViewData {
+	state := s.readarrSyncSnapshot()
+	view := readarrSyncViewData{
+		AutoInterval:    "Auto 30m",
+		ScheduleNote:    "Automatic sync runs every 30 minutes and shortly after startup.",
+		LastRunLabel:    "No sync has run yet.",
+		LastResultLabel: "Manual sync is available any time.",
+		LastResultClass: "text-slate-400",
+		Running:         state.Running,
+	}
+	if state.Running {
+		if !state.LastStartedAt.IsZero() {
+			view.LastRunLabel = "Sync in progress since " + state.LastStartedAt.Local().Format("Jan 2, 2006 3:04 PM")
+		} else {
+			view.LastRunLabel = "Sync in progress."
+		}
+		view.LastResultLabel = "A sync is running right now. Manual refresh is locked until it finishes."
+		view.LastResultClass = "text-blue-300"
+		return view
+	}
+	if !state.LastCompletedAt.IsZero() {
+		view.LastRunLabel = fmt.Sprintf("Last %s sync: %s", syncTriggerLabel(state.Trigger), state.LastCompletedAt.Local().Format("Jan 2, 2006 3:04 PM"))
+		if state.LastError != "" {
+			view.LastResultLabel = "Last sync failed: " + state.LastError
+			view.LastResultClass = "text-rose-300"
+			return view
+		}
+		if len(state.LastSummaries) == 0 {
+			view.LastResultLabel = "No configured Readarr libraries were available to sync."
+			return view
+		}
+		view.LastResultLabel = formatReadarrSyncSummary(state.LastSummaries)
+		view.LastResultClass = "text-emerald-300"
+	}
+	return view
+}
+
 func (s *Server) apiReadarrSync() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		kind := strings.TrimSpace(r.URL.Query().Get("kind"))
-		summaries, err := s.syncReadarrCatalog(r.Context(), kind)
+		summaries, err := s.runReadarrSync(r.Context(), kind, "manual")
 		if err != nil {
+			if errors.Is(err, errReadarrSyncInProgress) {
+				http.Error(w, "readarr sync already in progress", http.StatusConflict)
+				return
+			}
 			if s.settings.Get().Debug {
 				fmt.Printf("DEBUG: readarr sync failed: %v\n", err)
 			}
@@ -86,6 +244,35 @@ func (s *Server) syncReadarrCatalog(ctx context.Context, requestedKind string) (
 		})
 	}
 	return summaries, nil
+}
+
+func syncTriggerLabel(trigger string) string {
+	switch strings.ToLower(strings.TrimSpace(trigger)) {
+	case "automatic":
+		return "automatic"
+	default:
+		return "manual"
+	}
+}
+
+func syncKindDisplay(kind string) string {
+	switch normalizeSyncKind(kind) {
+	case "audiobook":
+		return "Audiobooks"
+	default:
+		return "eBooks"
+	}
+}
+
+func formatReadarrSyncSummary(summaries []readarrSyncSummary) string {
+	if len(summaries) == 0 {
+		return "No configured Readarr libraries were available to sync."
+	}
+	parts := make([]string, 0, len(summaries))
+	for _, item := range summaries {
+		parts = append(parts, fmt.Sprintf("%s: %d imported, %d matched", syncKindDisplay(item.Kind), item.Imported, item.MatchedRequests))
+	}
+	return strings.Join(parts, " | ")
 }
 
 func (s *Server) reconcileRequestsAgainstCatalog(ctx context.Context, kind string) (int, int, error) {

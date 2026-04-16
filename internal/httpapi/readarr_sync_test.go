@@ -2,10 +2,13 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/config"
 )
@@ -92,4 +95,51 @@ func TestReadarrSyncReconcilesAndBlocksDuplicates(t *testing.T) {
 	if payload["status"] != "exists" {
 		t.Fatalf("expected status exists, got %#v", payload["status"])
 	}
+}
+
+func TestReadarrAutoSyncLoopImportsCatalog(t *testing.T) {
+	readarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/book":
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[{"id":88,"title":"Clean Sweep","foreignBookId":"fb-2","foreignEditionId":"fe-2","monitored":true,"grabbed":false,"statistics":{"bookFileCount":1},"author":{"name":"Ilona Andrews"},"identifiers":[{"type":"isbn13","value":"9780440000179"}]}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer readarr.Close()
+
+	s := newServerForTest(t)
+	cfg := s.settings.Get()
+	cfg.Readarr.Ebooks.BaseURL = readarr.URL
+	cfg.Readarr.Ebooks.APIKey = "test-key"
+	cfg.Setup.Completed = true
+	if err := config.Save(s.cfgPath, cfg); err != nil {
+		t.Fatalf("save cfg: %v", err)
+	}
+	if err := s.settings.Update(cfg); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.runReadarrSyncLoop(ctx, 10*time.Millisecond, time.Hour)
+
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		count, err := s.db.CountReadarrBooks(context.Background(), "ebook")
+		if err != nil {
+			t.Fatalf("count synced books: %v", err)
+		}
+		if count == 1 {
+			view := s.readarrSyncView()
+			if !strings.Contains(strings.ToLower(view.LastRunLabel), "automatic") {
+				t.Fatalf("expected automatic sync label, got %q", view.LastRunLabel)
+			}
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	t.Fatal("timed out waiting for automatic readarr sync")
 }

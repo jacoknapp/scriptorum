@@ -29,6 +29,9 @@ func main() {
 	providers.Debug = cfg.Debug
 
 	srv := httpapi.NewServer(cfg, database, cfgPath)
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	defer cancelApp()
+	srv.StartBackgroundTasks(appCtx)
 	server := &http.Server{Addr: cfg.HTTP.Listen, Handler: srv.Router()}
 
 	go func() {
@@ -41,6 +44,7 @@ func main() {
 	stopCtx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	<-stopCtx.Done()
+	cancelApp()
 	_ = server.Shutdown(context.Background())
 }
 

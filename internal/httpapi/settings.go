@@ -30,10 +30,11 @@ type settingsUI struct{ tpl *template.Template }
 func (u *settingsUI) handleSettings(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		data := map[string]any{
-			"Cfg":       s.settings.Get(),
-			"UserName":  s.userName(r),
-			"IsAdmin":   true,
-			"CSRFToken": s.getCSRFToken(r),
+			"Cfg":         s.settings.Get(),
+			"UserName":    s.userName(r),
+			"IsAdmin":     true,
+			"CSRFToken":   s.getCSRFToken(r),
+			"ReadarrSync": s.readarrSyncView(),
 		}
 		_ = u.tpl.ExecuteTemplate(w, "settings.html", data)
 	}

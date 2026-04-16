@@ -3,7 +3,7 @@
 	<h1 class="text-xl font-semibold mb-4">Settings</h1>
 	<form method="post" action="/settings/save" class="grid gap-6">
 		<input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
-    
+
 		<!-- Core Configuration Box -->
 		<div class="border border-white/20 rounded-lg bg-night-750 p-5">
 			<section class="mb-6">
@@ -76,7 +76,7 @@
 						</select>
 						<div class="mt-2 flex items-center gap-2">
 							<button type="button" class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-500" onclick="testReadarr('ebooks')">Test</button>
-							<span id="ra_ebooks_test" class="text-sm text-slate-400">—</span>
+							<span id="ra_ebooks_test" class="text-sm text-slate-400">-</span>
 						</div>
 					</div>
 					<div class="border border-white/10 rounded p-3">
@@ -94,18 +94,37 @@
 						</select>
 						<div class="mt-2 flex items-center gap-2">
 							<button type="button" class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-500" onclick="testReadarr('audiobooks')">Test</button>
-							<span id="ra_audio_test" class="text-sm text-slate-400">—</span>
+							<span id="ra_audio_test" class="text-sm text-slate-400">-</span>
 						</div>
 					</div>
 				</div>
-				<div class="mt-4 border border-emerald-500/20 rounded p-3 bg-emerald-950/10">
-					<div class="font-medium text-slate-100">Readarr Sync</div>
-					<div class="text-sm text-slate-400 mt-1">Pull in your existing Readarr catalog, reconcile request state, and light up duplicate prevention in search.</div>
-					<div class="mt-3 flex flex-wrap items-center gap-3">
-						<button type="button" class="px-3 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-500" onclick="syncReadarrCatalog('all', this)">Sync Both Libraries</button>
-						<button type="button" class="px-3 py-1 rounded bg-night-900 text-slate-100 ring-1 ring-white/10 hover:bg-night-800" onclick="syncReadarrCatalog('ebooks', this)">Sync eBooks</button>
-						<button type="button" class="px-3 py-1 rounded bg-night-900 text-slate-100 ring-1 ring-white/10 hover:bg-night-800" onclick="syncReadarrCatalog('audiobooks', this)">Sync Audiobooks</button>
-						<span id="readarr_sync_status" class="text-sm text-slate-400">â€”</span>
+				<div class="mt-4 border border-white/10 rounded p-4 bg-night-800/50">
+					<div class="flex flex-wrap items-start justify-between gap-3">
+						<div>
+							<div class="flex items-center gap-2">
+								<div class="font-medium text-slate-100">Readarr Sync</div>
+								<span class="px-2 py-0.5 rounded bg-royal-600 text-white text-xs uppercase tracking-wide">{{ .ReadarrSync.AutoInterval }}</span>
+							</div>
+							<div class="text-sm text-slate-400 mt-1">Keep the local Readarr catalog fresh, reconcile request state, and prevent duplicate requests in search.</div>
+						</div>
+						<div class="text-sm text-slate-400">{{ .ReadarrSync.ScheduleNote }}</div>
+					</div>
+					<div class="grid md:grid-cols-2 gap-3 mt-3">
+						<div class="border border-white/10 rounded p-3 bg-night-900">
+							<div class="text-xs uppercase tracking-wide text-slate-400">Automatic Sync</div>
+							<div id="readarr_sync_last_run" class="text-sm text-slate-100 mt-2">{{ .ReadarrSync.LastRunLabel }}</div>
+							<div id="readarr_sync_last_result" class="text-sm {{ .ReadarrSync.LastResultClass }} mt-2">{{ .ReadarrSync.LastResultLabel }}</div>
+						</div>
+						<div class="border border-white/10 rounded p-3 bg-night-900">
+							<div class="text-xs uppercase tracking-wide text-slate-400">Manual Refresh</div>
+							<div class="text-sm text-slate-400 mt-2">Use this to force an immediate refresh without waiting for the next automatic run.</div>
+							<div class="mt-3 flex flex-wrap items-center gap-2">
+								<button type="button" data-readarr-sync-button class="px-3 py-1.5 rounded-lg bg-royal-600 text-white hover:bg-royal-500" onclick="syncReadarrCatalog('all', this)">Sync Both Libraries</button>
+								<button type="button" data-readarr-sync-button class="px-3 py-1.5 rounded-lg bg-night-700/50 text-slate-100 ring-1 ring-white/10 hover:bg-night-700" onclick="syncReadarrCatalog('ebooks', this)">Sync eBooks</button>
+								<button type="button" data-readarr-sync-button class="px-3 py-1.5 rounded-lg bg-night-700/50 text-slate-100 ring-1 ring-white/10 hover:bg-night-700" onclick="syncReadarrCatalog('audiobooks', this)">Sync Audiobooks</button>
+							</div>
+							<div id="readarr_sync_status" class="text-sm text-slate-400 mt-3">Ready to sync on demand.</div>
+						</div>
 					</div>
 				</div>
 			</section>
@@ -123,7 +142,7 @@
 			<div class="border border-white/10 rounded p-3">
 				<p class="text-sm text-slate-400 mb-3">Manage all user requests in the system.</p>
 				<div class="flex flex-wrap gap-3">
-					<button type="button" 
+					<button type="button"
 							class="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-500 js-notify-on-htmx"
 							hx-post="/api/v1/requests/approve-all"
 							hx-confirm="Are you sure you want to approve ALL pending requests? This will send them to Readarr for processing."
@@ -132,7 +151,7 @@
 							data-label-working="Working...">
 						Approve All Requests
 					</button>
-					<button type="button" 
+					<button type="button"
 							class="px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-500 js-notify-on-htmx"
 							hx-delete="/api/v1/requests"
 							hx-confirm="Are you sure you want to permanently delete ALL requests? This action cannot be undone."
@@ -149,7 +168,7 @@
 			</div>
 			</section>
 		</div>
-		</form>
+	</form>
 </div>
 <script>
 // populate Readarr quality profile selects
@@ -162,12 +181,12 @@ async function loadQPs(kind, selId, serverDefault) {
 		const obj = await res.json();
 		// clear existing options except first
 		sel.options.length = 1;
-		const entries = Object.entries(obj).map(([k,v]) => ({id: parseInt(k,10), name: v}));
-		entries.sort((a,b)=>a.id-b.id);
+		const entries = Object.entries(obj).map(([k, v]) => ({id: parseInt(k, 10), name: v}));
+		entries.sort((a, b) => a.id - b.id);
 		for (const e of entries) {
 			const o = document.createElement('option');
 			o.value = e.id;
-			o.text = e.id + ' — ' + e.name;
+			o.text = e.id + ' - ' + e.name;
 			if (e.id === serverDefault) o.selected = true;
 			sel.appendChild(o);
 		}
@@ -177,13 +196,13 @@ async function loadQPs(kind, selId, serverDefault) {
 		{{end}}
 	}
 }
-document.addEventListener('DOMContentLoaded', ()=>{
+document.addEventListener('DOMContentLoaded', () => {
 	const ebSel = document.getElementById('ra_ebooks_qp');
 	const auSel = document.getElementById('ra_audio_qp');
 	const ebDef = ebSel ? parseInt(ebSel.getAttribute('data-server-default') || '0', 10) : 0;
 	const auDef = auSel ? parseInt(auSel.getAttribute('data-server-default') || '0', 10) : 0;
-	loadQPs('ebooks','ra_ebooks_qp', ebDef);
-	loadQPs('audiobooks','ra_audio_qp', auDef);
+	loadQPs('ebooks', 'ra_ebooks_qp', ebDef);
+	loadQPs('audiobooks', 'ra_audio_qp', auDef);
 });
 // Test Readarr instance and update UI
 async function testReadarr(kind) {
@@ -201,50 +220,85 @@ async function testReadarr(kind) {
 			return;
 		}
 		const obj = await res.json();
-		span.textContent = 'OK ('+Object.keys(obj).length+' profiles)';
+		span.textContent = 'OK (' + Object.keys(obj).length + ' profiles)';
 		span.className = 'text-sm text-emerald-300';
 	} catch (e) {
 		span.textContent = 'Error: ' + String(e);
 		span.className = 'text-sm text-rose-300';
 	}
 }
+function formatReadarrSyncSummary(data) {
+	if (!data || !data.length) {
+		return 'No configured Readarr libraries were available to sync.';
+	}
+	return data.map(function(item) {
+		const label = item.kind === 'audiobook' ? 'Audiobooks' : 'eBooks';
+		return label + ': ' + item.imported + ' imported, ' + item.matchedRequests + ' matched';
+	}).join(' | ');
+}
 async function syncReadarrCatalog(kind, button) {
 	const status = document.getElementById('readarr_sync_status');
-	const original = button ? button.textContent : '';
+	const lastRun = document.getElementById('readarr_sync_last_run');
+	const lastResult = document.getElementById('readarr_sync_last_result');
+	const buttons = Array.from(document.querySelectorAll('[data-readarr-sync-button]'));
+	buttons.forEach(function(btn) {
+		if (!btn.dataset.originalLabel) {
+			btn.dataset.originalLabel = btn.textContent;
+		}
+		btn.disabled = true;
+		btn.classList.add('opacity-50', 'cursor-not-allowed');
+	});
 	if (button) {
-		button.disabled = true;
 		button.textContent = 'Syncing...';
-		button.classList.add('opacity-50', 'cursor-not-allowed');
 	}
 	if (status) {
 		status.textContent = 'Syncing Readarr and reconciling requests...';
-		status.className = 'text-sm text-blue-300';
+		status.className = 'text-sm text-blue-300 mt-3';
 	}
+	const timestamp = new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 	try {
 		const res = await fetch('/api/readarr/sync?kind='+encodeURIComponent(kind), {
 			method: 'POST',
 			headers: { 'HX-Request': 'true' }
 		});
 		if (!res.ok) {
-			throw new Error((await res.text()) || res.statusText);
+			const err = new Error((await res.text()) || res.statusText);
+			err.status = res.status;
+			throw err;
 		}
 		const data = await res.json();
-		const summary = (data || []).map(item => item.kind + ': ' + item.imported + ' imported, ' + item.matchedRequests + ' matched').join(' | ');
+		const summary = formatReadarrSyncSummary(data || []);
 		if (status) {
 			status.textContent = summary || 'Sync completed.';
-			status.className = 'text-sm text-emerald-300';
+			status.className = 'text-sm text-emerald-300 mt-3';
+		}
+		if (lastRun) {
+			lastRun.textContent = 'Last manual sync: ' + timestamp;
+		}
+		if (lastResult) {
+			lastResult.textContent = summary || 'Manual sync completed.';
+			lastResult.className = 'text-sm text-emerald-300 mt-2';
 		}
 	} catch (e) {
+		const busy = e && e.status === 409;
+		const message = busy ? 'A sync is already running. Try again in a minute.' : 'Sync failed: ' + String(e.message || e);
 		if (status) {
-			status.textContent = 'Sync failed: ' + String(e.message || e);
-			status.className = 'text-sm text-rose-300';
+			status.textContent = message;
+			status.className = 'text-sm ' + (busy ? 'text-yellow-400' : 'text-rose-300') + ' mt-3';
+		}
+		if (lastRun) {
+			lastRun.textContent = 'Last manual sync attempt: ' + timestamp;
+		}
+		if (lastResult) {
+			lastResult.textContent = message;
+			lastResult.className = 'text-sm ' + (busy ? 'text-yellow-400' : 'text-rose-300') + ' mt-2';
 		}
 	} finally {
-		if (button) {
-			button.disabled = false;
-			button.textContent = original;
-			button.classList.remove('opacity-50', 'cursor-not-allowed');
-		}
+		buttons.forEach(function(btn) {
+			btn.disabled = false;
+			btn.textContent = btn.dataset.originalLabel || btn.textContent;
+			btn.classList.remove('opacity-50', 'cursor-not-allowed');
+		});
 	}
 }
 </script>
