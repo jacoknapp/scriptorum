@@ -15,6 +15,14 @@ func TestOpenLibraryEmptyQuery(t *testing.T) {
 	}
 }
 
+func TestOpenLibraryEmptySubject(t *testing.T) {
+	ol := NewOpenLibrary()
+	items, err := ol.SubjectWorks(context.Background(), "", 4)
+	if err != nil || items != nil {
+		t.Fatalf("expected nil,nil got %v,%v", items, err)
+	}
+}
+
 func TestOpenLibraryHTTPError(t *testing.T) {
 	ol := NewOpenLibrary()
 	ol.cl.Transport = rtFunc(func(r *http.Request) (*http.Response, error) {

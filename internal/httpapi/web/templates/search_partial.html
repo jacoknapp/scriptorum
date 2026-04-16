@@ -1,85 +1,50 @@
-<div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10">
+{{ if .IsDiscovery }}
+<div class="space-y-4">
+  <div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-4">
+    <div class="text-xs uppercase tracking-wide text-royal-300">Discover</div>
+    <h2 class="font-semibold text-lg mt-1">Trending books by category</h2>
+    <p class="text-sm text-slate-400 mt-2">Browse a few popular shelves while the search box is empty, or start typing to search by title, author, ISBN, or ASIN.</p>
+  </div>
 
-  <div class="p-4 border-b border-white/5">
-    <h2 class="font-semibold">Results for “{{ .Query }}”</h2>
+  {{ if .DiscoveryCategories }}
+  <div class="grid gap-4 md:grid-cols-2">
+    {{ range .DiscoveryCategories }}
+    <section class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden">
+      <div class="p-4 border-b border-white/5">
+        <div class="text-xs uppercase tracking-wide text-royal-300">Category</div>
+        <h3 class="font-semibold text-lg mt-1">{{ .Name }}</h3>
+      </div>
+      <ul class="divide-y divide-white/5">
+        {{ range .Items }}
+          {{ template "search_result_item" . }}
+        {{ end }}
+      </ul>
+    </section>
+    {{ end }}
+  </div>
+  {{ else }}
+  <div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6 text-slate-400">
+    Trending categories are unavailable right now. Start typing to search for a title, author, ISBN, or ASIN.
+  </div>
+  {{ end }}
+</div>
+{{ else }}
+<div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10">
+  <div class="p-4 border-b border-white/5 flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+    <h2 class="font-semibold">Results for "{{ .Query }}"</h2>
+    <div class="text-xs text-slate-400">Showing {{ len .Items }} result{{ if ne (len .Items) 1 }}s{{ end }} on this page</div>
   </div>
   <ul class="divide-y divide-white/5">
     {{ range .Items }}
-  <li class="p-4 grid gap-6 items-start grid-cols-[auto,1fr] md:grid-cols-[auto,1fr,24rem]">
-    <!-- Clickable area spans first two columns (cover + text). Buttons/forms on the right should not open the modal. -->
-    <div class="col-span-2 md:col-span-2 flex gap-2 items-start" data-open-book="1" role="button" tabindex="0" style="cursor:pointer;">
-      <!-- Use placeholder if no cover; clicking opens details modal -->
-      <img src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
-        class="w-16 h-24 object-cover rounded-lg border border-white/10 bg-night-900"
-        onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
-
-      <div class="min-w-0 pl-2 md:pl-0">
-        <div class="font-medium truncate">{{ .Title }}</div>
-        <div class="text-sm text-slate-400 whitespace-normal break-words">
-          {{ if gt (len .Authors) 0 }}
-            {{ if eq (len .Authors) 1 }}
-              {{ index .Authors 0 }}
-            {{ else }}
-              {{ range $i, $author := .Authors }}{{ if $i }}, {{ end }}{{ $author }}{{ end }}
-            {{ end }}
-          {{ else }}
-            Unknown Author
-          {{ end }}
-  </div>
-        <div class="text-xs text-slate-400">
-          {{ if .ISBN13 }}ISBN-13: {{ .ISBN13 }}{{ end }}
-          {{ if and .ISBN13 .ISBN10 }}, {{ end }}
-          {{ if .ISBN10 }}ISBN-10: {{ .ISBN10 }}{{ end }}
-          {{ if .ASIN }}{{ if or .ISBN13 .ISBN10 }}, {{ end }}ASIN: {{ .ASIN }}{{ end }}
-        </div>
-        <div class="mt-2 flex flex-wrap gap-2 text-xs">
-          {{ if .EbookState }}
-          <span class="px-2 py-0.5 rounded-full {{ if eq .EbookState "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .EbookState "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .EbookState "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-slate-800 text-slate-200 ring-1 ring-white/10{{ end }}">eBook {{ .EbookState }}</span>
-          {{ end }}
-          {{ if .AudiobookState }}
-          <span class="px-2 py-0.5 rounded-full {{ if eq .AudiobookState "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .AudiobookState "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .AudiobookState "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-slate-800 text-slate-200 ring-1 ring-white/10{{ end }}">Audiobook {{ .AudiobookState }}</span>
-          {{ end }}
-        </div>
-        <!-- Source label removed: do not display which instance returned the result -->
-      </div>
-    </div>
-  <form method="post" action="/api/v1/requests" class="col-span-2 md:col-span-1 md:col-start-3 flex flex-wrap gap-2 items-center justify-start md:justify-end mt-2 md:mt-0"
-            data-title="{{ .Title }}"
-            data-isbn10="{{ .ISBN10 }}"
-            data-isbn13="{{ .ISBN13 }}"
-            data-asin="{{ .ASIN }}"
-            data-author="{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}">
-        <input type="hidden" name="title" value="{{ .Title }}">
-        {{ range .Authors }}
-        <input type="hidden" name="authors" value="{{ . }}">
-        {{ end }}
-        <input type="hidden" name="isbn10" value="{{ .ISBN10 }}">
-        <input type="hidden" name="isbn13" value="{{ .ISBN13 }}">
-        <input type="hidden" name="asin" value="{{ .ASIN }}">
-        <!-- Always include provider payloads so server can attach Readarr payloads without exposing source -->
-        <input type="hidden" name="provider_payload" value='{{ .ProviderPayload }}'>
-        <input type="hidden" name="provider_payload_ebook" value='{{ .ProviderEbookPayload }}'>
-        <input type="hidden" name="provider_payload_audiobook" value='{{ .ProviderAudiobookPayload }}'>
-
-        <!-- Keep sizing consistent while color and label reflect the current state -->
-  <button type="button" name="format" value="ebook"
-    class="px-3 py-2 rounded-lg text-white w-full sm:w-44 {{ if .EbookState }}cursor-not-allowed{{ end }} {{ if eq .EbookState "available" }}bg-emerald-700/80{{ else if eq .EbookState "monitored" }}bg-amber-700/80{{ else if eq .EbookState "grabbed" }}bg-sky-700/80{{ else if .EbookState }}bg-slate-700{{ else }}bg-royal-600 hover:bg-royal-500{{ end }}"
-    {{ if .EbookState }}disabled title="Already in Readarr as {{ .EbookState }}"{{ end }}
-    onclick="scriptorumRequestHtmx(this, 'ebook')">
-          {{ if .EbookState }}eBook {{ .EbookState }}{{ else }}Request eBook{{ end }}
-        </button>
-  <button type="button" name="format" value="audiobook"
-    class="px-3 py-2 rounded-lg text-white w-full sm:w-44 {{ if .AudiobookState }}cursor-not-allowed{{ end }} {{ if eq .AudiobookState "available" }}bg-emerald-700/80{{ else if eq .AudiobookState "monitored" }}bg-amber-700/80{{ else if eq .AudiobookState "grabbed" }}bg-sky-700/80{{ else if .AudiobookState }}bg-slate-700{{ else }}bg-royal-600 hover:bg-royal-500{{ end }}"
-    {{ if .AudiobookState }}disabled title="Already in Readarr as {{ .AudiobookState }}"{{ end }}
-    onclick="scriptorumRequestHtmx(this, 'audiobook')">
-          {{ if .AudiobookState }}Audiobook {{ .AudiobookState }}{{ else }}Request Audiobook{{ end }}
-        </button>
-      </form>
-
-      <div class="req-ind htmx-indicator text-xs text-slate-400 hidden md:col-start-3">Submitting…</div>
-    </li>
+      {{ template "search_result_item" . }}
     {{ else }}
-    <li class="p-6 text-slate-400">No results.</li>
+    <li class="p-6">
+      <div class="rounded-xl border border-dashed border-white/10 bg-night-900/40 px-5 py-8 text-center">
+        <div class="font-medium text-slate-100">No matches for "{{ .Query }}"</div>
+        <div class="mt-2 text-sm text-slate-400">Try a different title, author, ISBN, ASIN, or a shorter search.</div>
+      </div>
+    </li>
     {{ end }}
   </ul>
 </div>
+{{ end }}

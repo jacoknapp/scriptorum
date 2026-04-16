@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"html/template"
@@ -9,6 +10,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
@@ -30,6 +32,33 @@ func (s *Server) mountSearch(r chi.Router) {
 
 type searchUI struct{ tpl *template.Template }
 
+type searchItem struct {
+	providers.BookItem
+	Provider                 string
+	ProviderPayload          string
+	ProviderEbookPayload     string
+	ProviderAudiobookPayload string
+	EbookState               string
+	AudiobookState           string
+}
+
+type discoveryCategory struct {
+	Name  string
+	Items []searchItem
+}
+
+type discoverySubject struct {
+	Name string
+	Slug string
+}
+
+var defaultDiscoverySubjects = []discoverySubject{
+	{Name: "Fantasy", Slug: "fantasy"},
+	{Name: "Science Fiction", Slug: "science_fiction"},
+	{Name: "Mystery", Slug: "mystery"},
+	{Name: "Romance", Slug: "romance"},
+}
+
 func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := strings.TrimSpace(r.URL.Query().Get("q"))
@@ -45,22 +74,26 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 				limit = n
 			}
 		}
-		// Prefer provider search: query both Readarr Ebook and Audiobook instances when available
-		type SearchItem struct {
-			providers.BookItem
-			Provider                 string // primary provider used for display
-			ProviderPayload          string // generic payload (when only one provider exists)
-			ProviderEbookPayload     string // exact rendition for ebooks
-			ProviderAudiobookPayload string // exact rendition for audiobooks
-			EbookState               string
-			AudiobookState           string
+		if q == "" {
+			categories := u.loadDiscoveryCategories(r.Context())
+			for i := range categories {
+				decorateSearchItems(s, categories[i].Items)
+			}
+			data := map[string]any{
+				"IsDiscovery":         true,
+				"DiscoveryCategories": categories,
+			}
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			_ = u.tpl.ExecuteTemplate(w, "search_partial.html", data)
+			return
 		}
-		items := []SearchItem{}
+
+		items := []searchItem{}
 		// Index by dedupe key to merge ebook/audiobook payloads for the same work
 		idx := map[string]int{}
 
 		// Helper to upsert item by key and attach payloads
-		upsert := func(si SearchItem, ebook bool, payload string) {
+		upsert := func(si searchItem, ebook bool, payload string) {
 			k := dedupeKey(si.BookItem)
 			if k == "" {
 				return
@@ -178,7 +211,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 							}
 						}
 					}
-					upsert(SearchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-ebook"}, true, string(cjson))
+					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-ebook"}, true, string(cjson))
 				}
 			}
 		}
@@ -252,7 +285,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 							}
 						}
 					}
-					upsert(SearchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-audiobook"}, false, string(cjson))
+					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-audiobook"}, false, string(cjson))
 				}
 			}
 		}
@@ -263,12 +296,12 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			ap := providers.NewAmazonPublic("www.amazon.com")
 			if asin != "" {
 				if book, err := ap.GetByASIN(r.Context(), asin); err == nil && book != nil {
-					items = append(items, SearchItem{BookItem: providers.BookItem{ASIN: book.ASIN, Title: book.Title, Authors: book.Authors, ISBN10: book.ISBN10, ISBN13: book.ISBN13, CoverSmall: book.Image, CoverMedium: book.Image}})
+					items = append(items, searchItem{BookItem: providers.BookItem{ASIN: book.ASIN, Title: book.Title, Authors: book.Authors, ISBN10: book.ISBN10, ISBN13: book.ISBN13, CoverSmall: book.Image, CoverMedium: book.Image}})
 				}
 			} else if q != "" {
 				if pubItems, err := ap.SearchBooks(r.Context(), q, page, limit); err == nil {
 					for _, b := range pubItems {
-						items = append(items, SearchItem{BookItem: providers.BookItem{ASIN: b.ASIN, Title: b.Title, Authors: b.Authors, CoverSmall: b.Image, CoverMedium: b.Image}})
+						items = append(items, searchItem{BookItem: providers.BookItem{ASIN: b.ASIN, Title: b.Title, Authors: b.Authors, CoverSmall: b.Image, CoverMedium: b.Image}})
 					}
 				}
 			}
@@ -277,7 +310,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 				ol := providers.NewOpenLibrary()
 				if olItems, err := ol.Search(r.Context(), q, limit, page); err == nil {
 					for _, b := range olItems {
-						items = append(items, SearchItem{BookItem: b})
+						items = append(items, searchItem{BookItem: b})
 					}
 				}
 			}
@@ -285,15 +318,49 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 
 		data := map[string]any{"Query": q, "Items": items}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		// Ensure provider_payload is populated by merging ebook/audiobook renditions
-		for i := range items {
-			if items[i].ProviderPayload == "" {
-				items[i].ProviderPayload = mergeProviderPayloads(items[i].ProviderEbookPayload, items[i].ProviderAudiobookPayload)
-			}
-			items[i].EbookState = s.loadCatalogState("ebook", items[i].Title, items[i].Authors, items[i].ISBN10, items[i].ISBN13, items[i].ASIN, items[i].ProviderEbookPayload)
-			items[i].AudiobookState = s.loadCatalogState("audiobook", items[i].Title, items[i].Authors, items[i].ISBN10, items[i].ISBN13, items[i].ASIN, items[i].ProviderAudiobookPayload)
-		}
+		decorateSearchItems(s, items)
 		_ = u.tpl.ExecuteTemplate(w, "search_partial.html", data)
+	}
+}
+
+func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCategory {
+	ol := providers.NewOpenLibrary()
+	results := make([]discoveryCategory, len(defaultDiscoverySubjects))
+	var wg sync.WaitGroup
+	wg.Add(len(defaultDiscoverySubjects))
+	for i, subject := range defaultDiscoverySubjects {
+		go func(i int, subject discoverySubject) {
+			defer wg.Done()
+			books, err := ol.SubjectWorks(ctx, subject.Slug, 4)
+			if err != nil || len(books) == 0 {
+				return
+			}
+			items := make([]searchItem, 0, len(books))
+			for _, book := range books {
+				items = append(items, searchItem{BookItem: book})
+			}
+			results[i] = discoveryCategory{Name: subject.Name, Items: items}
+		}(i, subject)
+	}
+	wg.Wait()
+
+	categories := make([]discoveryCategory, 0, len(results))
+	for _, category := range results {
+		if len(category.Items) == 0 {
+			continue
+		}
+		categories = append(categories, category)
+	}
+	return categories
+}
+
+func decorateSearchItems(s *Server, items []searchItem) {
+	for i := range items {
+		if items[i].ProviderPayload == "" {
+			items[i].ProviderPayload = mergeProviderPayloads(items[i].ProviderEbookPayload, items[i].ProviderAudiobookPayload)
+		}
+		items[i].EbookState = s.loadCatalogState("ebook", items[i].Title, items[i].Authors, items[i].ISBN10, items[i].ISBN13, items[i].ASIN, items[i].ProviderEbookPayload)
+		items[i].AudiobookState = s.loadCatalogState("audiobook", items[i].Title, items[i].Authors, items[i].ISBN10, items[i].ISBN13, items[i].ASIN, items[i].ProviderAudiobookPayload)
 	}
 }
 

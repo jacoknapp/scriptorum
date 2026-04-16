@@ -12,32 +12,21 @@
 	</thead>
 	<tbody class="divide-y divide-white/5">
 		{{ range .Items }}
-		<tr>
+		<tr data-request-status="{{ .Status }}" data-external-status="{{ .ExternalStatus }}">
 			<td class="px-4 py-2 cursor-pointer hover:bg-night-700/50 transition-colors" 
-				data-open-book='{"title":"{{ .Title }}"{{ if gt (len .Authors) 0 }},"authors":["{{ index .Authors 0 }}"]{{ end }}{{ if .ISBN13 }},"isbn13":"{{ .ISBN13 }}"{{ end }}{{ if .ISBN10 }},"isbn10":"{{ .ISBN10 }}"{{ end }},"requesterEmail":"{{ .RequesterEmail }}","status":"{{ .Status }}","requestId":{{ .ID }}{{ if .ReadarrReq }},"readarrRequest":true{{ end }},"isAdmin":{{ if $.IsAdmin }}true{{ else }}false{{ end }}}'>
+				data-open-book='{"title":"{{ .Title }}"{{ if gt (len .Authors) 0 }},"authors":["{{ index .Authors 0 }}"]{{ end }}{{ if .ISBN13 }},"isbn13":"{{ .ISBN13 }}"{{ end }}{{ if .ISBN10 }},"isbn10":"{{ .ISBN10 }}"{{ end }},"requesterEmail":"{{ .RequesterEmail }}","status":"{{ .Status }}","format":"{{ .Format }}"{{ if .ExternalStatus }},"externalStatus":"{{ .ExternalStatus }}"{{ end }},"requestId":{{ .ID }}{{ if .ReadarrReq }},"readarrRequest":true{{ end }},"isAdmin":{{ if $.IsAdmin }}true{{ else }}false{{ end }}}'>
 				<div class="font-medium">{{ .Title }}</div>
 				<div class="text-slate-400">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
 			</td>
 			<td class="px-4 py-2">{{ .RequesterEmail }}</td>
-			<td class="px-4 py-2">{{ .Format }}</td>
+			<td class="px-4 py-2">{{ if eq .Format "ebook" }}eBook{{ else if eq .Format "audiobook" }}Audiobook{{ else }}{{ .Format }}{{ end }}</td>
 			<td class="px-4 py-2">
-				<div class="flex items-center gap-2">
-					{{ if eq .Status "declined" }}
-					<span class="w-2 h-2 bg-red-500 rounded-full"></span>
-					{{ else if eq .Status "queued" }}
-					<span class="w-2 h-2 bg-green-500 rounded-full"></span>
-					{{ else if eq .Status "pending" }}
-					<span class="w-2 h-2 bg-yellow-500 rounded-full"></span>
-					{{ else if eq .Status "processing" }}
-					<span class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-					{{ else }}
-					<span class="w-2 h-2 bg-gray-500 rounded-full"></span>
-					{{ end }}
-					<span>{{ if eq .Status "queued" }}requested{{ else if eq .Status "processing" }}approving...{{ else }}{{ .Status }}{{ end }}</span>
+				<div>
+					<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full {{ if eq .ExternalStatus "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .ExternalStatus "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .ExternalStatus "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else if eq .Status "queued" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .Status "pending" }}bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .Status "processing" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else if eq .Status "approved" }}bg-royal-900/40 text-royal-100 ring-1 ring-royal-500/30{{ else if eq .Status "declined" }}bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30{{ else if eq .Status "error" }}bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30{{ else }}bg-night-700 text-slate-200 ring-1 ring-white/10{{ end }}">
+						<span class="w-1.5 h-1.5 rounded-full {{ if eq .ExternalStatus "available" }}bg-emerald-400{{ else if eq .ExternalStatus "monitored" }}bg-amber-300{{ else if eq .ExternalStatus "grabbed" }}bg-sky-400{{ else if eq .Status "queued" }}bg-emerald-400{{ else if eq .Status "pending" }}bg-amber-300{{ else if eq .Status "processing" }}bg-sky-400{{ else if eq .Status "approved" }}bg-royal-300{{ else if or (eq .Status "declined") (eq .Status "error") }}bg-rose-400{{ else }}bg-slate-400{{ end }}"></span>
+						{{ if eq .ExternalStatus "available" }}Available{{ else if eq .ExternalStatus "monitored" }}Monitored{{ else if eq .ExternalStatus "grabbed" }}Grabbed{{ else if eq .Status "queued" }}Requested{{ else if eq .Status "processing" }}Approving{{ else if eq .Status "pending" }}Pending{{ else if eq .Status "approved" }}Approved{{ else if eq .Status "error" }}Needs attention{{ else }}{{ .Status }}{{ end }}
+					</span>
 				</div>
-				{{ if .ExternalStatus }}
-				<div class="text-xs mt-1 {{ if eq .ExternalStatus "available" }}text-emerald-300{{ else if eq .ExternalStatus "monitored" }}text-amber-300{{ else if eq .ExternalStatus "grabbed" }}text-sky-300{{ else }}text-slate-300{{ end }}">{{ if eq .Format "ebook" }}eBook{{ else if eq .Format "audiobook" }}Audiobook{{ else }}{{ .Format }}{{ end }} {{ .ExternalStatus }}</div>
-				{{ end }}
 				{{ if and .StatusReason (not .ExternalStatus) }}
 				<div class="text-xs text-slate-400 max-w-xs truncate" title="{{ .StatusReason }}">{{ .StatusReason }}</div>
 				{{ end }}
@@ -56,21 +45,21 @@
 					</form>
 					{{ end }}
 					<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest tr" hx-swap="none">
-						<button class="px-2 py-1 text-xs rounded bg-orange-600 text-white hover:bg-orange-500 whitespace-nowrap">Decline</button>
+						<button class="px-2 py-1 text-xs rounded bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30 hover:bg-amber-900/50 whitespace-nowrap">Decline</button>
 					</form>
 					{{ end }}
-					{{ if eq .Status "approved" }}
+					{{ if and (not .ExternalStatus) (eq .Status "approved") }}
 					<form hx-post="/api/v1/requests/{{ .ID }}/retry" hx-target="this" hx-swap="none">
 						<button class="px-2 py-1 text-xs rounded bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" title="Retry processing of this approved request">Retry</button>
 					</form>
-					{{ else if eq .Status "queued" }}
+					{{ else if and (not .ExternalStatus) (eq .Status "queued") }}
 					<form hx-post="/api/v1/requests/{{ .ID }}/retry" hx-target="this" hx-swap="none">
 						<button class="px-2 py-1 text-xs rounded bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" title="Retry processing of this approved request">Retry</button>
 					</form>
 					{{ end }}
-					<form hx-delete="/api/v1/requests/{{ .ID }}" hx-target="closest tr" hx-swap="delete"
+					<form hx-delete="/api/v1/requests/{{ .ID }}" hx-target="closest tr" hx-swap="delete" class="ml-2"
 						  hx-confirm="Are you sure you want to permanently delete this request?">
-						<button class="px-2 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-500 whitespace-nowrap">Delete</button>
+						<button class="px-2 py-1 text-xs rounded bg-transparent text-rose-200 ring-1 ring-rose-500/30 hover:bg-rose-950/40 whitespace-nowrap">Delete</button>
 					</form>
 				</div>
 				{{ else }}
@@ -89,32 +78,19 @@
 <!-- Mobile cards -->
 <div class="grid gap-3 md:hidden">
 	{{ range .Items }}
-	<div class="rounded-xl border border-white/10 bg-night-800 p-3">
+	<div class="rounded-xl border border-white/10 bg-night-800 p-3" data-request-status="{{ .Status }}" data-external-status="{{ .ExternalStatus }}">
 		<div class="cursor-pointer hover:bg-night-700/30 transition-colors -m-3 p-3 rounded-xl"
-			 data-open-book='{"title":"{{ .Title }}"{{ if gt (len .Authors) 0 }},"authors":["{{ index .Authors 0 }}"]{{ end }}{{ if .ISBN13 }},"isbn13":"{{ .ISBN13 }}"{{ end }}{{ if .ISBN10 }},"isbn10":"{{ .ISBN10 }}"{{ end }},"requesterEmail":"{{ .RequesterEmail }}","status":"{{ .Status }}","requestId":{{ .ID }}{{ if .ReadarrReq }},"readarrRequest":true{{ end }},"isAdmin":{{ if $.IsAdmin }}true{{ else }}false{{ end }}}'>
+			 data-open-book='{"title":"{{ .Title }}"{{ if gt (len .Authors) 0 }},"authors":["{{ index .Authors 0 }}"]{{ end }}{{ if .ISBN13 }},"isbn13":"{{ .ISBN13 }}"{{ end }}{{ if .ISBN10 }},"isbn10":"{{ .ISBN10 }}"{{ end }},"requesterEmail":"{{ .RequesterEmail }}","status":"{{ .Status }}","format":"{{ .Format }}"{{ if .ExternalStatus }},"externalStatus":"{{ .ExternalStatus }}"{{ end }},"requestId":{{ .ID }}{{ if .ReadarrReq }},"readarrRequest":true{{ end }},"isAdmin":{{ if $.IsAdmin }}true{{ else }}false{{ end }}}'>
 			<div class="font-medium">{{ .Title }}</div>
 			<div class="text-sm text-slate-400">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
 		</div>
 		<div class="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
 			<span class="px-2 py-0.5 rounded bg-night-700 ring-1 ring-white/10">{{ .RequesterEmail }}</span>
-			<span class="px-2 py-0.5 rounded bg-night-700 ring-1 ring-white/10">{{ .Format }}</span>
-			<span class="px-2 py-0.5 rounded bg-night-700 ring-1 ring-white/10 flex items-center gap-1">
-				{{ if eq .Status "declined" }}
-				<span class="w-1.5 h-1.5 bg-red-500 rounded-full"></span>
-				{{ else if eq .Status "queued" }}
-				<span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-				{{ else if eq .Status "pending" }}
-				<span class="w-1.5 h-1.5 bg-yellow-500 rounded-full"></span>
-				{{ else if eq .Status "processing" }}
-				<span class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></span>
-				{{ else }}
-				<span class="w-1.5 h-1.5 bg-gray-500 rounded-full"></span>
-				{{ end }}
-				{{ if eq .Status "queued" }}requested{{ else if eq .Status "processing" }}approving...{{ else }}{{ .Status }}{{ end }}
+			<span class="px-2 py-0.5 rounded bg-night-700 ring-1 ring-white/10">{{ if eq .Format "ebook" }}eBook{{ else if eq .Format "audiobook" }}Audiobook{{ else }}{{ .Format }}{{ end }}</span>
+			<span class="px-2 py-0.5 rounded flex items-center gap-1 {{ if eq .ExternalStatus "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .ExternalStatus "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .ExternalStatus "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else if eq .Status "queued" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .Status "pending" }}bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .Status "processing" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else if eq .Status "approved" }}bg-royal-900/40 text-royal-100 ring-1 ring-royal-500/30{{ else if eq .Status "declined" }}bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30{{ else if eq .Status "error" }}bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30{{ else }}bg-night-700 text-slate-200 ring-1 ring-white/10{{ end }}">
+				<span class="w-1.5 h-1.5 rounded-full {{ if eq .ExternalStatus "available" }}bg-emerald-400{{ else if eq .ExternalStatus "monitored" }}bg-amber-300{{ else if eq .ExternalStatus "grabbed" }}bg-sky-400{{ else if eq .Status "queued" }}bg-emerald-400{{ else if eq .Status "pending" }}bg-amber-300{{ else if eq .Status "processing" }}bg-sky-400{{ else if eq .Status "approved" }}bg-royal-300{{ else if or (eq .Status "declined") (eq .Status "error") }}bg-rose-400{{ else }}bg-slate-400{{ end }}"></span>
+				{{ if eq .ExternalStatus "available" }}Available{{ else if eq .ExternalStatus "monitored" }}Monitored{{ else if eq .ExternalStatus "grabbed" }}Grabbed{{ else if eq .Status "queued" }}Requested{{ else if eq .Status "processing" }}Approving{{ else if eq .Status "pending" }}Pending{{ else if eq .Status "approved" }}Approved{{ else if eq .Status "error" }}Needs attention{{ else }}{{ .Status }}{{ end }}
 			</span>
-			{{ if .ExternalStatus }}
-			<span class="px-2 py-0.5 rounded {{ if eq .ExternalStatus "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .ExternalStatus "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .ExternalStatus "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-night-700 text-slate-200 ring-1 ring-white/10{{ end }}">{{ if eq .Format "ebook" }}eBook{{ else if eq .Format "audiobook" }}Audiobook{{ else }}{{ .Format }}{{ end }} {{ .ExternalStatus }}</span>
-			{{ end }}
 		</div>
 		{{ if and .StatusReason (not .ExternalStatus) }}
 		<div class="mt-1 text-xs text-slate-400">{{ .StatusReason }}</div>
@@ -132,17 +108,17 @@
 			</form>
 			{{ end }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest div.rounded-xl" hx-swap="none">
-				<button class="px-3 py-1.5 rounded bg-orange-600 text-white hover:bg-orange-500">Decline</button>
+				<button class="px-3 py-1.5 rounded bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30 hover:bg-amber-900/50">Decline</button>
 			</form>
-			{{ if eq .Status "approved" }}
+			{{ end }}
+			{{ if and (not .ExternalStatus) (or (eq .Status "approved") (eq .Status "queued")) }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/retry" hx-target="this" hx-swap="none">
 				<button class="px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-500">Retry</button>
 			</form>
 			{{ end }}
-			{{ end }}
-			<form hx-delete="/api/v1/requests/{{ .ID }}" hx-target="closest div.rounded-xl" hx-swap="delete"
+			<form hx-delete="/api/v1/requests/{{ .ID }}" hx-target="closest div.rounded-xl" hx-swap="delete" class="ml-2"
 				  hx-confirm="Are you sure you want to permanently delete this request?">
-				<button class="px-3 py-1.5 rounded bg-red-600 text-white hover:bg-red-500">Delete</button>
+				<button class="px-3 py-1.5 rounded bg-transparent text-rose-200 ring-1 ring-rose-500/30 hover:bg-rose-950/40">Delete</button>
 			</form>
 			{{ else }}
 			<span class="text-slate-500">-</span>

@@ -270,9 +270,19 @@
 		(function() {
 			var searchTimeout = null;
 			var currentSearchRequest = null;
+
+			function setSearchMoreVisible(visible) {
+				var more = document.getElementById('more');
+				if (!more) {
+					return;
+				}
+				more.style.display = visible ? 'block' : 'none';
+			}
 			
 			window.debouncedSearch = function(query, delay) {
 				delay = delay || 600; // Default 600ms delay
+				query = query || '';
+				var trimmedQuery = query.trim();
 				
 				console.log('debouncedSearch called with query:', query, 'delay:', delay);
 				
@@ -290,13 +300,14 @@
 					currentSearchRequest = null;
 				}
 				
-				// Don't search if query is too short
-				if (!query || query.trim().length < 2) {
+				// Preserve discovery mode for a blank query, but still avoid noisy one-character searches.
+				if (trimmedQuery.length > 0 && trimmedQuery.length < 2) {
 					console.log('Query too short, clearing results');
 					var resultsContainer = document.getElementById('results');
 					if (resultsContainer) {
 						resultsContainer.innerHTML = '';
 					}
+					setSearchMoreVisible(false);
 					return;
 				}
 				
@@ -306,6 +317,7 @@
 					console.log('Search timeout triggered, starting search for:', query);
 					var resultsContainer = document.getElementById('results');
 					var indicator = document.getElementById('searchIndicator');
+					setSearchMoreVisible(false);
 					
 					if (indicator) {
 						console.log('Showing search indicator');
@@ -326,7 +338,7 @@
 					}
 					
 					var formData = new FormData(searchForm);
-					formData.set('q', query);
+					formData.set('q', trimmedQuery);
 					
 					var params = new URLSearchParams(formData);
 					var url = '/ui/search?' + params.toString();
@@ -352,6 +364,7 @@
 								});
 								document.dispatchEvent(event);
 							}
+							setSearchMoreVisible(trimmedQuery.length >= 2);
 						})
 						.catch(function(error) {
 							if (error.name !== 'AbortError') {
@@ -384,21 +397,117 @@
 		function requestFormatLabel(format){
 			return format === 'audiobook' ? 'Audiobook' : 'eBook';
 		}
+		function normalizeRequestState(state){
+			return String(state || '').trim().toLowerCase();
+		}
+		function requestStatusLabel(status){
+			var normalized = normalizeRequestState(status);
+			if (normalized === 'queued') return 'Requested';
+			if (normalized === 'processing') return 'Approving';
+			if (normalized === 'approved') return 'Approved';
+			if (normalized === 'declined') return 'Declined';
+			if (normalized === 'pending') return 'Pending';
+			if (normalized === 'error') return 'Needs attention';
+			return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Unknown';
+		}
+		function requestStatusBadgeClass(status){
+			var normalized = normalizeRequestState(status);
+			if (normalized === 'queued') return 'bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30';
+			if (normalized === 'processing') return 'bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30';
+			if (normalized === 'approved') return 'bg-royal-900/40 text-royal-100 ring-1 ring-royal-500/30';
+			if (normalized === 'declined') return 'bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30';
+			if (normalized === 'pending') return 'bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30';
+			if (normalized === 'error') return 'bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30';
+			return 'bg-night-700 text-slate-200 ring-1 ring-white/10';
+		}
+		function renderRequestStatusBadge(status){
+			var normalized = normalizeRequestState(status);
+			var dotClass = 'bg-slate-400';
+			if (normalized === 'queued') dotClass = 'bg-emerald-400';
+			else if (normalized === 'processing') dotClass = 'bg-sky-400';
+			else if (normalized === 'approved') dotClass = 'bg-royal-300';
+			else if (normalized === 'declined' || normalized === 'error') dotClass = 'bg-rose-400';
+			else if (normalized === 'pending') dotClass = 'bg-amber-300';
+			return '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ' + requestStatusBadgeClass(status) + '"><span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>' + requestStatusLabel(status) + '</span>';
+		}
+		function availabilityBadgeClass(state){
+			var normalized = normalizeRequestState(state);
+			if (normalized === 'available') return 'bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30';
+			if (normalized === 'monitored') return 'bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30';
+			if (normalized === 'grabbed') return 'bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30';
+			return 'bg-night-700 text-slate-200 ring-1 ring-white/10';
+		}
+		function availabilityLabel(format, state){
+			var normalized = normalizeRequestState(state);
+			if (!normalized) return '';
+			return requestFormatLabel(format) + ' ' + normalized;
+		}
+		function renderAvailabilityBadge(format, state){
+			var label = availabilityLabel(format, state);
+			if (!label) return '';
+			return '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ' + availabilityBadgeClass(state) + '">' + label + '</span>';
+		}
+		function hasLibraryStatus(externalStatus){
+			var normalized = normalizeRequestState(externalStatus);
+			return normalized === 'available' || normalized === 'monitored' || normalized === 'grabbed';
+		}
+		function renderEffectiveRequestBadge(format, status, externalStatus){
+			if (hasLibraryStatus(externalStatus)) {
+				return renderAvailabilityBadge(format, externalStatus);
+			}
+			return renderRequestStatusBadge(status);
+		}
 		function setRequestButtonState(btn, format, state){
 			if (!btn) return;
+			var normalized = normalizeRequestState(state);
 			var label = requestFormatLabel(format);
+			var form = btn.closest && btn.closest('form');
+			if (form) {
+				if (format === 'audiobook') form.dataset.audiobookState = normalized;
+				else form.dataset.ebookState = normalized;
+			}
 			btn.classList.remove(
 				'bg-royal-600', 'hover:bg-royal-700', 'hover:bg-royal-600', 'hover:bg-royal-500',
 				'bg-emerald-600', 'bg-emerald-700/80',
 				'bg-amber-700/80',
 				'bg-sky-700/80',
 				'bg-slate-700',
+				'ring-1', 'ring-emerald-500/30', 'ring-amber-500/30', 'ring-sky-500/30', 'ring-white/10',
 				'opacity-60', 'pointer-events-none', 'cursor-not-allowed'
 			);
-			if (state === 'requested') {
+			btn.title = '';
+			if (normalized === 'requested') {
 				btn.textContent = label + ' requested';
 				btn.classList.add('bg-emerald-600', 'cursor-not-allowed');
 				btn.disabled = true;
+				return;
+			}
+			if (normalized === 'available') {
+				btn.textContent = label + ' available';
+				btn.classList.add('bg-emerald-700/80', 'cursor-not-allowed');
+				btn.disabled = true;
+				btn.title = label + ' is already available';
+				return;
+			}
+			if (normalized === 'monitored') {
+				btn.textContent = label + ' monitored';
+				btn.classList.add('bg-amber-700/80', 'cursor-not-allowed');
+				btn.disabled = true;
+				btn.title = label + ' is already monitored';
+				return;
+			}
+			if (normalized === 'grabbed') {
+				btn.textContent = label + ' grabbed';
+				btn.classList.add('bg-sky-700/80', 'cursor-not-allowed');
+				btn.disabled = true;
+				btn.title = label + ' is already grabbed';
+				return;
+			}
+			if (normalized) {
+				btn.textContent = label + ' ' + normalized;
+				btn.classList.add('bg-slate-700', 'cursor-not-allowed');
+				btn.disabled = true;
+				btn.title = label + ' is already ' + normalized;
 				return;
 			}
 			btn.textContent = 'Request ' + label;
@@ -650,7 +759,7 @@
 			<div class="flex gap-4 p-4">
 				<img id="book-modal-cover" src="/static/placeholder-cover.svg" class="w-28 h-40 object-cover rounded-md border border-white/10 bg-night-900" alt="Cover" onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
 				<div class="min-w-0 flex-1">
-					<h3 id="book-modal-title" class="font-semibold text-lg truncate"></h3>
+					<h3 id="book-modal-title" class="font-semibold text-lg leading-snug"></h3>
 					<div id="book-modal-authors" class="text-sm text-slate-400 mt-1"></div>
 					<div id="book-modal-meta" class="text-xs text-slate-400 mt-2"></div>
 					<!-- Request info section -->
@@ -669,9 +778,10 @@
 			</div>
 			<!-- User request buttons for search results -->
 			<div id="book-modal-user-actions" class="hidden p-3 border-t border-white/5">
+				<div class="text-xs text-slate-400 mb-2">Choose a format</div>
 				<div class="flex flex-wrap gap-2 justify-end">
-					<button id="book-modal-request-ebook" class="px-3 py-1.5 text-xs rounded bg-royal-600 text-white hover:bg-royal-500">Request eBook</button>
-					<button id="book-modal-request-audiobook" class="px-3 py-1.5 text-xs rounded bg-royal-600 text-white hover:bg-royal-500">Request Audiobook</button>
+					<button id="book-modal-request-ebook" class="px-3 py-1.5 text-xs rounded w-full sm:w-44 bg-royal-600 text-white hover:bg-royal-500">Request eBook</button>
+					<button id="book-modal-request-audiobook" class="px-3 py-1.5 text-xs rounded w-full sm:w-44 bg-royal-600 text-white hover:bg-royal-500">Request Audiobook</button>
 				</div>
 			</div>
 			<!-- Action buttons for requests -->
@@ -680,8 +790,8 @@
 					<button id="book-modal-approve" class="hidden px-3 py-1.5 text-xs rounded bg-royal-600 text-white hover:bg-royal-500">Approve</button>
 					<button id="book-modal-attach" class="hidden px-3 py-1.5 text-xs rounded bg-amber-600 text-white hover:bg-amber-500">Attach</button>
 					<button id="book-modal-retry" class="hidden px-3 py-1.5 text-xs rounded bg-amber-600 text-white hover:bg-amber-500">Retry</button>
-					<button id="book-modal-decline" class="hidden px-3 py-1.5 text-xs rounded bg-orange-600 text-white hover:bg-orange-500">Decline</button>
-					<button id="book-modal-delete" class="hidden px-3 py-1.5 text-xs rounded bg-red-600 text-white hover:bg-red-500">Delete</button>
+					<button id="book-modal-decline" class="hidden px-3 py-1.5 text-xs rounded bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30 hover:bg-amber-900/50">Decline</button>
+					<button id="book-modal-delete" class="hidden px-3 py-1.5 text-xs rounded ml-2 bg-transparent text-rose-200 ring-1 ring-rose-500/30 hover:bg-rose-950/40">Delete</button>
 				</div>
 			</div>
 			<div class="p-3 border-t border-white/5 flex justify-end gap-2">
@@ -821,6 +931,7 @@
 					// Hide request-specific sections during loading
 					if (requestInfo) requestInfo.classList.add('hidden');
 					if (actionsSection) actionsSection.classList.add('hidden');
+					if (userActions) userActions.classList.add('hidden');
 					
 					modal.classList.remove('hidden');
 					modal.setAttribute('aria-hidden', 'false');
@@ -837,11 +948,9 @@
 						if (requester) requester.textContent = data.requesterEmail || data.RequesterEmail || 'Unknown';
 						if (status) {
 							var statusText = data.status || data.Status || 'pending';
-							var statusColor = statusText === 'queued' ? 'text-green-400' : 
-											  statusText === 'pending' ? 'text-yellow-400' :
-											  statusText === 'declined' ? 'text-red-400' :
-											  statusText === 'processing' ? 'text-blue-400' : 'text-gray-400';
-							status.innerHTML = '<span class="' + statusColor + '">' + statusText + '</span>';
+							var externalStatus = data.externalStatus || data.ExternalStatus || '';
+							var format = data.format || data.Format || 'ebook';
+							status.innerHTML = renderEffectiveRequestBadge(format, statusText, externalStatus);
 						}
 					} else {
 						requestInfo.classList.add('hidden');
@@ -855,6 +964,7 @@
 					if (isAdmin) {
 						actionsSection.classList.remove('hidden');
 						var requestStatus = data.status || data.Status || 'pending';
+						var externalStatus = data.externalStatus || data.ExternalStatus || '';
 						var hasReadarrReq = !!(data.readarrRequest || data.ReadarrReq);
 						var requestId = data.requestId || data.id || data.ID;
 						
@@ -907,7 +1017,7 @@
 						}
 						var retryBtn = document.getElementById('book-modal-retry');
 						if (retryBtn) {
-							if (requestStatus === 'approved' || requestStatus === 'queued') {
+							if (!hasLibraryStatus(externalStatus) && (requestStatus === 'approved' || requestStatus === 'queued')) {
 								retryBtn.classList.remove('hidden');
 								retryBtn.onclick = function() { handleRequestAction('retry', requestId); };
 							} else {
@@ -925,19 +1035,25 @@
 				if (userActions) {
 					if (!isRequest && (data.title || data.isbn13 || data.isbn10 || data.asin)) {
 						userActions.classList.remove('hidden');
+						var ebookState = data.ebookState || data.EbookState || '';
+						var audiobookState = data.audiobookState || data.AudiobookState || '';
 						// Attach click handlers that submit requests with the same helper used elsewhere
 						if (reqEbookBtn) {
-							reqEbookBtn.onclick = function(){
+							setRequestButtonState(reqEbookBtn, 'ebook', ebookState);
+							reqEbookBtn.onclick = ebookState ? null : function(){
 								window.submitRequestFromModal('ebook', data);
 							};
 						}
 						if (reqAudioBtn) {
-							reqAudioBtn.onclick = function(){
+							setRequestButtonState(reqAudioBtn, 'audiobook', audiobookState);
+							reqAudioBtn.onclick = audiobookState ? null : function(){
 								window.submitRequestFromModal('audiobook', data);
 							};
 						}
 					} else {
 						userActions.classList.add('hidden');
+						if (reqEbookBtn) reqEbookBtn.onclick = null;
+						if (reqAudioBtn) reqAudioBtn.onclick = null;
 					}
 				}
 				
@@ -1228,6 +1344,8 @@
 					data.isbn10 = ds.isbn10 || form.querySelector('input[name="isbn10"]')?.value || '';
 					data.isbn13 = ds.isbn13 || form.querySelector('input[name="isbn13"]')?.value || '';
 					data.asin = ds.asin || form.querySelector('input[name="asin"]')?.value || '';
+					data.ebookState = ds.ebookState || '';
+					data.audiobookState = ds.audiobookState || '';
 					// authors: collect all hidden inputs
 					var authEls = form.querySelectorAll('input[name="authors"]');
 					if (authEls && authEls.length) { data.authors = Array.from(authEls).map(i=>i.value); }
@@ -1284,16 +1402,22 @@
 						}
 						return resp.json();
 					})
-					.then(function(enrichedData) {
-						if (enrichedData && !enrichedData.error) {
-							// Use enriched data directly - it contains all the Readarr fields
-							// Add original cover URL if not present in enriched data
-							if (!enrichedData.cover && data.cover) {
-								enrichedData.cover = data.cover;
-							}
-							window.openBookModal(enrichedData);
-						} else {
-							window.openBookModal(data);
+						.then(function(enrichedData) {
+							if (enrichedData && !enrichedData.error) {
+								// Use enriched data directly - it contains all the Readarr fields
+								// Add original cover URL if not present in enriched data
+								if (!enrichedData.cover && data.cover) {
+									enrichedData.cover = data.cover;
+								}
+								if (!enrichedData.ebookState && data.ebookState) {
+									enrichedData.ebookState = data.ebookState;
+								}
+								if (!enrichedData.audiobookState && data.audiobookState) {
+									enrichedData.audiobookState = data.audiobookState;
+								}
+								window.openBookModal(enrichedData);
+							} else {
+								window.openBookModal(data);
 						}
 					})
 					.catch(function(err) {
@@ -1448,6 +1572,8 @@
 										if (bookData.requesterEmail) mergedData.requesterEmail = bookData.requesterEmail;
 										if (bookData.status) mergedData.status = bookData.status;
 										if (bookData.requestId) mergedData.requestId = bookData.requestId;
+										if (bookData.externalStatus) mergedData.externalStatus = bookData.externalStatus;
+										if (bookData.format) mergedData.format = bookData.format;
 										if (bookData.hasOwnProperty('isAdmin')) mergedData.isAdmin = bookData.isAdmin;
 										if (bookData.readarrRequest) mergedData.readarrRequest = bookData.readarrRequest;
 										window.openBookModal(mergedData);
@@ -1505,6 +1631,8 @@
 										if (bookData.requesterEmail) mergedData.requesterEmail = bookData.requesterEmail;
 										if (bookData.status) mergedData.status = bookData.status;
 										if (bookData.requestId) mergedData.requestId = bookData.requestId;
+										if (bookData.externalStatus) mergedData.externalStatus = bookData.externalStatus;
+										if (bookData.format) mergedData.format = bookData.format;
 										if (bookData.hasOwnProperty('isAdmin')) mergedData.isAdmin = bookData.isAdmin;
 										if (bookData.readarrRequest) mergedData.readarrRequest = bookData.readarrRequest;
 										window.openBookModal(mergedData);

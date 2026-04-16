@@ -10,12 +10,18 @@
 		<input type="hidden" name="limit" value="20">
 		<button class="px-4 py-2 rounded bg-royal-600 hover:bg-royal-500 text-white">Search</button>
 	</form>
-	<div id="searchIndicator" class="text-sm text-slate-400 mt-2" style="display: none;">Searching…</div>
+	<div id="searchIndicator" class="mt-3 rounded-xl border border-royal-500/20 bg-royal-900/20 px-4 py-3 text-sm text-royal-100" style="display: none;">
+		Searching for matches...
+	</div>
 	</div>
 <div id="results" class="mt-4">
-	<!-- results will render here -->
+	<div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 px-6 py-10 text-center">
+		<div class="text-lg font-semibold text-slate-100">Find your next book</div>
+		<div class="mt-2 text-sm text-slate-400">Search by title, author, ISBN, ASIN, or paste an Amazon URL to see request options and library availability.</div>
+	</div>
 </div>
 <div id="more" class="md:block"
+		 style="display: none;"
 		 hx-get="/ui/search"
 		 hx-trigger="revealed"
 		 hx-target="#results"
@@ -36,20 +42,20 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
 	console.log('Search page: DOM loaded, initializing search...');
-	
+
 	var searchInput = document.getElementById('searchInput');
 	var searchForm = document.getElementById('searchForm');
-	
+
 	if (!searchInput) {
 		console.error('Search input not found!');
 		return;
 	}
-	
+
 	if (!searchForm) {
 		console.error('Search form not found!');
 		return;
 	}
-	
+
 	// Wait for debouncedSearch to be available
 	var initSearch = function() {
 		if (typeof window.debouncedSearch !== 'function') {
@@ -57,28 +63,29 @@ document.addEventListener('DOMContentLoaded', function() {
 			setTimeout(initSearch, 100);
 			return;
 		}
-		
+
 		console.log('Setting up search event listeners...');
-		
+
 		// Input event for typing
 		searchInput.addEventListener('input', function(e) {
 			console.log('Search input:', e.target.value);
 			window.debouncedSearch(e.target.value);
 		});
-		
+
 		// Form submit event
 		searchForm.addEventListener('submit', function(e) {
 			e.preventDefault();
 			console.log('Search form submitted:', searchInput.value);
 			window.debouncedSearch(searchInput.value, 0); // Immediate search
 		});
-		
+
 		console.log('Search initialization complete!');
-		
+
 		// Focus on search input for better UX
 		searchInput.focus();
+		window.debouncedSearch(searchInput.value, 0);
 	};
-	
+
 	initSearch();
 });
 </script>

@@ -1,33 +1,135 @@
 {{ template "header" . }}
 <div class="grid gap-4">
-	<div class="flex items-center justify-between">
-		<h1 class="text-xl font-semibold">Requests</h1>
+	<div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+		<div>
+			<h1 class="text-xl font-semibold">Requests</h1>
+			<div id="requests-refresh-status" class="mt-1 text-sm text-slate-400">Checking request status...</div>
+		</div>
+		<div class="flex items-center gap-3">
+			<div id="requests-last-updated" class="text-xs text-slate-500">Waiting for first update...</div>
+			<button id="requests-refresh-button" type="button" class="px-3 py-1.5 rounded-lg bg-night-700/60 text-slate-100 ring-1 ring-white/10 hover:bg-night-700">Refresh</button>
+		</div>
 	</div>
 	<div id="req-table"
 		 class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-2"
 		 hx-get="/ui/requests/table"
-		 hx-trigger="load, request:created from:body, request:updated from:body, every 5s"
+		 hx-trigger="load, refresh, request:created from:body, request:updated from:body"
 		 hx-swap="innerHTML">
-		<div class="p-4 text-slate-400">Loading…</div>
+		<div class="p-4 text-slate-400">Loading...</div>
 		{{/* Initial server render as a fallback; will be replaced by HTMX */}}
 		{{ template "requests_table" . }}
 	</div>
 </div>
 
 <script>
+var requestsRefreshTimer = null;
+var requestsRefreshDelayMs = 15000;
+
 document.addEventListener('DOMContentLoaded', function() {
 	formatRequestAuthors();
+	updateRequestsLastUpdated();
+	wireRequestRefreshButton();
+	scheduleRequestRefresh();
 });
 
-// Also format authors after HTMX updates the table
 document.addEventListener('htmx:afterSwap', function(evt) {
 	if (evt.detail.target && evt.detail.target.id === 'req-table') {
 		formatRequestAuthors();
+		updateRequestsLastUpdated();
+		scheduleRequestRefresh();
 	}
 });
 
+document.addEventListener('htmx:beforeRequest', function(evt) {
+	if (evt.detail.elt && evt.detail.elt.id === 'req-table') {
+		setRequestRefreshMessage('Refreshing requests...');
+		var button = document.getElementById('requests-refresh-button');
+		if (button) button.disabled = true;
+		if (requestsRefreshTimer) {
+			clearTimeout(requestsRefreshTimer);
+			requestsRefreshTimer = null;
+		}
+	}
+});
+
+document.addEventListener('htmx:afterRequest', function(evt) {
+	if (evt.detail.elt && evt.detail.elt.id === 'req-table') {
+		var button = document.getElementById('requests-refresh-button');
+		if (button) button.disabled = false;
+	}
+});
+
+function setRequestRefreshMessage(message) {
+	var status = document.getElementById('requests-refresh-status');
+	if (status) status.textContent = message;
+}
+
+function updateRequestsLastUpdated() {
+	var lastUpdated = document.getElementById('requests-last-updated');
+	if (!lastUpdated) return;
+	var now = new Date();
+	lastUpdated.textContent = 'Updated ' + now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function listRequestStatusCards() {
+	return Array.from(document.querySelectorAll('#req-table [data-request-status]'));
+}
+
+function requestNeedsAutoRefresh(element) {
+	var status = (element.getAttribute('data-request-status') || '').toLowerCase();
+	var external = (element.getAttribute('data-external-status') || '').toLowerCase();
+	if (status === 'pending' || status === 'processing' || status === 'approved') return true;
+	if (status === 'queued' && external !== 'available') return true;
+	return false;
+}
+
+function scheduleRequestRefresh() {
+	if (requestsRefreshTimer) {
+		clearTimeout(requestsRefreshTimer);
+		requestsRefreshTimer = null;
+	}
+	var items = listRequestStatusCards();
+	if (!items.length) {
+		setRequestRefreshMessage('No requests yet.');
+		return;
+	}
+	if (items.some(requestNeedsAutoRefresh)) {
+		setRequestRefreshMessage('Auto-refreshing every 15 seconds while statuses are still changing.');
+		requestsRefreshTimer = setTimeout(function() {
+			refreshRequestsTable();
+		}, requestsRefreshDelayMs);
+		return;
+	}
+	setRequestRefreshMessage('Up to date. Auto-refresh pauses when everything is settled.');
+}
+
+function refreshRequestsTable() {
+	var reqTable = document.getElementById('req-table');
+	if (!reqTable) return;
+	if (window.htmx) {
+		htmx.trigger(reqTable, 'refresh');
+		return;
+	}
+	fetch('/ui/requests/table', { credentials: 'same-origin' })
+		.then(function(resp) { return resp.text(); })
+		.then(function(html) {
+			reqTable.innerHTML = html;
+			formatRequestAuthors();
+			updateRequestsLastUpdated();
+			scheduleRequestRefresh();
+		});
+}
+
+function wireRequestRefreshButton() {
+	var button = document.getElementById('requests-refresh-button');
+	if (!button || button.dataset.bound === 'true') return;
+	button.dataset.bound = 'true';
+	button.addEventListener('click', function() {
+		refreshRequestsTable();
+	});
+}
+
 function formatRequestAuthors() {
-	// Format authors in desktop table
 	var tableRows = document.querySelectorAll('#req-table table tbody tr');
 	tableRows.forEach(function(row) {
 		var authorElement = row.querySelector('td:first-child .text-slate-400');
@@ -36,8 +138,7 @@ function formatRequestAuthors() {
 			if (originalAuthor && typeof window.formatAuthorName === 'function') {
 				var formattedAuthor = window.formatAuthorName(originalAuthor);
 				authorElement.textContent = formattedAuthor;
-				
-				// Also update the data-open-book JSON if it contains author info
+
 				var clickableElement = row.querySelector('[data-open-book]');
 				if (clickableElement) {
 					try {
@@ -47,14 +148,12 @@ function formatRequestAuthors() {
 							clickableElement.setAttribute('data-open-book', JSON.stringify(bookData));
 						}
 					} catch(e) {
-						// Ignore JSON parsing errors
 					}
 				}
 			}
 		}
 	});
-	
-	// Format authors in mobile cards  
+
 	var mobileCards = document.querySelectorAll('#req-table .grid.gap-3 > div');
 	mobileCards.forEach(function(card) {
 		var authorElement = card.querySelector('.text-sm.text-slate-400');
@@ -63,8 +162,7 @@ function formatRequestAuthors() {
 			if (originalAuthor && typeof window.formatAuthorName === 'function') {
 				var formattedAuthor = window.formatAuthorName(originalAuthor);
 				authorElement.textContent = formattedAuthor;
-				
-				// Also update the data-open-book JSON if it contains author info
+
 				var clickableElement = card.querySelector('[data-open-book]');
 				if (clickableElement) {
 					try {
@@ -74,7 +172,6 @@ function formatRequestAuthors() {
 							clickableElement.setAttribute('data-open-book', JSON.stringify(bookData));
 						}
 					} catch(e) {
-						// Ignore JSON parsing errors
 					}
 				}
 			}
