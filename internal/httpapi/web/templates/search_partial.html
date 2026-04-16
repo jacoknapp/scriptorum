@@ -34,10 +34,10 @@
         </div>
         <div class="mt-2 flex flex-wrap gap-2 text-xs">
           {{ if .EbookState }}
-          <span class="px-2 py-0.5 rounded-full bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30">eBook in Readarr: {{ .EbookState }}</span>
+          <span class="px-2 py-0.5 rounded-full {{ if eq .EbookState "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .EbookState "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .EbookState "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-slate-800 text-slate-200 ring-1 ring-white/10{{ end }}">eBook {{ .EbookState }}</span>
           {{ end }}
           {{ if .AudiobookState }}
-          <span class="px-2 py-0.5 rounded-full bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30">Audiobook in Readarr: {{ .AudiobookState }}</span>
+          <span class="px-2 py-0.5 rounded-full {{ if eq .AudiobookState "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .AudiobookState "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .AudiobookState "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-slate-800 text-slate-200 ring-1 ring-white/10{{ end }}">Audiobook {{ .AudiobookState }}</span>
           {{ end }}
         </div>
         <!-- Source label removed: do not display which instance returned the result -->
@@ -61,18 +61,18 @@
         <input type="hidden" name="provider_payload_ebook" value='{{ .ProviderEbookPayload }}'>
         <input type="hidden" name="provider_payload_audiobook" value='{{ .ProviderAudiobookPayload }}'>
 
-        <!-- Use the same purple and fixed width for both buttons so layout doesn't shift -->
+        <!-- Keep sizing consistent while color and label reflect the current state -->
   <button type="button" name="format" value="ebook"
-    class="px-3 py-2 rounded-lg {{ if .EbookState }}bg-emerald-700/70 cursor-not-allowed{{ else }}bg-royal-600 hover:bg-royal-500{{ end }} text-white w-full sm:w-44"
+    class="px-3 py-2 rounded-lg text-white w-full sm:w-44 {{ if .EbookState }}cursor-not-allowed{{ end }} {{ if eq .EbookState "available" }}bg-emerald-700/80{{ else if eq .EbookState "monitored" }}bg-amber-700/80{{ else if eq .EbookState "grabbed" }}bg-sky-700/80{{ else if .EbookState }}bg-slate-700{{ else }}bg-royal-600 hover:bg-royal-500{{ end }}"
     {{ if .EbookState }}disabled title="Already in Readarr as {{ .EbookState }}"{{ end }}
     onclick="scriptorumRequestHtmx(this, 'ebook')">
-          {{ if .EbookState }}In Readarr: {{ .EbookState }}{{ else }}Request eBook{{ end }}
+          {{ if .EbookState }}eBook {{ .EbookState }}{{ else }}Request eBook{{ end }}
         </button>
   <button type="button" name="format" value="audiobook"
-    class="px-3 py-2 rounded-lg {{ if .AudiobookState }}bg-sky-700/70 cursor-not-allowed{{ else }}bg-royal-600 hover:bg-royal-500{{ end }} text-white w-full sm:w-44"
+    class="px-3 py-2 rounded-lg text-white w-full sm:w-44 {{ if .AudiobookState }}cursor-not-allowed{{ end }} {{ if eq .AudiobookState "available" }}bg-emerald-700/80{{ else if eq .AudiobookState "monitored" }}bg-amber-700/80{{ else if eq .AudiobookState "grabbed" }}bg-sky-700/80{{ else if .AudiobookState }}bg-slate-700{{ else }}bg-royal-600 hover:bg-royal-500{{ end }}"
     {{ if .AudiobookState }}disabled title="Already in Readarr as {{ .AudiobookState }}"{{ end }}
     onclick="scriptorumRequestHtmx(this, 'audiobook')">
-          {{ if .AudiobookState }}In Readarr: {{ .AudiobookState }}{{ else }}Request Audiobook{{ end }}
+          {{ if .AudiobookState }}Audiobook {{ .AudiobookState }}{{ else }}Request Audiobook{{ end }}
         </button>
       </form>
 

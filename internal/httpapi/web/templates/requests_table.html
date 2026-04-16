@@ -36,9 +36,9 @@
 					<span>{{ if eq .Status "queued" }}requested{{ else if eq .Status "processing" }}approving...{{ else }}{{ .Status }}{{ end }}</span>
 				</div>
 				{{ if .ExternalStatus }}
-				<div class="text-xs text-emerald-300 mt-1">Readarr: {{ .ExternalStatus }}</div>
+				<div class="text-xs mt-1 {{ if eq .ExternalStatus "available" }}text-emerald-300{{ else if eq .ExternalStatus "monitored" }}text-amber-300{{ else if eq .ExternalStatus "grabbed" }}text-sky-300{{ else }}text-slate-300{{ end }}">{{ if eq .Format "ebook" }}eBook{{ else if eq .Format "audiobook" }}Audiobook{{ else }}{{ .Format }}{{ end }} {{ .ExternalStatus }}</div>
 				{{ end }}
-				{{ if .StatusReason }}
+				{{ if and .StatusReason (not .ExternalStatus) }}
 				<div class="text-xs text-slate-400 max-w-xs truncate" title="{{ .StatusReason }}">{{ .StatusReason }}</div>
 				{{ end }}
 			</td>
@@ -113,10 +113,10 @@
 				{{ if eq .Status "queued" }}requested{{ else if eq .Status "processing" }}approving...{{ else }}{{ .Status }}{{ end }}
 			</span>
 			{{ if .ExternalStatus }}
-			<span class="px-2 py-0.5 rounded bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30">Readarr: {{ .ExternalStatus }}</span>
+			<span class="px-2 py-0.5 rounded {{ if eq .ExternalStatus "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .ExternalStatus "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .ExternalStatus "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-night-700 text-slate-200 ring-1 ring-white/10{{ end }}">{{ if eq .Format "ebook" }}eBook{{ else if eq .Format "audiobook" }}Audiobook{{ else }}{{ .Format }}{{ end }} {{ .ExternalStatus }}</span>
 			{{ end }}
 		</div>
-		{{ if .StatusReason }}
+		{{ if and .StatusReason (not .ExternalStatus) }}
 		<div class="mt-1 text-xs text-slate-400">{{ .StatusReason }}</div>
 		{{ end }}
 		<div class="mt-3 flex flex-wrap gap-2">

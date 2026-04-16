@@ -153,11 +153,7 @@
 									// find request buttons inside this form and turn them into Requested state
 									var btns = f.querySelectorAll('button');
 									btns.forEach(function(b){
-										b.textContent = 'Requested ✓';
-										b.classList.remove('bg-royal-600','bg-royal-500');
-										b.classList.add('bg-emerald-600');
-										b.classList.remove('hover:bg-royal-700','hover:bg-royal-600');
-										b.disabled = true;
+										setRequestButtonState(b, b.value || 'ebook', 'requested');
 									});
 								}
 							});
@@ -385,6 +381,30 @@
 			toast.appendChild(note);
 			setTimeout(function(){ note.style.opacity = '0'; note.style.transition = 'opacity .4s'; setTimeout(function(){ note.remove(); }, 400); }, 2500);
 		}
+		function requestFormatLabel(format){
+			return format === 'audiobook' ? 'Audiobook' : 'eBook';
+		}
+		function setRequestButtonState(btn, format, state){
+			if (!btn) return;
+			var label = requestFormatLabel(format);
+			btn.classList.remove(
+				'bg-royal-600', 'hover:bg-royal-700', 'hover:bg-royal-600', 'hover:bg-royal-500',
+				'bg-emerald-600', 'bg-emerald-700/80',
+				'bg-amber-700/80',
+				'bg-sky-700/80',
+				'bg-slate-700',
+				'opacity-60', 'pointer-events-none', 'cursor-not-allowed'
+			);
+			if (state === 'requested') {
+				btn.textContent = label + ' requested';
+				btn.classList.add('bg-emerald-600', 'cursor-not-allowed');
+				btn.disabled = true;
+				return;
+			}
+			btn.textContent = 'Request ' + label;
+			btn.classList.add('bg-royal-600', 'hover:bg-royal-500');
+			btn.disabled = false;
+		}
 		window.scriptorumRequestFallback = async function(btn, format){
 			try{
 				var li = btn.closest('li');
@@ -418,9 +438,7 @@
 				var resp = await fetch('/api/v1/requests', { method: 'POST', body: JSON.stringify(payload), headers: { 'HX-Request':'true', 'Content-Type':'application/json' }, credentials: 'same-origin' });
 				if (ind) ind.style.display = 'none';
 				if (resp.ok) {
-					btn.textContent = 'Requested ✓';
-					btn.classList.add('bg-emerald-600');
-					btn.classList.remove('bg-royal-600','hover:bg-royal-700','hover:bg-royal-600','hover:bg-royal-500','pointer-events-none');
+					setRequestButtonState(btn, format, 'requested');
 					scriptorumShowToast('Request submitted. Open Requests to view.');
 					var tbl = document.querySelector('#req-table');
 					if (tbl) {
@@ -480,9 +498,7 @@
 			
 			if (event.detail.xhr.status >= 200 && event.detail.xhr.status < 300) {
 				// Success
-				btn.textContent = 'Requested ✓';
-				btn.classList.add('bg-emerald-600');
-				btn.classList.remove('bg-royal-600','hover:bg-royal-700','hover:bg-royal-600','hover:bg-royal-500','pointer-events-none');
+				setRequestButtonState(btn, format, 'requested');
 				scriptorumShowToast('Request submitted. Open Requests to view.');
 				// Trigger refresh of requests table
 				var reqTable = document.querySelector('#req-table');
@@ -548,10 +564,7 @@
 				
 				if (ind) ind.style.display = 'none';
 				if (resp.ok) {
-					btn.textContent = 'Requested ✓';
-					btn.classList.remove('bg-royal-600', 'hover:bg-royal-500', 'hover:bg-royal-700', 'hover:bg-royal-600');
-					btn.classList.add('bg-emerald-600');
-					btn.disabled = true;
+					setRequestButtonState(btn, format, 'requested');
 					scriptorumShowToast('Request submitted. Open Requests to view.');
 					// Trigger HTMX refresh of requests table if it exists
 					var reqTable = document.querySelector('#req-table');
@@ -1082,10 +1095,7 @@
 				if (resp.ok) {
 					// Mark only the clicked button as requested; leave the other available
 					if (btnTarget) {
-						btnTarget.textContent = 'Requested ✓';
-						btnTarget.classList.add('bg-emerald-600');
-						btnTarget.classList.remove('bg-royal-600','hover:bg-royal-700','hover:bg-royal-600','hover:bg-royal-500','opacity-60','pointer-events-none');
-						btnTarget.disabled = true;
+						setRequestButtonState(btnTarget, format, 'requested');
 					}
 					scriptorumShowToast('Request submitted. Open Requests to view.');
 					// Also reflect the selection on the main search list (if visible)
@@ -1110,10 +1120,7 @@
 							var sel = (format === 'audiobook') ? 'button[name="format"][value="audiobook"]' : 'button[name="format"][value="ebook"]';
 							var listBtn = matchForm.querySelector(sel);
 							if (listBtn) {
-								listBtn.textContent = 'Requested ✓';
-								listBtn.classList.add('bg-emerald-600');
-								listBtn.classList.remove('bg-royal-600','hover:bg-royal-700','hover:bg-royal-600','hover:bg-royal-500','opacity-60','pointer-events-none');
-								listBtn.disabled = true;
+								setRequestButtonState(listBtn, format, 'requested');
 							}
 						}
 					} catch(e) { /* ignore sync errors */ }
