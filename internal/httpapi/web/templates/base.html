@@ -400,6 +400,11 @@
 		function normalizeRequestState(state){
 			return String(state || '').trim().toLowerCase();
 		}
+		function titleCaseRequestState(state){
+			return String(state || '').replace(/\b\w/g, function(chr) {
+				return chr.toUpperCase();
+			});
+		}
 		function requestStatusLabel(status){
 			var normalized = normalizeRequestState(status);
 			if (normalized === 'queued') return 'Requested';
@@ -407,8 +412,8 @@
 			if (normalized === 'approved') return 'Approved';
 			if (normalized === 'declined') return 'Declined';
 			if (normalized === 'pending') return 'Pending';
-			if (normalized === 'error') return 'Needs attention';
-			return normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Unknown';
+			if (normalized === 'error') return 'Needs Attention';
+			return normalized ? titleCaseRequestState(normalized) : 'Unknown';
 		}
 		function requestStatusBadgeClass(status){
 			var normalized = normalizeRequestState(status);
@@ -440,7 +445,7 @@
 		function availabilityLabel(format, state){
 			var normalized = normalizeRequestState(state);
 			if (!normalized) return '';
-			return requestFormatLabel(format) + ' ' + normalized;
+			return requestFormatLabel(format) + ' ' + titleCaseRequestState(normalized);
 		}
 		function renderAvailabilityBadge(format, state){
 			var label = availabilityLabel(format, state);
