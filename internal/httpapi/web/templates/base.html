@@ -131,7 +131,7 @@
 				var data = JSON.parse(trig);
 				if (data['request:created'] || data['request:updated']) {
 					var tbl = document.querySelector('#req-table');
-					if (tbl) {
+					if (tbl && tbl.dataset.requestRefreshMode !== 'self-managed') {
 						htmx.ajax('GET', '/ui/requests/table', { target: '#req-table', swap: 'innerHTML' });
 					}
 					// If a request was updated, try to find and update matching search result buttons
@@ -428,7 +428,7 @@
 			else if (normalized === 'approved') dotClass = 'bg-royal-300';
 			else if (normalized === 'declined' || normalized === 'error') dotClass = 'bg-rose-400';
 			else if (normalized === 'pending') dotClass = 'bg-amber-300';
-			return '<span class="inline-flex min-w-[9rem] items-center justify-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium ' + requestStatusBadgeClass(status) + '"><span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>' + requestStatusLabel(status) + '</span>';
+			return '<span class="inline-flex min-w-[7.5rem] items-center justify-center gap-1 px-3 py-1 rounded-full text-xs font-medium ' + requestStatusBadgeClass(status) + '"><span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>' + requestStatusLabel(status) + '</span>';
 		}
 		function availabilityBadgeClass(state){
 			var normalized = normalizeRequestState(state);
@@ -445,7 +445,7 @@
 		function renderAvailabilityBadge(format, state){
 			var label = availabilityLabel(format, state);
 			if (!label) return '';
-			return '<span class="inline-flex min-w-[9rem] items-center justify-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium ' + availabilityBadgeClass(state) + '">' + label + '</span>';
+			return '<span class="inline-flex min-w-[7.5rem] items-center justify-center gap-1 px-3 py-1 rounded-full text-xs font-medium ' + availabilityBadgeClass(state) + '">' + label + '</span>';
 		}
 		function hasLibraryStatus(externalStatus){
 			var normalized = normalizeRequestState(externalStatus);
@@ -1340,16 +1340,12 @@
 				if (resp.ok) {
 					// Close modal
 					window.closeBookModal();
-					// Refresh requests table if it exists
-					var reqTable = document.querySelector('#req-table');
-					if (reqTable && window.htmx) {
-						htmx.trigger(reqTable, 'refresh');
-					}
 					// Show success message
 					var actionText = action === 'delete' ? 'deleted' : 
 									action === 'approve' ? 'approved' : 
 									action === 'decline' ? 'declined' :
-									action === 'hydrate' ? 'updated' : action + 'd';
+									action === 'hydrate' ? 'updated' :
+									action === 'retry' ? 'retried' : action + 'd';
 					window.scriptorumShowToast && window.scriptorumShowToast('Request ' + actionText + ' successfully.');
 				} else {
 					resp.text().then(function(text) {
@@ -1520,6 +1516,55 @@
 				btn.classList.add('bg-rose-600');
 				btn.textContent = 'Approve failed';
 				setTimeout(function(){ btn.textContent = btn.getAttribute('data-label-default') || 'Submit'; btn.classList.remove('bg-rose-600','opacity-50'); }, 2200);
+			} catch {}
+		});
+
+		document.body.addEventListener('htmx:beforeRequest', function(evt){
+			try {
+				var form = evt.target;
+				if (!form || !form.classList || !form.classList.contains('js-request-action-form')) return;
+				var btn = form.querySelector('button');
+				if (!btn) return;
+				if (!btn.getAttribute('data-label-default')) {
+					btn.setAttribute('data-label-default', (btn.textContent || '').trim());
+				}
+				btn.disabled = true;
+				btn.classList.add('opacity-50', 'cursor-not-allowed');
+				btn.textContent = btn.getAttribute('data-label-working') || 'Working...';
+			} catch {}
+		});
+		document.body.addEventListener('htmx:afterRequest', function(evt){
+			try {
+				var form = evt.target;
+				if (!form || !form.classList || !form.classList.contains('js-request-action-form')) return;
+				var btn = form.querySelector('button');
+				if (!btn) return;
+				var ok = false;
+				if (evt.detail && typeof evt.detail.successful === 'boolean') { ok = evt.detail.successful; }
+				else if (evt.detail && evt.detail.xhr) { ok = evt.detail.xhr.status >= 200 && evt.detail.xhr.status < 300; }
+				btn.disabled = false;
+				btn.classList.remove('opacity-50', 'cursor-not-allowed', 'bg-rose-600');
+				btn.textContent = btn.getAttribute('data-label-default') || 'Submit';
+				if (ok) {
+					window.scriptorumShowToast && window.scriptorumShowToast(btn.getAttribute('data-success-message') || 'Done.');
+				}
+			} catch {}
+		});
+		document.body.addEventListener('htmx:responseError', function(evt){
+			try {
+				if (window.scriptorumAuthRedirecting) return;
+				var form = evt.target;
+				if (!form || !form.classList || !form.classList.contains('js-request-action-form')) return;
+				var btn = form.querySelector('button');
+				if (!btn) return;
+				btn.disabled = false;
+				btn.classList.remove('opacity-50', 'cursor-not-allowed');
+				btn.classList.add('bg-rose-600');
+				btn.textContent = btn.getAttribute('data-failure-message') || 'Request failed';
+				setTimeout(function(){
+					btn.textContent = btn.getAttribute('data-label-default') || 'Submit';
+					btn.classList.remove('bg-rose-600');
+				}, 2200);
 			} catch {}
 		});
 

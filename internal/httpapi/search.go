@@ -57,7 +57,7 @@ type discoveryQuery struct {
 }
 
 const (
-	discoveryCategorySize = 6
+	discoveryCategorySize = 8
 	discoveryTrendingSize = 8
 )
 

@@ -93,14 +93,22 @@ func TestSearchPageServerRendersDiscoveryOnFirstLoad(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"Find something good fast",
+		"Your next bad bedtime decision",
 		"Trending This Week",
 		"Fantasy Hits",
 		"Project Hail Mary",
+		"Assistant to the Villain",
+		"System Collapse",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in body: %s", want, body)
 		}
+	}
+	if strings.Contains(body, "Current picks you can open and request without typing first.") {
+		t.Fatalf("expected extra current-picks copy to be removed: %s", body)
+	}
+	if count := strings.Count(body, `data-open-book="1"`); count < 35 {
+		t.Fatalf("expected fuller category shelves, found %d cards in body: %s", count, body)
 	}
 	if strings.Contains(body, "Loading discovery shelves...") {
 		t.Fatalf("expected initial discovery content instead of loading placeholder: %s", body)
@@ -130,14 +138,22 @@ func TestSearchUIShowsDiscoveryWhenQueryBlank(t *testing.T) {
 		"Project Hail Mary",
 		"Assistant to the Villain",
 		"When the Moon Hatched",
+		"The Familiar",
 		"Never Lie",
 		"Bride",
 		"Some Desperate Glory",
+		"Service Model",
 		"View details",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in body: %s", want, body)
 		}
+	}
+	if strings.Contains(body, "Current picks you can open and request without typing first.") {
+		t.Fatalf("expected extra current-picks copy to be removed: %s", body)
+	}
+	if count := strings.Count(body, `data-open-book="1"`); count < 35 {
+		t.Fatalf("expected fuller category shelves, found %d cards in body: %s", count, body)
 	}
 	if strings.Contains(body, `Results for "`) {
 		t.Fatalf("expected discovery view, got search results wrapper: %s", body)

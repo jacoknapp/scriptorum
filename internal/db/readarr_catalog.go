@@ -47,7 +47,9 @@ func (b ReadarrBook) Availability() string {
 	case b.Monitored:
 		return "monitored"
 	default:
-		return "present"
+		// Titles that merely exist in Readarr without being monitored,
+		// grabbed, or downloaded should not surface a library-status label.
+		return ""
 	}
 }
 

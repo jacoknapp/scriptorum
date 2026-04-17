@@ -4,12 +4,11 @@
 		<h1 class="text-xl font-semibold">Requests</h1>
 	</div>
 	<div id="req-table"
+		 data-request-refresh-mode="self-managed"
 		 class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-2"
 		 hx-get="/ui/requests/table"
-		 hx-trigger="load, refresh, request:created from:body, request:updated from:body"
+		 hx-trigger="refresh, request:created from:body, request:updated from:body"
 		 hx-swap="innerHTML">
-		<div class="p-4 text-slate-400">Loading...</div>
-		{{/* Initial server render as a fallback; will be replaced by HTMX */}}
 		{{ template "requests_table" . }}
 	</div>
 </div>
@@ -17,6 +16,7 @@
 <script>
 var requestsRefreshTimer = null;
 var requestsRefreshDelayMs = 15000;
+var requestCoverObserver = null;
 window.requestCoverCache = window.requestCoverCache || {};
 window.requestCoverPromises = window.requestCoverPromises || {};
 
@@ -52,6 +52,17 @@ function applyRequestCover(img, cover) {
 	if (!img) return;
 	if (cover) img.src = cover;
 	img.dataset.coverLoaded = 'true';
+}
+
+function ensureRequestCoverObserver() {
+	if (requestCoverObserver || !('IntersectionObserver' in window)) return;
+	requestCoverObserver = new IntersectionObserver(function(entries) {
+		entries.forEach(function(entry) {
+			if (!entry.isIntersecting) return;
+			requestCoverObserver.unobserve(entry.target);
+			hydrateRequestCover(entry.target);
+		});
+	}, { rootMargin: '240px 0px' });
 }
 
 function requestCoverKey(bookData) {
@@ -107,50 +118,67 @@ function loadRequestCovers() {
 	var coverImages = document.querySelectorAll('#req-table [data-request-cover]');
 	coverImages.forEach(function(img) {
 		if (img.dataset.coverLoaded === 'true') return;
-		var clickable = img.closest('[data-open-book]');
-		if (!clickable) {
+		var currentSrc = (img.getAttribute('src') || '').trim();
+		if (currentSrc && currentSrc.indexOf('/static/placeholder-cover.svg') === -1) {
 			img.dataset.coverLoaded = 'true';
 			return;
 		}
-		var jsonData = clickable.getAttribute('data-open-book');
-		if (!jsonData) {
-			img.dataset.coverLoaded = 'true';
-			return;
+		if ('IntersectionObserver' in window) {
+			ensureRequestCoverObserver();
+			if (requestCoverObserver) {
+				requestCoverObserver.observe(img);
+				return;
+			}
 		}
-		try {
-			var bookData = JSON.parse(jsonData);
-			if (!bookData || typeof bookData !== 'object') {
-				img.dataset.coverLoaded = 'true';
-				return;
-			}
-			if (bookData.cover) {
-				applyRequestCover(img, bookData.cover);
-				return;
-			}
-			var key = requestCoverKey(bookData);
-			if (!key) {
-				img.dataset.coverLoaded = 'true';
-				return;
-			}
-			if (window.requestCoverCache[key]) {
-				applyRequestCover(img, window.requestCoverCache[key]);
-				return;
-			}
-			if (!window.requestCoverPromises[key]) {
-				window.requestCoverPromises[key] = fetchRequestCover(bookData).then(function(cover) {
-					if (cover) window.requestCoverCache[key] = cover;
-					return cover;
-				}).catch(function() {
-					return '';
-				});
-			}
-			window.requestCoverPromises[key].then(function(cover) {
-				applyRequestCover(img, cover);
-			});
-		} catch(e) {
-			img.dataset.coverLoaded = 'true';
-		}
+		hydrateRequestCover(img);
 	});
+}
+
+function hydrateRequestCover(img) {
+	if (!img || img.dataset.coverLoaded === 'true') return;
+	var clickable = img.closest('[data-open-book]');
+	if (!clickable) {
+		img.dataset.coverLoaded = 'true';
+		return;
+	}
+	var jsonData = clickable.getAttribute('data-open-book');
+	if (!jsonData) {
+		img.dataset.coverLoaded = 'true';
+		return;
+	}
+	try {
+		var bookData = JSON.parse(jsonData);
+		if (!bookData || typeof bookData !== 'object') {
+			img.dataset.coverLoaded = 'true';
+			return;
+		}
+		if (bookData.cover) {
+			applyRequestCover(img, bookData.cover);
+			return;
+		}
+		var key = requestCoverKey(bookData);
+		if (!key) {
+			img.dataset.coverLoaded = 'true';
+			return;
+		}
+		if (window.requestCoverCache[key]) {
+			applyRequestCover(img, window.requestCoverCache[key]);
+			return;
+		}
+		if (!window.requestCoverPromises[key]) {
+			window.requestCoverPromises[key] = fetchRequestCover(bookData).then(function(cover) {
+				if (cover) window.requestCoverCache[key] = cover;
+				return cover;
+			}).catch(function() {
+				return '';
+			});
+		}
+		window.requestCoverPromises[key].then(function(cover) {
+			applyRequestCover(img, cover);
+		});
+	} catch(e) {
+		img.dataset.coverLoaded = 'true';
+	}
 }
 
 function requestCoverFromEndpoint(path, bookData) {

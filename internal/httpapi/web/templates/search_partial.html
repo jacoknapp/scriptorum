@@ -2,12 +2,8 @@
 <div class="space-y-4">
   {{ if .TrendingNow }}
   <section class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden">
-    <div class="p-5 border-b border-white/5 flex flex-col gap-2 sm:flex-row justify-between">
-      <div>
-        <div class="text-xs uppercase tracking-wide text-royal-300">Trending This Week</div>
-        <h3 class="text-xl font-semibold text-slate-100 mt-1">A few books with real momentum right now</h3>
-      </div>
-      <div class="text-sm text-slate-400">Current picks you can open and request without typing first.</div>
+    <div class="p-5 border-b border-white/5">
+      <div class="text-xs uppercase tracking-wide text-royal-300">Trending This Week</div>
     </div>
     <div class="p-4 grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
       {{ range .TrendingNow }}
