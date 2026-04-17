@@ -251,11 +251,28 @@ func (s *Server) normalizeRequestCover(format, cover string) string {
 		cover = strings.TrimRight(inst.BaseURL, "/") + cover
 	}
 	if ok && strings.HasPrefix(strings.TrimSpace(inst.BaseURL), "http") {
-		if parsed, err := url.Parse(cover); err == nil && strings.EqualFold(parsed.Host, urlHost(inst.BaseURL)) {
-			return "/ui/readarr-cover?u=" + url.QueryEscape(cover)
+		if parsed, err := url.Parse(cover); err == nil {
+			// Some Readarr payloads return absolute MediaCover URLs with localhost or
+			// container-only hosts. Rebase those paths onto the configured Readarr
+			// base URL so the proxy can fetch a reachable URL.
+			if parsed.IsAbs() && isReadarrMediaPath(parsed.Path) && !strings.EqualFold(parsed.Host, urlHost(inst.BaseURL)) {
+				if base, baseErr := url.Parse(strings.TrimSpace(inst.BaseURL)); baseErr == nil {
+					parsed.Scheme = base.Scheme
+					parsed.Host = base.Host
+					cover = parsed.String()
+				}
+			}
+			if reparsed, reparseErr := url.Parse(cover); reparseErr == nil && strings.EqualFold(reparsed.Host, urlHost(inst.BaseURL)) {
+				return "/ui/readarr-cover?u=" + url.QueryEscape(cover)
+			}
 		}
 	}
 	return cover
+}
+
+func isReadarrMediaPath(path string) bool {
+	p := strings.ToLower(strings.TrimSpace(path))
+	return strings.HasPrefix(p, "/mediacover/") || strings.HasPrefix(p, "/api/v1/mediacover/")
 }
 
 func (u *ui) handleUsers(s *Server) http.HandlerFunc {
