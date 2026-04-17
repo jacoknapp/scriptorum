@@ -38,6 +38,7 @@ type searchItem struct {
 	ProviderPayload          string
 	ProviderEbookPayload     string
 	ProviderAudiobookPayload string
+	DetailsPayload           string
 	EbookState               string
 	AudiobookState           string
 }
@@ -129,6 +130,9 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 					if payload != "" {
 						items[i].ProviderAudiobookPayload = payload
 					}
+				}
+				if items[i].DetailsPayload == "" && si.DetailsPayload != "" {
+					items[i].DetailsPayload = si.DetailsPayload
 				}
 				// do not record or surface which instance produced the result
 				// Prefer cover from provider payload when available. Use helper
@@ -331,7 +335,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 				ol := providers.NewOpenLibrary()
 				if olItems, err := ol.Search(r.Context(), q, limit, page); err == nil {
 					for _, b := range olItems {
-						items = append(items, searchItem{BookItem: b})
+						items = append(items, openLibrarySearchItem(b))
 					}
 				}
 			}
@@ -379,7 +383,7 @@ func (u *searchUI) loadTrendingBooks(ctx context.Context) []searchItem {
 	books = pickDiscoveryBooks(books, 2010, discoveryTrendingSize)
 	items := make([]searchItem, 0, len(books))
 	for _, book := range books {
-		items = append(items, searchItem{BookItem: book})
+		items = append(items, openLibrarySearchItem(book))
 	}
 	return items
 }
@@ -398,7 +402,7 @@ func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCateg
 			}
 			items := make([]searchItem, 0, len(books))
 			for _, book := range books {
-				items = append(items, searchItem{BookItem: book})
+				items = append(items, openLibrarySearchItem(book))
 			}
 			results[i] = discoveryCategory{
 				Name:        query.Name,
@@ -417,6 +421,52 @@ func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCateg
 		categories = append(categories, category)
 	}
 	return categories
+}
+
+func openLibrarySearchItem(book providers.BookItem) searchItem {
+	return searchItem{
+		BookItem:       book,
+		DetailsPayload: buildOpenLibraryDetailsPayload(book),
+	}
+}
+
+func buildOpenLibraryDetailsPayload(book providers.BookItem) string {
+	payload := map[string]any{}
+	if title := strings.TrimSpace(book.Title); title != "" {
+		payload["title"] = title
+	}
+	if len(book.Authors) > 0 {
+		payload["authors"] = book.Authors
+	}
+	if isbn10 := strings.TrimSpace(book.ISBN10); isbn10 != "" {
+		payload["isbn10"] = isbn10
+	}
+	if isbn13 := strings.TrimSpace(book.ISBN13); isbn13 != "" {
+		payload["isbn13"] = isbn13
+	}
+	if asin := strings.TrimSpace(book.ASIN); asin != "" {
+		payload["asin"] = asin
+	}
+	if desc := strings.TrimSpace(book.Description); desc != "" {
+		payload["description"] = desc
+	}
+	if workKey := strings.TrimSpace(book.OpenLibraryWorkKey); workKey != "" {
+		payload["open_library_work_key"] = workKey
+	}
+	if editionKey := strings.TrimSpace(book.OpenLibraryEditionKey); editionKey != "" {
+		payload["open_library_edition_key"] = editionKey
+	}
+	if year := book.FirstPublishYear; year > 0 {
+		payload["first_publish_year"] = year
+	}
+	if cover := util.FirstNonEmpty(strings.TrimSpace(book.CoverMedium), strings.TrimSpace(book.CoverSmall)); cover != "" {
+		payload["cover"] = cover
+	}
+	if len(payload) == 0 {
+		return ""
+	}
+	raw, _ := json.Marshal(payload)
+	return string(raw)
 }
 
 func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary, query discoveryQuery) []providers.BookItem {

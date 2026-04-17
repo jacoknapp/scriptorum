@@ -139,21 +139,24 @@ func (u *ui) handleRequestsTable(s *Server) http.HandlerFunc {
 
 type requestListItem struct {
 	db.Request
-	Cover string
+	Cover        string
+	CoverPayload string
 }
 
 func (s *Server) buildRequestListItems(ctx context.Context, items []db.Request) []requestListItem {
 	out := make([]requestListItem, 0, len(items))
 	for _, item := range items {
+		cover, coverPayload := s.requestListCoverData(ctx, item)
 		out = append(out, requestListItem{
-			Request: item,
-			Cover:   s.requestListCover(ctx, item),
+			Request:      item,
+			Cover:        cover,
+			CoverPayload: coverPayload,
 		})
 	}
 	return out
 }
 
-func (s *Server) requestListCover(ctx context.Context, req db.Request) string {
+func (s *Server) requestListCoverData(ctx context.Context, req db.Request) (string, string) {
 	payloads := make([]json.RawMessage, 0, 3)
 
 	if match, err := s.findCatalogMatch(ctx, req.Format, req.Title, req.Authors, req.ISBN10, req.ISBN13, "", req.ReadarrReq); err == nil && match != nil && len(match.ReadarrData) > 0 {
@@ -168,10 +171,10 @@ func (s *Server) requestListCover(ctx context.Context, req db.Request) string {
 
 	for _, raw := range payloads {
 		if cover := s.requestCoverFromPayload(req.Format, raw); cover != "" {
-			return cover
+			return cover, strings.TrimSpace(string(raw))
 		}
 	}
-	return ""
+	return "", ""
 }
 
 func (s *Server) requestCoverFromPayload(format string, raw json.RawMessage) string {

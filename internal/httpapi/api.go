@@ -403,6 +403,10 @@ func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
 	format, _ := in["format"].(string)
 	inst, ok := s.readarrInstanceForLookup(format)
 	if !ok || strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+		if fallback := s.openLibraryEnrichedData(r.Context(), in); fallback != nil {
+			writeJSON(w, fallback, 200)
+			return
+		}
 		writeJSON(w, map[string]any{"error": "Readarr not configured"}, 500)
 		return
 	}
@@ -413,6 +417,10 @@ func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	list, err := ra.LookupByTerm(ctx, term)
 	if err != nil || len(list) == 0 {
+		if fallback := s.openLibraryEnrichedData(ctx, in); fallback != nil {
+			writeJSON(w, fallback, 200)
+			return
+		}
 		writeJSON(w, map[string]any{"error": "no matches from Readarr", "term": term}, 404)
 		return
 	}
@@ -508,6 +516,247 @@ func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, result, 200)
+}
+
+func (s *Server) openLibraryEnrichedData(ctx context.Context, in map[string]any) map[string]any {
+	ol := providers.NewOpenLibrary()
+	title := inputStringValue(in, "title")
+	isbn13 := inputStringValue(in, "isbn13")
+	isbn10 := inputStringValue(in, "isbn10")
+	asin := inputStringValue(in, "asin")
+	cover := inputStringValue(in, "cover")
+	authors := inputStringSlice(in, "authors")
+
+	detailsPayload := inputMapValue(in, "details_payload")
+	if len(authors) == 0 && detailsPayload != nil {
+		authors = inputStringSlice(detailsPayload, "authors")
+	}
+	if title == "" && detailsPayload != nil {
+		title = inputStringValue(detailsPayload, "title")
+	}
+	if isbn13 == "" && detailsPayload != nil {
+		isbn13 = inputStringValue(detailsPayload, "isbn13")
+	}
+	if isbn10 == "" && detailsPayload != nil {
+		isbn10 = inputStringValue(detailsPayload, "isbn10")
+	}
+	if asin == "" && detailsPayload != nil {
+		asin = inputStringValue(detailsPayload, "asin")
+	}
+	if cover == "" && detailsPayload != nil {
+		cover = inputStringValue(detailsPayload, "cover")
+	}
+
+	workKey := ""
+	if detailsPayload != nil {
+		workKey = inputStringValue(detailsPayload, "open_library_work_key")
+	}
+
+	out := map[string]any{}
+	if title != "" {
+		out["title"] = title
+	}
+	if len(authors) > 0 {
+		out["authors"] = authors
+		out["author"] = strings.Join(authors, ", ")
+	}
+	if isbn13 != "" {
+		out["isbn13"] = isbn13
+	}
+	if isbn10 != "" {
+		out["isbn10"] = isbn10
+	}
+	if asin != "" {
+		out["asin"] = asin
+	}
+	if cover != "" {
+		out["cover"] = cover
+	}
+	if detailsPayload != nil {
+		if desc := inputStringValue(detailsPayload, "description"); desc != "" {
+			out["description"] = desc
+		}
+		if year := inputIntValue(detailsPayload, "first_publish_year"); year > 0 {
+			out["firstPublishYear"] = year
+		}
+	}
+
+	if workKey == "" {
+		term := util.FirstNonEmpty(isbn13, isbn10, title)
+		if term != "" && len(authors) > 0 && isbn13 == "" && isbn10 == "" {
+			term = term + " " + authors[0]
+		}
+		if term != "" {
+			if matches, err := ol.Search(ctx, term, 5, 1); err == nil && len(matches) > 0 {
+				match := pickOpenLibraryMatch(matches, title, authors)
+				if out["title"] == nil && strings.TrimSpace(match.Title) != "" {
+					out["title"] = match.Title
+				}
+				if len(authors) == 0 && len(match.Authors) > 0 {
+					out["authors"] = match.Authors
+					out["author"] = strings.Join(match.Authors, ", ")
+				}
+				if out["isbn13"] == nil && strings.TrimSpace(match.ISBN13) != "" {
+					out["isbn13"] = match.ISBN13
+				}
+				if out["isbn10"] == nil && strings.TrimSpace(match.ISBN10) != "" {
+					out["isbn10"] = match.ISBN10
+				}
+				if out["cover"] == nil {
+					if matchCover := util.FirstNonEmpty(match.CoverMedium, match.CoverSmall); matchCover != "" {
+						out["cover"] = matchCover
+					}
+				}
+				if year := match.FirstPublishYear; year > 0 && out["firstPublishYear"] == nil {
+					out["firstPublishYear"] = year
+				}
+				workKey = match.OpenLibraryWorkKey
+			}
+		}
+	}
+
+	if workKey != "" {
+		if details, err := ol.WorkDetails(ctx, workKey); err == nil && details != nil {
+			if out["title"] == nil && strings.TrimSpace(details.Title) != "" {
+				out["title"] = details.Title
+			}
+			if out["description"] == nil && strings.TrimSpace(details.Description) != "" {
+				out["description"] = details.Description
+			}
+			if len(details.Subjects) > 0 {
+				out["subjects"] = details.Subjects
+			}
+			if out["cover"] == nil && strings.TrimSpace(details.CoverMedium) != "" {
+				out["cover"] = details.CoverMedium
+			}
+			if out["releaseDate"] == nil && strings.TrimSpace(details.FirstPublishDate) != "" {
+				out["releaseDate"] = details.FirstPublishDate
+			}
+		}
+	}
+
+	if len(out) == 0 {
+		return nil
+	}
+	out["details_payload"] = map[string]any{
+		"open_library_work_key": workKey,
+	}
+	return out
+}
+
+func pickOpenLibraryMatch(matches []providers.BookItem, title string, authors []string) providers.BookItem {
+	if len(matches) == 0 {
+		return providers.BookItem{}
+	}
+	title = strings.TrimSpace(title)
+	wantAuthor := ""
+	if len(authors) > 0 {
+		wantAuthor = strings.TrimSpace(authors[0])
+	}
+	for _, match := range matches {
+		if title != "" && !strings.EqualFold(strings.TrimSpace(match.Title), title) {
+			continue
+		}
+		if wantAuthor != "" && len(match.Authors) > 0 && strings.EqualFold(strings.TrimSpace(match.Authors[0]), wantAuthor) {
+			return match
+		}
+		if title != "" {
+			return match
+		}
+	}
+	return matches[0]
+}
+
+func inputMapValue(in map[string]any, key string) map[string]any {
+	if in == nil {
+		return nil
+	}
+	raw, ok := in[key]
+	if !ok {
+		return nil
+	}
+	switch value := raw.(type) {
+	case map[string]any:
+		return value
+	case string:
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return nil
+		}
+		var out map[string]any
+		if err := json.Unmarshal([]byte(value), &out); err == nil {
+			return out
+		}
+	}
+	return nil
+}
+
+func inputStringValue(in map[string]any, key string) string {
+	if in == nil {
+		return ""
+	}
+	raw, ok := in[key]
+	if !ok {
+		return ""
+	}
+	if value, ok := raw.(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return ""
+}
+
+func inputStringSlice(in map[string]any, key string) []string {
+	if in == nil {
+		return nil
+	}
+	raw, ok := in[key]
+	if !ok {
+		return nil
+	}
+	switch value := raw.(type) {
+	case []string:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if item = strings.TrimSpace(item); item != "" {
+				out = append(out, item)
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(value))
+		for _, item := range value {
+			if s, ok := item.(string); ok {
+				if s = strings.TrimSpace(s); s != "" {
+					out = append(out, s)
+				}
+			}
+		}
+		return out
+	case string:
+		if value = strings.TrimSpace(value); value != "" {
+			return []string{value}
+		}
+	}
+	return nil
+}
+
+func inputIntValue(in map[string]any, key string) int {
+	if in == nil {
+		return 0
+	}
+	raw, ok := in[key]
+	if !ok {
+		return 0
+	}
+	switch value := raw.(type) {
+	case float64:
+		return int(value)
+	case int:
+		return value
+	case int64:
+		return int(value)
+	}
+	return 0
 }
 
 func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {

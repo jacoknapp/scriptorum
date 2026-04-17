@@ -31,6 +31,7 @@ type OLDoc struct {
 	CoverId          int      `json:"cover_i"`
 	CoverEditionKey  string   `json:"cover_edition_key"`
 	FirstPublishYear int      `json:"first_publish_year"`
+	Key              string   `json:"key"`
 }
 type OLResp struct {
 	Docs []OLDoc `json:"docs"`
@@ -42,6 +43,7 @@ type OLTrendingWork struct {
 	CoverID          int      `json:"cover_i"`
 	CoverEditionKey  string   `json:"cover_edition_key"`
 	FirstPublishYear int      `json:"first_publish_year"`
+	Key              string   `json:"key"`
 }
 
 type OLTrendingResp struct {
@@ -57,21 +59,47 @@ type OLSubjectWork struct {
 	Authors         []OLSubjectAuthor `json:"authors"`
 	CoverID         int               `json:"cover_id"`
 	CoverEditionKey string            `json:"cover_edition_key"`
+	Key             string            `json:"key"`
 }
 
 type OLSubjectResp struct {
 	Works []OLSubjectWork `json:"works"`
 }
 
-type BookItem struct {
-	ASIN             string
+type openLibraryTextValue struct {
+	Value string `json:"value"`
+}
+
+type OLWorkDetailsResp struct {
+	Key              string          `json:"key"`
+	Title            string          `json:"title"`
+	Description      json.RawMessage `json:"description"`
+	Subjects         []string        `json:"subjects"`
+	Covers           []int           `json:"covers"`
+	FirstPublishDate string          `json:"first_publish_date"`
+}
+
+type OpenLibraryWorkDetails struct {
+	Key              string
 	Title            string
-	Authors          []string
-	ISBN10           string
-	ISBN13           string
-	FirstPublishYear int
-	CoverSmall       string
+	Description      string
+	Subjects         []string
+	FirstPublishDate string
 	CoverMedium      string
+}
+
+type BookItem struct {
+	ASIN                  string
+	Title                 string
+	Authors               []string
+	ISBN10                string
+	ISBN13                string
+	FirstPublishYear      int
+	Description           string
+	OpenLibraryWorkKey    string
+	OpenLibraryEditionKey string
+	CoverSmall            string
+	CoverMedium           string
 }
 
 func (ol *OpenLibrary) Search(ctx context.Context, q string, limit, page int) ([]BookItem, error) {
@@ -109,13 +137,15 @@ func (ol *OpenLibrary) Search(ctx context.Context, q string, limit, page int) ([
 		}
 		cover := openLibraryCoverURL(d.CoverId, d.CoverEditionKey)
 		items = append(items, BookItem{
-			Title:            d.Title,
-			Authors:          d.AuthorName,
-			ISBN10:           i10,
-			ISBN13:           i13,
-			FirstPublishYear: d.FirstPublishYear,
-			CoverSmall:       cover,
-			CoverMedium:      cover,
+			Title:                 d.Title,
+			Authors:               d.AuthorName,
+			ISBN10:                i10,
+			ISBN13:                i13,
+			FirstPublishYear:      d.FirstPublishYear,
+			OpenLibraryWorkKey:    d.Key,
+			OpenLibraryEditionKey: d.CoverEditionKey,
+			CoverSmall:            cover,
+			CoverMedium:           cover,
 		})
 	}
 	return items, nil
@@ -146,11 +176,13 @@ func (ol *OpenLibrary) TrendingWorks(ctx context.Context, period string, limit i
 	for _, w := range out.Works {
 		cover := openLibraryCoverURL(w.CoverID, w.CoverEditionKey)
 		items = append(items, BookItem{
-			Title:            w.Title,
-			Authors:          w.AuthorName,
-			FirstPublishYear: w.FirstPublishYear,
-			CoverSmall:       cover,
-			CoverMedium:      cover,
+			Title:                 w.Title,
+			Authors:               w.AuthorName,
+			FirstPublishYear:      w.FirstPublishYear,
+			OpenLibraryWorkKey:    w.Key,
+			OpenLibraryEditionKey: w.CoverEditionKey,
+			CoverSmall:            cover,
+			CoverMedium:           cover,
 		})
 	}
 	return items, nil
@@ -184,9 +216,51 @@ func (ol *OpenLibrary) SubjectWorks(ctx context.Context, subject string, limit i
 			}
 		}
 		cover := openLibraryCoverURL(w.CoverID, w.CoverEditionKey)
-		items = append(items, BookItem{Title: w.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover})
+		items = append(items, BookItem{
+			Title:                 w.Title,
+			Authors:               authors,
+			OpenLibraryWorkKey:    w.Key,
+			OpenLibraryEditionKey: w.CoverEditionKey,
+			CoverSmall:            cover,
+			CoverMedium:           cover,
+		})
 	}
 	return items, nil
+}
+
+func (ol *OpenLibrary) WorkDetails(ctx context.Context, workKey string) (*OpenLibraryWorkDetails, error) {
+	workKey = strings.TrimSpace(workKey)
+	if workKey == "" {
+		return nil, nil
+	}
+	if !strings.HasPrefix(workKey, "/") {
+		workKey = "/" + workKey
+	}
+	u := ol.apiURL(workKey + ".json")
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	resp, err := ol.cl.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var out OLWorkDetailsResp
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(out.Key) == "" && strings.TrimSpace(out.Title) == "" && len(out.Subjects) == 0 && len(out.Covers) == 0 && len(out.Description) == 0 {
+		return nil, nil
+	}
+	details := &OpenLibraryWorkDetails{
+		Key:              out.Key,
+		Title:            out.Title,
+		Description:      parseOpenLibraryText(out.Description),
+		Subjects:         out.Subjects,
+		FirstPublishDate: out.FirstPublishDate,
+	}
+	if len(out.Covers) > 0 {
+		details.CoverMedium = openLibraryCoverURL(out.Covers[0], "")
+	}
+	return details, nil
 }
 
 func openLibraryCoverURL(coverID int, coverEditionKey string) string {
@@ -195,6 +269,21 @@ func openLibraryCoverURL(coverID int, coverEditionKey string) string {
 	}
 	if strings.TrimSpace(coverEditionKey) != "" {
 		return "https://covers.openlibrary.org/b/olid/" + url.PathEscape(strings.TrimSpace(coverEditionKey)) + "-M.jpg"
+	}
+	return ""
+}
+
+func parseOpenLibraryText(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var asString string
+	if err := json.Unmarshal(raw, &asString); err == nil {
+		return strings.TrimSpace(asString)
+	}
+	var wrapped openLibraryTextValue
+	if err := json.Unmarshal(raw, &wrapped); err == nil {
+		return strings.TrimSpace(wrapped.Value)
 	}
 	return ""
 }

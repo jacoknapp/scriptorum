@@ -47,7 +47,7 @@
                 Unknown Author
               {{ end }}
             </div>
-            <div class="text-xs text-slate-500 mt-3">{{ if .FirstPublishYear }}First published {{ .FirstPublishYear }}{{ else }}Open details to request{{ end }}</div>
+            {{ if .FirstPublishYear }}<div class="text-xs text-slate-500 mt-3">First published {{ .FirstPublishYear }}</div>{{ end }}
           </div>
         </div>
         <div class="mt-4 pt-3 border-t border-white/5">
@@ -72,6 +72,7 @@
             <input type="hidden" name="isbn10" value="{{ .ISBN10 }}">
             <input type="hidden" name="isbn13" value="{{ .ISBN13 }}">
             <input type="hidden" name="asin" value="{{ .ASIN }}">
+            <input type="hidden" name="details_payload" value='{{ .DetailsPayload }}'>
             <input type="hidden" name="provider_payload" value='{{ .ProviderPayload }}'>
             <input type="hidden" name="provider_payload_ebook" value='{{ .ProviderEbookPayload }}'>
             <input type="hidden" name="provider_payload_audiobook" value='{{ .ProviderAudiobookPayload }}'>

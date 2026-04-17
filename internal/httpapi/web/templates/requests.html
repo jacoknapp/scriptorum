@@ -137,25 +137,10 @@ function loadRequestCovers() {
 				return;
 			}
 			if (!window.requestCoverPromises[key]) {
-				window.requestCoverPromises[key] = fetch('/api/v1/book/details', {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						'HX-Request': 'true'
-					},
-					body: JSON.stringify(bookData),
-					credentials: 'same-origin'
-				})
-				.then(function(resp) {
-					if (!resp.ok) return null;
-					return resp.json();
-				})
-				.then(function(data) {
-					var cover = data && typeof data.cover === 'string' ? data.cover : '';
+				window.requestCoverPromises[key] = fetchRequestCover(bookData).then(function(cover) {
 					if (cover) window.requestCoverCache[key] = cover;
 					return cover;
-				})
-				.catch(function() {
+				}).catch(function() {
 					return '';
 				});
 			}
@@ -165,6 +150,35 @@ function loadRequestCovers() {
 		} catch(e) {
 			img.dataset.coverLoaded = 'true';
 		}
+	});
+}
+
+function requestCoverFromEndpoint(path, bookData) {
+	return fetch(path, {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'HX-Request': 'true'
+		},
+		body: JSON.stringify(bookData),
+		credentials: 'same-origin'
+	})
+	.then(function(resp) {
+		if (!resp.ok) return null;
+		return resp.json();
+	})
+	.then(function(data) {
+		if (data && typeof data.cover === 'string' && data.cover.trim()) {
+			return data.cover;
+		}
+		return '';
+	});
+}
+
+function fetchRequestCover(bookData) {
+	return requestCoverFromEndpoint('/api/v1/book/details', bookData).then(function(cover) {
+		if (cover) return cover;
+		return requestCoverFromEndpoint('/api/v1/book/enriched', bookData);
 	});
 }
 

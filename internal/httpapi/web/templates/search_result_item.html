@@ -52,6 +52,7 @@
       <input type="hidden" name="isbn10" value="{{ .ISBN10 }}">
       <input type="hidden" name="isbn13" value="{{ .ISBN13 }}">
       <input type="hidden" name="asin" value="{{ .ASIN }}">
+      <input type="hidden" name="details_payload" value='{{ .DetailsPayload }}'>
       <!-- Always include provider payloads so server can attach Readarr payloads without exposing source -->
       <input type="hidden" name="provider_payload" value='{{ .ProviderPayload }}'>
       <input type="hidden" name="provider_payload_ebook" value='{{ .ProviderEbookPayload }}'>

@@ -10,7 +10,6 @@
         {{ if .FirstPublishYear }}
         <span class="px-2 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10 text-xs text-slate-300">{{ .FirstPublishYear }}</span>
         {{ end }}
-        <span class="px-2 py-0.5 rounded-full bg-white/5 ring-1 ring-white/10 text-xs text-royal-300">Open details to request</span>
       </div>
 
       <div class="font-semibold text-lg text-slate-100 whitespace-normal break-words" style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">{{ .Title }}</div>
@@ -64,6 +63,7 @@
       <input type="hidden" name="isbn10" value="{{ .ISBN10 }}">
       <input type="hidden" name="isbn13" value="{{ .ISBN13 }}">
       <input type="hidden" name="asin" value="{{ .ASIN }}">
+      <input type="hidden" name="details_payload" value='{{ .DetailsPayload }}'>
       <input type="hidden" name="provider_payload" value='{{ .ProviderPayload }}'>
       <input type="hidden" name="provider_payload_ebook" value='{{ .ProviderEbookPayload }}'>
       <input type="hidden" name="provider_payload_audiobook" value='{{ .ProviderAudiobookPayload }}'>

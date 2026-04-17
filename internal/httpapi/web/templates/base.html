@@ -1092,6 +1092,10 @@
 				if (enrichedData.releaseDate) {
 					var releaseYear = new Date(enrichedData.releaseDate).getFullYear();
 					metaParts.push(`Published: ${releaseYear}`);
+				} else if (enrichedData.firstPublishYear) {
+					metaParts.push(`Published: ${enrichedData.firstPublishYear}`);
+				} else if (enrichedData.first_publish_year) {
+					metaParts.push(`Published: ${enrichedData.first_publish_year}`);
 				}
 				if (enrichedData.seriesTitle) metaParts.push(`Series: ${enrichedData.seriesTitle}`);
 				if (data.isbn13) metaParts.push('ISBN-13: ' + data.isbn13);
@@ -1101,7 +1105,7 @@
 				meta.textContent = metaParts.join(' • ');
 				// Description: try common keys
 				var description = data.description || data.overview || data.synopsis || data.summary || data.desc || data.about || '';
-				// If provider payload nested description exists, handle it
+				// If nested payload description exists, handle it
 				if (!description && data.provider_payload) {
 					try {
 						var pp = typeof data.provider_payload === 'string' ? JSON.parse(data.provider_payload) : data.provider_payload;
@@ -1112,6 +1116,12 @@
 								if (typeof pp[k] === 'string' && pp[k].length > 50) { description = pp[k]; break; }
 							}
 						}
+					} catch(e) { /* ignore parse errors */ }
+				}
+				if (!description && data.details_payload) {
+					try {
+						var dp = typeof data.details_payload === 'string' ? JSON.parse(data.details_payload) : data.details_payload;
+						description = dp.description || dp.overview || dp.synopsis || dp.summary || dp.details || '';
 					} catch(e) { /* ignore parse errors */ }
 				}
 				
@@ -1353,9 +1363,11 @@
 					var pIn = form.querySelector('input[name="provider_payload"]');
 					var ppe = form.querySelector('input[name="provider_payload_ebook"]');
 					var ppa = form.querySelector('input[name="provider_payload_audiobook"]');
+					var dIn = form.querySelector('input[name="details_payload"]');
 					if (ppe && ppe.value) data.provider_payload_ebook = ppe.value;
 					if (ppa && ppa.value) data.provider_payload_audiobook = ppa.value;
 					if (pIn && pIn.value) data.provider_payload = pIn.value;
+					if (dIn && dIn.value) data.details_payload = dIn.value;
 					// keep provider label if available
 					var prov = form.querySelector('input[name="provider"]');
 					if (prov && prov.value) data.provider = prov.value;
@@ -1371,9 +1383,15 @@
 						hasDescription = !!(pp.description || pp.overview || pp.synopsis || pp.summary || pp.details);
 					} catch(e) { /* ignore parse errors */ }
 				}
+				if (!hasDescription && data.details_payload) {
+					try {
+						var dp = typeof data.details_payload === 'string' ? JSON.parse(data.details_payload) : data.details_payload;
+						hasDescription = !!(dp.description || dp.overview || dp.synopsis || dp.summary || dp.details);
+					} catch(e) { /* ignore parse errors */ }
+				}
 				
 				// If we don't have a description, try to fetch enriched data from API
-				if (!hasDescription && (data.provider_payload || data.isbn13 || data.isbn10 || data.asin)) {
+				if (!hasDescription && (data.details_payload || data.provider_payload || data.isbn13 || data.isbn10 || data.asin || data.title)) {
 					// Show modal immediately with loading state
 					window.openBookModal(data, true);
 					
@@ -1385,6 +1403,9 @@
 					if (data.isbn13) apiPayload.isbn13 = data.isbn13;
 					if (data.isbn10) apiPayload.isbn10 = data.isbn10;  
 					if (data.asin) apiPayload.asin = data.asin;
+					if (data.provider_payload) apiPayload.provider_payload = data.provider_payload;
+					if (data.details_payload) apiPayload.details_payload = data.details_payload;
+					if (data.cover) apiPayload.cover = data.cover;
 					
 					fetch('/api/v1/book/enriched', {
 						method: 'POST',

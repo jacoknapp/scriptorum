@@ -125,4 +125,7 @@ func TestSearchUIShowsDiscoveryWhenQueryBlank(t *testing.T) {
 	if strings.Contains(body, `Results for "`) {
 		t.Fatalf("expected discovery view, got search results wrapper: %s", body)
 	}
+	if strings.Contains(body, "Open details to request") {
+		t.Fatalf("expected discovery label to be removed: %s", body)
+	}
 }
