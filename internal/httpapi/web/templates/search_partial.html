@@ -70,11 +70,8 @@
   <div class="grid gap-4">
     {{ range .DiscoveryCategories }}
     <section class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden">
-      <div class="p-5 border-b border-white/5 flex flex-col gap-2 sm:flex-row justify-between">
-        <div>
-          <h3 class="text-xl font-semibold text-slate-100">{{ .Name }}</h3>
-        </div>
-        <p class="text-sm text-slate-400 max-w-3xl">{{ .Description }}</p>
+      <div class="p-5 border-b border-white/5">
+        <h3 class="text-xl font-semibold text-slate-100">{{ .Name }}</h3>
       </div>
       <div class="p-4 grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));">
         {{ range .Items }}

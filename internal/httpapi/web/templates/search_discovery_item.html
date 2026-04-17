@@ -27,16 +27,18 @@
 
       <div class="mt-3 flex flex-wrap gap-2 text-xs">
         {{ if .EbookState }}
-        <span class="px-2 py-0.5 rounded-full {{ if eq .EbookState "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .EbookState "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .EbookState "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-slate-800 text-slate-200 ring-1 ring-white/10{{ end }}">eBook {{ .EbookState }}</span>
+        <span class="inline-flex items-center self-start whitespace-nowrap rounded-full px-2.5 py-1 leading-none {{ if eq .EbookState "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .EbookState "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .EbookState "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-slate-800 text-slate-200 ring-1 ring-white/10{{ end }}">eBook {{ .EbookState }}</span>
         {{ end }}
         {{ if .AudiobookState }}
-        <span class="px-2 py-0.5 rounded-full {{ if eq .AudiobookState "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .AudiobookState "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .AudiobookState "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-slate-800 text-slate-200 ring-1 ring-white/10{{ end }}">Audiobook {{ .AudiobookState }}</span>
+        <span class="inline-flex items-center self-start whitespace-nowrap rounded-full px-2.5 py-1 leading-none {{ if eq .AudiobookState "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .AudiobookState "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .AudiobookState "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-slate-800 text-slate-200 ring-1 ring-white/10{{ end }}">Audio {{ .AudiobookState }}</span>
         {{ end }}
       </div>
 
+      {{ if or .ISBN13 .ISBN10 .ASIN }}
       <div class="mt-4 text-xs text-slate-400">
-        {{ if .ISBN13 }}ISBN-13 {{ .ISBN13 }}{{ else if .ISBN10 }}ISBN-10 {{ .ISBN10 }}{{ else if .ASIN }}ASIN {{ .ASIN }}{{ else }}Browse details and request from the modal{{ end }}
+        {{ if .ISBN13 }}ISBN-13 {{ .ISBN13 }}{{ else if .ISBN10 }}ISBN-10 {{ .ISBN10 }}{{ else if .ASIN }}ASIN {{ .ASIN }}{{ end }}
       </div>
+      {{ end }}
     </div>
   </div>
 

@@ -428,7 +428,7 @@
 			else if (normalized === 'approved') dotClass = 'bg-royal-300';
 			else if (normalized === 'declined' || normalized === 'error') dotClass = 'bg-rose-400';
 			else if (normalized === 'pending') dotClass = 'bg-amber-300';
-			return '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ' + requestStatusBadgeClass(status) + '"><span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>' + requestStatusLabel(status) + '</span>';
+			return '<span class="inline-flex min-w-[9rem] items-center justify-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium ' + requestStatusBadgeClass(status) + '"><span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>' + requestStatusLabel(status) + '</span>';
 		}
 		function availabilityBadgeClass(state){
 			var normalized = normalizeRequestState(state);
@@ -445,7 +445,7 @@
 		function renderAvailabilityBadge(format, state){
 			var label = availabilityLabel(format, state);
 			if (!label) return '';
-			return '<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full ' + availabilityBadgeClass(state) + '">' + label + '</span>';
+			return '<span class="inline-flex min-w-[9rem] items-center justify-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium ' + availabilityBadgeClass(state) + '">' + label + '</span>';
 		}
 		function hasLibraryStatus(externalStatus){
 			var normalized = normalizeRequestState(externalStatus);
@@ -456,6 +456,10 @@
 				return renderAvailabilityBadge(format, externalStatus);
 			}
 			return renderRequestStatusBadge(status);
+		}
+		function isLibraryAvailabilityState(state){
+			var normalized = normalizeRequestState(state);
+			return normalized === 'available' || normalized === 'monitored' || normalized === 'grabbed';
 		}
 		function setRequestButtonState(btn, format, state){
 			if (!btn) return;
@@ -468,13 +472,17 @@
 			}
 			btn.classList.remove(
 				'bg-royal-600', 'hover:bg-royal-700', 'hover:bg-royal-600', 'hover:bg-royal-500',
-				'bg-emerald-600', 'bg-emerald-700/80',
+				'bg-emerald-600', 'bg-emerald-700/80', 'bg-emerald-500/15',
 				'bg-amber-700/80',
 				'bg-sky-700/80',
 				'bg-slate-700',
 				'ring-1', 'ring-emerald-500/30', 'ring-amber-500/30', 'ring-sky-500/30', 'ring-white/10',
-				'opacity-60', 'pointer-events-none', 'cursor-not-allowed'
+				'ring-emerald-500/35',
+				'opacity-60', 'opacity-70', 'pointer-events-none', 'cursor-not-allowed', 'cursor-pointer',
+				'text-white', 'text-emerald-100', 'text-emerald-200'
 			);
+			btn.removeAttribute('aria-disabled');
+			btn.tabIndex = 0;
 			btn.title = '';
 			if (normalized === 'requested') {
 				btn.textContent = label + ' requested';
@@ -513,6 +521,31 @@
 			btn.textContent = 'Request ' + label;
 			btn.classList.add('bg-royal-600', 'hover:bg-royal-500');
 			btn.disabled = false;
+		}
+		function setModalRequestButton(btn, format, state, data){
+			if (!btn) return;
+			var normalized = normalizeRequestState(state);
+			setRequestButtonState(btn, format, normalized);
+			btn.onclick = null;
+			if (isLibraryAvailabilityState(normalized)) {
+				btn.disabled = false;
+				btn.setAttribute('aria-disabled', 'true');
+				btn.tabIndex = -1;
+				btn.classList.remove('cursor-pointer');
+				btn.classList.add('pointer-events-none', 'opacity-70', 'cursor-not-allowed');
+				if (normalized === 'available') {
+					btn.classList.remove('bg-emerald-700/80', 'text-white', 'ring-emerald-500/30');
+					btn.classList.add('bg-emerald-500/15', 'text-emerald-100', 'ring-1', 'ring-emerald-500/35');
+					btn.title = requestFormatLabel(format) + ' is already available';
+				}
+				return;
+			}
+			if (normalized) {
+				return;
+			}
+			btn.onclick = function(){
+				window.submitRequestFromModal(format, data);
+			};
 		}
 		window.scriptorumRequestFallback = async function(btn, format){
 			try{
@@ -780,8 +813,8 @@
 			<div id="book-modal-user-actions" class="hidden p-3 border-t border-white/5">
 				<div class="text-xs text-slate-400 mb-2">Choose a format</div>
 				<div class="flex flex-wrap gap-2 justify-end">
-					<button id="book-modal-request-ebook" class="px-3 py-1.5 text-xs rounded w-full sm:w-44 bg-royal-600 text-white hover:bg-royal-500">Request eBook</button>
-					<button id="book-modal-request-audiobook" class="px-3 py-1.5 text-xs rounded w-full sm:w-44 bg-royal-600 text-white hover:bg-royal-500">Request Audiobook</button>
+					<button type="button" id="book-modal-request-ebook" class="inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium rounded w-full sm:w-44 bg-royal-600 text-white hover:bg-royal-500 transition-colors">Request eBook</button>
+					<button type="button" id="book-modal-request-audiobook" class="inline-flex items-center justify-center px-3 py-1.5 text-xs font-medium rounded w-full sm:w-44 bg-royal-600 text-white hover:bg-royal-500 transition-colors">Request Audiobook</button>
 				</div>
 			</div>
 			<!-- Action buttons for requests -->
@@ -1039,16 +1072,10 @@
 						var audiobookState = data.audiobookState || data.AudiobookState || '';
 						// Attach click handlers that submit requests with the same helper used elsewhere
 						if (reqEbookBtn) {
-							setRequestButtonState(reqEbookBtn, 'ebook', ebookState);
-							reqEbookBtn.onclick = ebookState ? null : function(){
-								window.submitRequestFromModal('ebook', data);
-							};
+							setModalRequestButton(reqEbookBtn, 'ebook', ebookState, data);
 						}
 						if (reqAudioBtn) {
-							setRequestButtonState(reqAudioBtn, 'audiobook', audiobookState);
-							reqAudioBtn.onclick = audiobookState ? null : function(){
-								window.submitRequestFromModal('audiobook', data);
-							};
+							setModalRequestButton(reqAudioBtn, 'audiobook', audiobookState, data);
 						}
 					} else {
 						userActions.classList.add('hidden');

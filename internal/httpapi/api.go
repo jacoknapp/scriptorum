@@ -514,8 +514,94 @@ func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
 			result["cover"] = cover
 		}
 	}
+	if !hasDetailedBookDescription(result) {
+		mergeBookEnrichment(result, s.openLibraryEnrichedData(ctx, in))
+	}
 
 	writeJSON(w, result, 200)
+}
+
+func hasDetailedBookDescription(book map[string]any) bool {
+	return len(bookDescriptionText(book)) >= 120
+}
+
+func bookDescriptionText(book map[string]any) string {
+	if book == nil {
+		return ""
+	}
+	for _, key := range []string{"description", "overview", "synopsis", "summary", "details", "about"} {
+		if text, ok := book[key].(string); ok {
+			if text = strings.TrimSpace(text); text != "" {
+				return text
+			}
+		}
+	}
+	return ""
+}
+
+func mergeBookEnrichment(dst, src map[string]any) {
+	if dst == nil || src == nil {
+		return
+	}
+
+	currentDescription := bookDescriptionText(dst)
+	fallbackDescription := bookDescriptionText(src)
+	if len(fallbackDescription) > len(currentDescription) {
+		dst["description"] = fallbackDescription
+	}
+
+	for _, key := range []string{"releaseDate", "firstPublishYear", "subjects", "cover", "isbn13", "isbn10", "asin"} {
+		if value, ok := src[key]; ok && !isBlankJSONValue(dst[key]) {
+			continue
+		} else if ok {
+			dst[key] = value
+		}
+	}
+
+	if !isBlankJSONValue(dst["author"]) && !isBlankJSONValue(dst["authors"]) {
+		mergeDetailsPayload(dst, src)
+		return
+	}
+	if isBlankJSONValue(dst["author"]) && !isBlankJSONValue(src["author"]) {
+		dst["author"] = src["author"]
+	}
+	if isBlankJSONValue(dst["authors"]) && !isBlankJSONValue(src["authors"]) {
+		dst["authors"] = src["authors"]
+	}
+
+	mergeDetailsPayload(dst, src)
+}
+
+func mergeDetailsPayload(dst, src map[string]any) {
+	srcPayload := inputMapValue(src, "details_payload")
+	if srcPayload == nil {
+		return
+	}
+	dstPayload := inputMapValue(dst, "details_payload")
+	if dstPayload == nil {
+		dst["details_payload"] = srcPayload
+		return
+	}
+	for key, value := range srcPayload {
+		if isBlankJSONValue(dstPayload[key]) {
+			dstPayload[key] = value
+		}
+	}
+	dst["details_payload"] = dstPayload
+}
+
+func isBlankJSONValue(value any) bool {
+	switch v := value.(type) {
+	case nil:
+		return true
+	case string:
+		return strings.TrimSpace(v) == ""
+	case []string:
+		return len(v) == 0
+	case []any:
+		return len(v) == 0
+	}
+	return false
 }
 
 func (s *Server) openLibraryEnrichedData(ctx context.Context, in map[string]any) map[string]any {

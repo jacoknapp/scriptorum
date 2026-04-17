@@ -16,7 +16,7 @@
 			<td class="px-4 py-2 cursor-pointer hover:bg-night-700/50 transition-colors"
 				data-open-book='{"title":{{ toJSON .Title }},"authors":{{ toJSON .Authors }},"isbn13":{{ toJSON .ISBN13 }},"isbn10":{{ toJSON .ISBN10 }},"requesterEmail":{{ toJSON .RequesterEmail }},"status":{{ toJSON .Status }},"format":{{ toJSON .Format }},"externalStatus":{{ toJSON .ExternalStatus }},"requestId":{{ .ID }},"cover":{{ toJSON .Cover }},"provider_payload":{{ toJSON .CoverPayload }},"readarrRequest":{{ if .ReadarrReq }}true{{ else }}false{{ end }},"isAdmin":{{ if $.IsAdmin }}true{{ else }}false{{ end }}}'>
 				<div class="flex items-start gap-3">
-					<img data-request-cover src="{{ if .Cover }}{{ .Cover }}{{ else }}/static/placeholder-cover.svg{{ end }}" class="w-20 h-28 shrink-0 rounded-md border border-white/10 bg-night-900 object-cover" alt="{{ .Title }} cover" onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
+					<img data-request-cover src="{{ if .Cover }}{{ .Cover }}{{ else }}/static/placeholder-cover.svg{{ end }}" class="w-20 h-[7.5rem] shrink-0 rounded-md border border-white/10 bg-night-900 object-cover" alt="{{ .Title }} cover" onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
 					<div class="min-w-0">
 						<div class="font-medium">{{ .Title }}</div>
 						<div class="text-slate-400">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
@@ -86,7 +86,7 @@
 		<div class="cursor-pointer hover:bg-night-700/30 transition-colors -m-3 p-3 rounded-xl"
 			 data-open-book='{"title":{{ toJSON .Title }},"authors":{{ toJSON .Authors }},"isbn13":{{ toJSON .ISBN13 }},"isbn10":{{ toJSON .ISBN10 }},"requesterEmail":{{ toJSON .RequesterEmail }},"status":{{ toJSON .Status }},"format":{{ toJSON .Format }},"externalStatus":{{ toJSON .ExternalStatus }},"requestId":{{ .ID }},"cover":{{ toJSON .Cover }},"provider_payload":{{ toJSON .CoverPayload }},"readarrRequest":{{ if .ReadarrReq }}true{{ else }}false{{ end }},"isAdmin":{{ if $.IsAdmin }}true{{ else }}false{{ end }}}'>
 			<div class="flex items-start gap-3">
-				<img data-request-cover src="{{ if .Cover }}{{ .Cover }}{{ else }}/static/placeholder-cover.svg{{ end }}" class="w-20 h-28 shrink-0 rounded-md border border-white/10 bg-night-900 object-cover" alt="{{ .Title }} cover" onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
+				<img data-request-cover src="{{ if .Cover }}{{ .Cover }}{{ else }}/static/placeholder-cover.svg{{ end }}" class="w-20 h-[7.5rem] shrink-0 rounded-md border border-white/10 bg-night-900 object-cover" alt="{{ .Title }} cover" onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
 				<div class="min-w-0">
 					<div class="font-medium">{{ .Title }}</div>
 					<div class="text-sm text-slate-400">{{ if gt (len .Authors) 0 }}{{ index .Authors 0 }}{{ end }}</div>
