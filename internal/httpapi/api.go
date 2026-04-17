@@ -104,6 +104,14 @@ func (s *Server) apiBookDetails(w http.ResponseWriter, r *http.Request) {
 				obj["authors"] = []string{t}
 			}
 		}
+		if cover, ok := obj["cover"].(string); ok {
+			coverFormat, _ := in["format"].(string)
+			if normalizedCover := s.normalizeRequestCover(coverFormat, cover); normalizedCover != "" {
+				obj["cover"] = normalizedCover
+			} else if strings.HasPrefix(strings.TrimSpace(cover), "/") {
+				delete(obj, "cover")
+			}
+		}
 		writeJSON(w, obj, 200)
 	}
 
@@ -492,6 +500,11 @@ func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
 	if len(authorNames) > 0 {
 		result["authors"] = authorNames
 		result["author"] = strings.Join(authorNames, ", ")
+	}
+	if raw, err := json.Marshal(result); err == nil {
+		if cover := s.requestCoverFromPayload(format, raw); cover != "" {
+			result["cover"] = cover
+		}
 	}
 
 	writeJSON(w, result, 200)

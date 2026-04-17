@@ -51,33 +51,38 @@ type discoveryCategory struct {
 type discoveryQuery struct {
 	Name        string
 	Description string
-	Query       string
+	Queries     []string
 	MinYear     int
 }
+
+const (
+	discoveryCategorySize = 4
+	discoveryTrendingSize = 6
+)
 
 var defaultDiscoveryQueries = []discoveryQuery{
 	{
 		Name:        "Fantasy Hits",
 		Description: "Romantasy, dragons, and high-stakes series readers are tearing through right now.",
-		Query:       "romantasy",
+		Queries:     []string{"romantasy", "dragon fantasy"},
 		MinYear:     2018,
 	},
 	{
 		Name:        "Thriller Buzz",
 		Description: "Fast, twisty page-turners with recent momentum and bingeable energy.",
-		Query:       "psychological thriller",
+		Queries:     []string{"psychological thriller", "freida mcfadden"},
 		MinYear:     2020,
 	},
 	{
 		Name:        "Rom-Com Favorites",
 		Description: "Smart contemporary romance picks with banter, chemistry, and recent release heat.",
-		Query:       "emily henry",
+		Queries:     []string{"emily henry", "ali hazelwood"},
 		MinYear:     2020,
 	},
 	{
 		Name:        "Sci-Fi Series Hits",
 		Description: "Big-concept modern science fiction with sequel energy and strong fan followings.",
-		Query:       "murderbot",
+		Queries:     []string{"murderbot", "space opera"},
 		MinYear:     2017,
 	},
 }
@@ -371,7 +376,7 @@ func (u *searchUI) loadTrendingBooks(ctx context.Context) []searchItem {
 	if err != nil || len(books) == 0 {
 		return nil
 	}
-	books = pickDiscoveryBooks(books, 2010, 6)
+	books = pickDiscoveryBooks(books, 2010, discoveryTrendingSize)
 	items := make([]searchItem, 0, len(books))
 	for _, book := range books {
 		items = append(items, searchItem{BookItem: book})
@@ -387,11 +392,7 @@ func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCateg
 	for i, query := range defaultDiscoveryQueries {
 		go func(i int, query discoveryQuery) {
 			defer wg.Done()
-			books, err := ol.Search(ctx, query.Query, 12, 1)
-			if err != nil || len(books) == 0 {
-				return
-			}
-			books = pickDiscoveryBooks(books, query.MinYear, 4)
+			books := gatherDiscoveryCategoryBooks(ctx, ol, query)
 			if len(books) == 0 {
 				return
 			}
@@ -418,14 +419,51 @@ func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCateg
 	return categories
 }
 
+func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary, query discoveryQuery) []providers.BookItem {
+	candidates := make([]providers.BookItem, 0, discoveryCategorySize*3)
+	seen := make(map[string]struct{}, discoveryCategorySize*3)
+	appendCandidates := func(books []providers.BookItem) {
+		for _, book := range books {
+			key := discoveryBookKey(book)
+			if key == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			candidates = append(candidates, book)
+		}
+	}
+
+	for _, term := range query.Queries {
+		books, err := ol.Search(ctx, term, 18, 1)
+		if err != nil || len(books) == 0 {
+			continue
+		}
+		appendCandidates(books)
+		if selected := pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize); len(selected) >= discoveryCategorySize {
+			return selected
+		}
+	}
+
+	if len(pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)) < discoveryCategorySize {
+		if trending, err := ol.TrendingWorks(ctx, "weekly", 24); err == nil {
+			appendCandidates(trending)
+		}
+	}
+
+	return pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)
+}
+
 func pickDiscoveryBooks(books []providers.BookItem, minYear, limit int) []providers.BookItem {
 	if limit <= 0 {
-		limit = 4
+		limit = discoveryCategorySize
 	}
 	selected := make([]providers.BookItem, 0, limit)
 	seen := make(map[string]struct{}, limit)
 	appendIfEligible := func(book providers.BookItem) bool {
-		key := strings.ToLower(strings.TrimSpace(book.Title))
+		key := discoveryBookKey(book)
 		if key == "" {
 			return false
 		}
@@ -451,6 +489,20 @@ func pickDiscoveryBooks(books []providers.BookItem, minYear, limit int) []provid
 		}
 	}
 	return selected
+}
+
+func discoveryBookKey(book providers.BookItem) string {
+	title := strings.ToLower(strings.TrimSpace(book.Title))
+	if title == "" {
+		return ""
+	}
+	if len(book.Authors) > 0 {
+		author := strings.ToLower(strings.TrimSpace(book.Authors[0]))
+		if author != "" {
+			return title + "::" + author
+		}
+	}
+	return title
 }
 
 func isDiscoveryCandidate(book providers.BookItem) bool {
