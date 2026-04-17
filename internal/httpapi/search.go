@@ -57,33 +57,33 @@ type discoveryQuery struct {
 }
 
 const (
-	discoveryCategorySize = 4
-	discoveryTrendingSize = 6
+	discoveryCategorySize = 6
+	discoveryTrendingSize = 8
 )
 
 var defaultDiscoveryQueries = []discoveryQuery{
 	{
 		Name:        "Fantasy Hits",
 		Description: "Romantasy, dragons, and high-stakes series readers are tearing through right now.",
-		Queries:     []string{"romantasy", "dragon fantasy"},
+		Queries:     []string{"romantasy", "dragon fantasy", "epic fantasy bestseller", "fantasy 2024"},
 		MinYear:     2018,
 	},
 	{
 		Name:        "Thriller Buzz",
 		Description: "Fast, twisty page-turners with recent momentum and bingeable energy.",
-		Queries:     []string{"psychological thriller", "freida mcfadden"},
+		Queries:     []string{"psychological thriller", "freida mcfadden", "thriller bestseller", "domestic thriller"},
 		MinYear:     2020,
 	},
 	{
 		Name:        "Rom-Com Favorites",
 		Description: "Smart contemporary romance picks with banter, chemistry, and recent release heat.",
-		Queries:     []string{"emily henry", "ali hazelwood"},
+		Queries:     []string{"emily henry", "ali hazelwood", "contemporary romance bestseller", "rom com 2024"},
 		MinYear:     2020,
 	},
 	{
 		Name:        "Sci-Fi Series Hits",
 		Description: "Big-concept modern science fiction with sequel energy and strong fan followings.",
-		Queries:     []string{"murderbot", "space opera"},
+		Queries:     []string{"murderbot", "space opera", "science fiction bestseller", "sci fi 2024"},
 		MinYear:     2017,
 	},
 }
@@ -500,6 +500,19 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 	if len(pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)) < discoveryCategorySize {
 		if trending, err := ol.TrendingWorks(ctx, "weekly", 24); err == nil {
 			appendCandidates(trending)
+		}
+	}
+
+	if len(pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)) < discoveryCategorySize {
+		for _, fallbackTerm := range []string{query.Name, "booktok books", "new releases fiction"} {
+			books, err := ol.Search(ctx, fallbackTerm, 18, 1)
+			if err != nil || len(books) == 0 {
+				continue
+			}
+			appendCandidates(books)
+			if len(pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)) >= discoveryCategorySize {
+				break
+			}
 		}
 	}
 

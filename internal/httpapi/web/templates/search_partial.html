@@ -1,30 +1,13 @@
 {{ if .IsDiscovery }}
 <div class="space-y-4">
-  <section class="rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden" style="background:linear-gradient(135deg, rgba(124,58,237,.18), rgba(17,17,26,.96) 45%, rgba(11,11,19,1));">
-    <div class="p-6">
-      <div class="text-xs uppercase tracking-wide text-royal-300">Discover</div>
-      <div class="mt-2 flex flex-col gap-3 sm:flex-row justify-between">
-        <div class="max-w-3xl">
-          <h2 class="text-2xl font-semibold text-slate-100">Trending and recent picks before you search</h2>
-          <p class="text-sm text-slate-300 mt-2">The empty state now leans toward current breakout books, popular series momentum, and modern favorites instead of public-domain staples. Open any card for details and request from the same modal you use in search results.</p>
-        </div>
-        <div class="flex flex-wrap gap-2 text-xs">
-          <span class="px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 text-slate-200">Weekly momentum</span>
-          <span class="px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 text-slate-200">Modern shelves</span>
-          <span class="px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 text-slate-200">Same request flow</span>
-        </div>
-      </div>
-    </div>
-  </section>
-
   {{ if .TrendingNow }}
   <section class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden">
     <div class="p-5 border-b border-white/5 flex flex-col gap-2 sm:flex-row justify-between">
       <div>
         <div class="text-xs uppercase tracking-wide text-royal-300">Trending This Week</div>
-        <h3 class="text-xl font-semibold text-slate-100 mt-1">Books with current momentum on Open Library</h3>
+        <h3 class="text-xl font-semibold text-slate-100 mt-1">A few books with real momentum right now</h3>
       </div>
-      <div class="text-sm text-slate-400">Live weekly trend data filtered toward newer releases and recent hits.</div>
+      <div class="text-sm text-slate-400">Current picks you can open and request without typing first.</div>
     </div>
     <div class="p-4 grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));">
       {{ range .TrendingNow }}
@@ -89,15 +72,11 @@
     <section class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden">
       <div class="p-5 border-b border-white/5 flex flex-col gap-2 sm:flex-row justify-between">
         <div>
-          <div class="text-xs uppercase tracking-wide text-royal-300">Category</div>
-          <h3 class="text-xl font-semibold text-slate-100 mt-1">{{ .Name }}</h3>
+          <h3 class="text-xl font-semibold text-slate-100">{{ .Name }}</h3>
         </div>
-        <div class="flex flex-col items-start gap-2 sm:items-end">
-          <p class="text-sm text-slate-400 max-w-3xl">{{ .Description }}</p>
-          <div class="text-xs uppercase tracking-wide text-slate-500">{{ len .Items }} picks</div>
-        </div>
+        <p class="text-sm text-slate-400 max-w-3xl">{{ .Description }}</p>
       </div>
-      <div class="p-4 grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(280px,1fr));">
+      <div class="p-4 grid gap-4" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr));">
         {{ range .Items }}
           {{ template "search_discovery_item" . }}
         {{ end }}
