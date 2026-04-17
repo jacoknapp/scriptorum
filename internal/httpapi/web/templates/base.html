@@ -1326,14 +1326,14 @@
 			});
 		}
 
-		// Helper: open modal from an element inside the search result item (li)
+		// Helper: open modal from an element inside a search/discovery result card.
 		window.openBookModalFromElem = function(el){
 			try {
-				var li = el.closest('li');
-				if (!li) {
+				var container = el.closest('li, article');
+				if (!container) {
 					return;
 				}
-				var form = li.querySelector('form');
+				var form = container.querySelector('form');
 				if (!form) {
 					return;
 				}
@@ -1361,7 +1361,7 @@
 					if (prov && prov.value) data.provider = prov.value;
 				}
 				// also gather cover src if available in li
-				var img = li.querySelector('img'); if (img && img.src) data.cover = img.src;
+				var img = container.querySelector('img'); if (img && img.src) data.cover = img.src;
 				
 				// Check if we have enough information for a good modal display
 				var hasDescription = false;
@@ -1569,6 +1569,7 @@
 								.then(function(enrichedData) {
 									if (enrichedData && !enrichedData.error) {
 										var mergedData = Object.assign({}, enrichedData);
+										if (!mergedData.cover && bookData.cover) mergedData.cover = bookData.cover;
 										if (bookData.requesterEmail) mergedData.requesterEmail = bookData.requesterEmail;
 										if (bookData.status) mergedData.status = bookData.status;
 										if (bookData.requestId) mergedData.requestId = bookData.requestId;
@@ -1628,6 +1629,7 @@
 								.then(function(enrichedData) {
 									if (enrichedData && !enrichedData.error) {
 										var mergedData = Object.assign({}, enrichedData);
+										if (!mergedData.cover && bookData.cover) mergedData.cover = bookData.cover;
 										if (bookData.requesterEmail) mergedData.requesterEmail = bookData.requesterEmail;
 										if (bookData.status) mergedData.status = bookData.status;
 										if (bookData.requestId) mergedData.requestId = bookData.requestId;

@@ -1,14 +1,7 @@
 {{ template "header" . }}
 <div class="grid gap-4">
-	<div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-		<div>
-			<h1 class="text-xl font-semibold">Requests</h1>
-			<div id="requests-refresh-status" class="mt-1 text-sm text-slate-400">Checking request status...</div>
-		</div>
-		<div class="flex items-center gap-3">
-			<div id="requests-last-updated" class="text-xs text-slate-500">Waiting for first update...</div>
-			<button id="requests-refresh-button" type="button" class="px-3 py-1.5 rounded-lg bg-night-700/60 text-slate-100 ring-1 ring-white/10 hover:bg-night-700">Refresh</button>
-		</div>
+	<div class="flex items-center justify-between">
+		<h1 class="text-xl font-semibold">Requests</h1>
 	</div>
 	<div id="req-table"
 		 class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-2"
@@ -24,51 +17,51 @@
 <script>
 var requestsRefreshTimer = null;
 var requestsRefreshDelayMs = 15000;
+window.requestCoverCache = window.requestCoverCache || {};
+window.requestCoverPromises = window.requestCoverPromises || {};
 
 document.addEventListener('DOMContentLoaded', function() {
 	formatRequestAuthors();
-	updateRequestsLastUpdated();
-	wireRequestRefreshButton();
+	loadRequestCovers();
 	scheduleRequestRefresh();
 });
 
 document.addEventListener('htmx:afterSwap', function(evt) {
 	if (evt.detail.target && evt.detail.target.id === 'req-table') {
 		formatRequestAuthors();
-		updateRequestsLastUpdated();
+		loadRequestCovers();
 		scheduleRequestRefresh();
 	}
 });
 
 document.addEventListener('htmx:beforeRequest', function(evt) {
-	if (evt.detail.elt && evt.detail.elt.id === 'req-table') {
-		setRequestRefreshMessage('Refreshing requests...');
-		var button = document.getElementById('requests-refresh-button');
-		if (button) button.disabled = true;
-		if (requestsRefreshTimer) {
-			clearTimeout(requestsRefreshTimer);
-			requestsRefreshTimer = null;
-		}
+	if (evt.detail.elt && evt.detail.elt.id === 'req-table' && requestsRefreshTimer) {
+		clearTimeout(requestsRefreshTimer);
+		requestsRefreshTimer = null;
 	}
 });
 
-document.addEventListener('htmx:afterRequest', function(evt) {
-	if (evt.detail.elt && evt.detail.elt.id === 'req-table') {
-		var button = document.getElementById('requests-refresh-button');
-		if (button) button.disabled = false;
+window.addEventListener('pagehide', function() {
+	if (requestsRefreshTimer) {
+		clearTimeout(requestsRefreshTimer);
+		requestsRefreshTimer = null;
 	}
 });
 
-function setRequestRefreshMessage(message) {
-	var status = document.getElementById('requests-refresh-status');
-	if (status) status.textContent = message;
+function applyRequestCover(img, cover) {
+	if (!img) return;
+	if (cover) img.src = cover;
+	img.dataset.coverLoaded = 'true';
 }
 
-function updateRequestsLastUpdated() {
-	var lastUpdated = document.getElementById('requests-last-updated');
-	if (!lastUpdated) return;
-	var now = new Date();
-	lastUpdated.textContent = 'Updated ' + now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+function requestCoverKey(bookData) {
+	return [
+		(bookData.format || '').trim().toLowerCase(),
+		(bookData.isbn13 || '').trim(),
+		(bookData.isbn10 || '').trim(),
+		(bookData.asin || '').trim(),
+		(bookData.title || '').trim().toLowerCase()
+	].filter(Boolean).join('|');
 }
 
 function listRequestStatusCards() {
@@ -78,9 +71,8 @@ function listRequestStatusCards() {
 function requestNeedsAutoRefresh(element) {
 	var status = (element.getAttribute('data-request-status') || '').toLowerCase();
 	var external = (element.getAttribute('data-external-status') || '').toLowerCase();
-	if (status === 'pending' || status === 'processing' || status === 'approved') return true;
-	if (status === 'queued' && external !== 'available') return true;
-	return false;
+	if (external === 'available' || external === 'monitored' || external === 'grabbed') return false;
+	return status === 'pending' || status === 'processing' || status === 'approved' || status === 'queued';
 }
 
 function scheduleRequestRefresh() {
@@ -88,19 +80,10 @@ function scheduleRequestRefresh() {
 		clearTimeout(requestsRefreshTimer);
 		requestsRefreshTimer = null;
 	}
-	var items = listRequestStatusCards();
-	if (!items.length) {
-		setRequestRefreshMessage('No requests yet.');
-		return;
-	}
-	if (items.some(requestNeedsAutoRefresh)) {
-		setRequestRefreshMessage('Auto-refreshing every 15 seconds while statuses are still changing.');
-		requestsRefreshTimer = setTimeout(function() {
-			refreshRequestsTable();
-		}, requestsRefreshDelayMs);
-		return;
-	}
-	setRequestRefreshMessage('Up to date. Auto-refresh pauses when everything is settled.');
+	if (!listRequestStatusCards().some(requestNeedsAutoRefresh)) return;
+	requestsRefreshTimer = setTimeout(function() {
+		refreshRequestsTable();
+	}, requestsRefreshDelayMs);
 }
 
 function refreshRequestsTable() {
@@ -115,24 +98,80 @@ function refreshRequestsTable() {
 		.then(function(html) {
 			reqTable.innerHTML = html;
 			formatRequestAuthors();
-			updateRequestsLastUpdated();
+			loadRequestCovers();
 			scheduleRequestRefresh();
 		});
 }
 
-function wireRequestRefreshButton() {
-	var button = document.getElementById('requests-refresh-button');
-	if (!button || button.dataset.bound === 'true') return;
-	button.dataset.bound = 'true';
-	button.addEventListener('click', function() {
-		refreshRequestsTable();
+function loadRequestCovers() {
+	var coverImages = document.querySelectorAll('#req-table [data-request-cover]');
+	coverImages.forEach(function(img) {
+		if (img.dataset.coverLoaded === 'true') return;
+		var clickable = img.closest('[data-open-book]');
+		if (!clickable) {
+			img.dataset.coverLoaded = 'true';
+			return;
+		}
+		var jsonData = clickable.getAttribute('data-open-book');
+		if (!jsonData) {
+			img.dataset.coverLoaded = 'true';
+			return;
+		}
+		try {
+			var bookData = JSON.parse(jsonData);
+			if (!bookData || typeof bookData !== 'object') {
+				img.dataset.coverLoaded = 'true';
+				return;
+			}
+			if (bookData.cover) {
+				applyRequestCover(img, bookData.cover);
+				return;
+			}
+			var key = requestCoverKey(bookData);
+			if (!key) {
+				img.dataset.coverLoaded = 'true';
+				return;
+			}
+			if (window.requestCoverCache[key]) {
+				applyRequestCover(img, window.requestCoverCache[key]);
+				return;
+			}
+			if (!window.requestCoverPromises[key]) {
+				window.requestCoverPromises[key] = fetch('/api/v1/book/details', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						'HX-Request': 'true'
+					},
+					body: JSON.stringify(bookData),
+					credentials: 'same-origin'
+				})
+				.then(function(resp) {
+					if (!resp.ok) return null;
+					return resp.json();
+				})
+				.then(function(data) {
+					var cover = data && typeof data.cover === 'string' ? data.cover : '';
+					if (cover) window.requestCoverCache[key] = cover;
+					return cover;
+				})
+				.catch(function() {
+					return '';
+				});
+			}
+			window.requestCoverPromises[key].then(function(cover) {
+				applyRequestCover(img, cover);
+			});
+		} catch(e) {
+			img.dataset.coverLoaded = 'true';
+		}
 	});
 }
 
 function formatRequestAuthors() {
 	var tableRows = document.querySelectorAll('#req-table table tbody tr');
 	tableRows.forEach(function(row) {
-		var authorElement = row.querySelector('td:first-child .text-slate-400');
+		var authorElement = row.querySelector('.text-slate-400');
 		if (authorElement && authorElement.textContent.trim()) {
 			var originalAuthor = authorElement.textContent.trim();
 			if (originalAuthor && typeof window.formatAuthorName === 'function') {

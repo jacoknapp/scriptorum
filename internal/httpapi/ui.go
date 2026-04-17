@@ -1,12 +1,16 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
+	"gitea.knapp/jacoknapp/scriptorum/internal/db"
+	"gitea.knapp/jacoknapp/scriptorum/internal/util"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -25,7 +29,7 @@ func (s *Server) mountUI(r chi.Router) {
 				mine = s.userEmail(r)
 			}
 			items, _ := s.db.ListRequests(r.Context(), mine, 200)
-			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": false, "CSRFToken": s.getCSRFToken(r)}
+			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": s.buildRequestListItems(r.Context(), items), "FallbackAll": false, "CSRFToken": s.getCSRFToken(r)}
 			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
 		}))
 		rt.Get("/dashboard", s.requireLogin(u.handleDashboard(s)))
@@ -37,7 +41,7 @@ func (s *Server) mountUI(r chi.Router) {
 				mine = s.userEmail(r)
 			}
 			items, _ := s.db.ListRequests(r.Context(), mine, 200)
-			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": items, "FallbackAll": false, "CSRFToken": s.getCSRFToken(r)}
+			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": s.buildRequestListItems(r.Context(), items), "FallbackAll": false, "CSRFToken": s.getCSRFToken(r)}
 			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
 		}))
 		rt.HandleFunc("/users", s.requireAdmin(u.handleUsers(s)))
@@ -102,7 +106,12 @@ func (u *ui) handleHome(s *Server) http.HandlerFunc {
 		if ses, ok := r.Context().Value(ctxUser).(*session); ok && ses != nil {
 			name, isAdmin = ses.Name, ses.Admin
 		}
-		data := map[string]any{"UserName": name, "IsAdmin": isAdmin, "CSRFToken": s.getCSRFToken(r)}
+		data := map[string]any{
+			"UserName":             name,
+			"IsAdmin":              isAdmin,
+			"CSRFToken":            s.getCSRFToken(r),
+			"InitialSearchResults": buildDiscoverySearchData(r.Context(), s, &searchUI{}),
+		}
 		_ = u.tpl.ExecuteTemplate(w, "home.html", data)
 	}
 }
@@ -123,9 +132,127 @@ func (u *ui) handleRequestsTable(s *Server) http.HandlerFunc {
 			mine = s.userEmail(r)
 		}
 		items, _ := s.db.ListRequests(r.Context(), mine, 200)
-		data := map[string]any{"Items": items, "IsAdmin": ses != nil && ses.Admin, "FallbackAll": false}
+		data := map[string]any{"Items": s.buildRequestListItems(r.Context(), items), "IsAdmin": ses != nil && ses.Admin, "FallbackAll": false}
 		_ = u.tpl.ExecuteTemplate(w, "requests_table", data)
 	}
+}
+
+type requestListItem struct {
+	db.Request
+	Cover string
+}
+
+func (s *Server) buildRequestListItems(ctx context.Context, items []db.Request) []requestListItem {
+	out := make([]requestListItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, requestListItem{
+			Request: item,
+			Cover:   s.requestListCover(ctx, item),
+		})
+	}
+	return out
+}
+
+func (s *Server) requestListCover(ctx context.Context, req db.Request) string {
+	payloads := make([]json.RawMessage, 0, 3)
+
+	if match, err := s.findCatalogMatch(ctx, req.Format, req.Title, req.Authors, req.ISBN10, req.ISBN13, "", req.ReadarrReq); err == nil && match != nil && len(match.ReadarrData) > 0 {
+		payloads = append(payloads, match.ReadarrData)
+	}
+	if len(req.ReadarrResp) > 0 {
+		payloads = append(payloads, req.ReadarrResp)
+	}
+	if len(req.ReadarrReq) > 0 {
+		payloads = append(payloads, req.ReadarrReq)
+	}
+
+	for _, raw := range payloads {
+		if cover := s.requestCoverFromPayload(req.Format, raw); cover != "" {
+			return cover
+		}
+	}
+	return ""
+}
+
+func (s *Server) requestCoverFromPayload(format string, raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return ""
+	}
+
+	cover := util.FirstNonEmpty(
+		mapStringValue(payload, "cover"),
+		mapStringValue(payload, "remoteCover"),
+		mapStringValue(payload, "remotePoster"),
+		mapStringValue(payload, "coverUrl"),
+	)
+	if cover == "" {
+		cover = payloadImageURL(payload)
+	}
+	return s.normalizeRequestCover(format, cover)
+}
+
+func payloadImageURL(payload map[string]any) string {
+	images, ok := payload["images"].([]any)
+	if !ok {
+		return ""
+	}
+	for _, image := range images {
+		m, ok := image.(map[string]any)
+		if !ok {
+			continue
+		}
+		coverType := strings.ToLower(strings.TrimSpace(mapStringValue(m, "coverType")))
+		if coverType != "" && coverType != "cover" && coverType != "poster" {
+			continue
+		}
+		if cover := util.FirstNonEmpty(mapStringValue(m, "remoteUrl"), mapStringValue(m, "url")); cover != "" {
+			return cover
+		}
+	}
+	return ""
+}
+
+func mapStringValue(payload map[string]any, key string) string {
+	if payload == nil {
+		return ""
+	}
+	value, ok := payload[key]
+	if !ok {
+		return ""
+	}
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	default:
+		return ""
+	}
+}
+
+func (s *Server) normalizeRequestCover(format, cover string) string {
+	cover = strings.TrimSpace(cover)
+	if cover == "" {
+		return ""
+	}
+	if strings.HasPrefix(cover, "/ui/readarr-cover") {
+		return cover
+	}
+	inst, ok := s.readarrInstanceForLookup(format)
+	if strings.HasPrefix(cover, "/") && (!ok || strings.TrimSpace(inst.BaseURL) == "") {
+		return ""
+	}
+	if strings.HasPrefix(cover, "/") && ok && strings.TrimSpace(inst.BaseURL) != "" {
+		cover = strings.TrimRight(inst.BaseURL, "/") + cover
+	}
+	if ok && strings.HasPrefix(strings.TrimSpace(inst.BaseURL), "http") {
+		if parsed, err := url.Parse(cover); err == nil && strings.EqualFold(parsed.Host, urlHost(inst.BaseURL)) {
+			return "/ui/readarr-cover?u=" + url.QueryEscape(cover)
+		}
+	}
+	return cover
 }
 
 func (u *ui) handleUsers(s *Server) http.HandlerFunc {

@@ -12,7 +12,7 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
-func TestSearchUIShowsDiscoveryWhenQueryBlank(t *testing.T) {
+func installOpenLibraryDiscoveryTransport(t *testing.T) {
 	prevTransport := http.DefaultTransport
 	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "openlibrary.org" {
@@ -20,22 +20,73 @@ func TestSearchUIShowsDiscoveryWhenQueryBlank(t *testing.T) {
 		}
 
 		bodyByPath := map[string]string{
-			"/subjects/fantasy.json":         `{"works":[{"title":"The Hobbit","authors":[{"name":"J.R.R. Tolkien"}],"cover_id":1}]}`,
-			"/subjects/science_fiction.json": `{"works":[{"title":"Dune","authors":[{"name":"Frank Herbert"}],"cover_id":2}]}`,
-			"/subjects/mystery.json":         `{"works":[{"title":"The Hound of the Baskervilles","authors":[{"name":"Arthur Conan Doyle"}],"cover_id":3}]}`,
-			"/subjects/romance.json":         `{"works":[{"title":"Pride and Prejudice","authors":[{"name":"Jane Austen"}],"cover_id":4}]}`,
+			"/trending/weekly.json": `{"works":[
+				{"title":"Project Hail Mary","author_name":["Andy Weir"],"cover_i":1,"first_publish_year":2021},
+				{"title":"Funny Story","author_name":["Emily Henry"],"cover_i":2,"first_publish_year":2024},
+				{"title":"Fourth Wing","author_name":["Rebecca Yarros"],"cover_i":3,"first_publish_year":2023}
+			]}`,
 		}
-		body, ok := bodyByPath[r.URL.Path]
-		if !ok {
-			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
+		if body, ok := bodyByPath[r.URL.Path]; ok {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     make(http.Header),
+			}, nil
 		}
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(strings.NewReader(body)),
-			Header:     make(http.Header),
-		}, nil
+		if r.URL.Path == "/search.json" {
+			queryBodies := map[string]string{
+				"romantasy":              `{"docs":[{"title":"Assistant to the Villain","author_name":["Hannah Nicole Maehrer"],"cover_i":10,"first_publish_year":2023},{"title":"The Serpent & the Wings of Night","author_name":["Carissa Broadbent"],"cover_i":11,"first_publish_year":2022}]}`,
+				"psychological thriller": `{"docs":[{"title":"Never Lie","author_name":["Freida McFadden"],"cover_i":12,"first_publish_year":2022},{"title":"The Housemaid","author_name":["Freida McFadden"],"cover_i":13,"first_publish_year":2022}]}`,
+				"emily henry":            `{"docs":[{"title":"Funny Story","author_name":["Emily Henry"],"cover_i":14,"first_publish_year":2024},{"title":"Happy Place","author_name":["Emily Henry"],"cover_i":15,"first_publish_year":2023}]}`,
+				"murderbot":              `{"docs":[{"title":"System Collapse","author_name":["Martha Wells"],"cover_i":16,"first_publish_year":2023},{"title":"Network Effect","author_name":["Martha Wells"],"cover_i":17,"first_publish_year":2020}]}`,
+			}
+			body, ok := queryBodies[r.URL.Query().Get("q")]
+			if !ok {
+				t.Fatalf("unexpected search query: %s", r.URL.String())
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     make(http.Header),
+			}, nil
+		}
+		t.Fatalf("unexpected Open Library request: %s", r.URL.String())
+		return nil, nil
 	})
 	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+}
+
+func TestSearchPageServerRendersDiscoveryOnFirstLoad(t *testing.T) {
+	installOpenLibraryDiscoveryTransport(t)
+
+	s := newServerForTest(t)
+	req := httptest.NewRequest(http.MethodGet, "/search", nil)
+	req.AddCookie(makeCookie(t, s, "user", false))
+	rec := httptest.NewRecorder()
+
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, want := range []string{
+		"Find trending books before you even type",
+		"Trending This Week",
+		"Fantasy Hits",
+		"Project Hail Mary",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("expected %q in body: %s", want, body)
+		}
+	}
+	if strings.Contains(body, "Loading discovery shelves...") {
+		t.Fatalf("expected initial discovery content instead of loading placeholder: %s", body)
+	}
+}
+
+func TestSearchUIShowsDiscoveryWhenQueryBlank(t *testing.T) {
+	installOpenLibraryDiscoveryTransport(t)
 
 	s := newServerForTest(t)
 	req := httptest.NewRequest(http.MethodGet, "/ui/search", nil)
@@ -49,13 +100,14 @@ func TestSearchUIShowsDiscoveryWhenQueryBlank(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"Trending books by category",
-		"Fantasy",
-		"Science Fiction",
-		"Mystery",
-		"Romance",
-		"The Hobbit",
-		"Dune",
+		"Trending This Week",
+		"Fantasy Hits",
+		"Thriller Buzz",
+		"Rom-Com Favorites",
+		"Sci-Fi Series Hits",
+		"Project Hail Mary",
+		"Assistant to the Villain",
+		"Never Lie",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in body: %s", want, body)

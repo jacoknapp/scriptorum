@@ -3,7 +3,9 @@ package providers
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 )
 
@@ -20,6 +22,19 @@ func TestOpenLibraryEmptySubject(t *testing.T) {
 	items, err := ol.SubjectWorks(context.Background(), "", 4)
 	if err != nil || items != nil {
 		t.Fatalf("expected nil,nil got %v,%v", items, err)
+	}
+}
+
+func TestOpenLibraryTrendingDefaultsPeriod(t *testing.T) {
+	ol := NewOpenLibrary()
+	ol.cl.Transport = rtFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Path != "/trending/weekly.json" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"works":[]}`)), Header: make(http.Header)}, nil
+	})
+	if _, err := ol.TrendingWorks(context.Background(), "not-a-real-period", 3); err != nil {
+		t.Fatalf("unexpected err: %v", err)
 	}
 }
 

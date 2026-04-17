@@ -1,24 +1,36 @@
 {{ template "header" . }}
-<div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6">
-	<h1 class="text-xl font-semibold mb-3">Search books</h1>
-	<form id="searchForm" class="flex flex-col sm:flex-row gap-2">
-		<input name="q" class="flex-1 border border-white/10 bg-night-900 text-slate-100 placeholder-slate-400 rounded px-3 py-2 min-w-0"
-			   placeholder="Title / Author / ISBN / ASIN / paste Amazon URL"
-			   id="searchInput"
-			   autocomplete="off">
-		<input type="hidden" name="page" value="1">
-		<input type="hidden" name="limit" value="20">
-		<button class="px-4 py-2 rounded bg-royal-600 hover:bg-royal-500 text-white">Search</button>
-	</form>
-	<div id="searchIndicator" class="mt-3 rounded-xl border border-royal-500/20 bg-royal-900/20 px-4 py-3 text-sm text-royal-100" style="display: none;">
-		Searching for matches...
+<div class="rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden" style="background:linear-gradient(135deg, rgba(124,58,237,.22), rgba(17,17,26,.98) 42%, rgba(11,11,19,1));">
+	<div class="p-6 md:py-8">
+		<div class="text-xs uppercase tracking-wide text-royal-300">Search and Discover</div>
+		<div class="mt-2 flex flex-col gap-4 sm:flex-row justify-between">
+			<div class="max-w-3xl">
+				<div class="text-xl font-semibold text-slate-100">Search books</div>
+				<h1 class="text-2xl font-semibold text-slate-100 mt-2">Find trending books before you even type</h1>
+				<p class="mt-2 text-sm text-slate-300">Browse live trend picks and modern discovery shelves, or search directly by title, author, ISBN, ASIN, or pasted Amazon URL.</p>
+			</div>
+			<div class="flex flex-wrap gap-2 text-xs">
+				<span class="px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 text-slate-200">Weekly trends</span>
+				<span class="px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 text-slate-200">Modern picks</span>
+				<span class="px-2 py-1 rounded-full bg-white/5 ring-1 ring-white/10 text-slate-200">Request from details</span>
+			</div>
+		</div>
+
+		<form id="searchForm" class="mt-6 flex flex-col sm:flex-row gap-2">
+			<input name="q" class="flex-1 border border-white/10 bg-night-900 text-slate-100 placeholder-slate-400 rounded px-3 py-3 min-w-0"
+				   placeholder="Title / Author / ISBN / ASIN / paste Amazon URL"
+				   id="searchInput"
+				   autocomplete="off">
+			<input type="hidden" name="page" value="1">
+			<input type="hidden" name="limit" value="20">
+			<button class="px-4 py-3 rounded bg-royal-600 hover:bg-royal-500 text-white">Search</button>
+		</form>
+		<div id="searchIndicator" class="mt-3 rounded-xl border px-4 py-3 text-sm text-slate-100" style="display: none; background: rgba(91, 33, 182, .18); border-color: rgba(139, 92, 246, .28);">
+			Searching for matches...
+		</div>
 	</div>
-	</div>
+</div>
 <div id="results" class="mt-4">
-	<div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 px-6 py-10 text-center">
-		<div class="text-lg font-semibold text-slate-100">Find your next book</div>
-		<div class="mt-2 text-sm text-slate-400">Search by title, author, ISBN, ASIN, or paste an Amazon URL to see request options and library availability.</div>
-	</div>
+	{{ template "search_partial.html" .InitialSearchResults }}
 </div>
 <div id="more" class="md:block"
 		 style="display: none;"
@@ -33,7 +45,6 @@
 			 const page=parseInt(data.get("page")||"1");
 			 data.set("page", String(page+1));
 			 const obj=Object.fromEntries(data.entries());
-			 // persist increment back to form for next page
 			 f.querySelector("input[name=page]").value=String(page+1);
 			 return obj;
 		 })()'>
@@ -56,7 +67,6 @@ document.addEventListener('DOMContentLoaded', function() {
 		return;
 	}
 
-	// Wait for debouncedSearch to be available
 	var initSearch = function() {
 		if (typeof window.debouncedSearch !== 'function') {
 			console.log('debouncedSearch not ready, waiting...');
@@ -66,24 +76,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
 		console.log('Setting up search event listeners...');
 
-		// Input event for typing
 		searchInput.addEventListener('input', function(e) {
 			console.log('Search input:', e.target.value);
 			window.debouncedSearch(e.target.value);
 		});
 
-		// Form submit event
 		searchForm.addEventListener('submit', function(e) {
 			e.preventDefault();
 			console.log('Search form submitted:', searchInput.value);
-			window.debouncedSearch(searchInput.value, 0); // Immediate search
+			window.debouncedSearch(searchInput.value, 0);
 		});
 
 		console.log('Search initialization complete!');
-
-		// Focus on search input for better UX
 		searchInput.focus();
-		window.debouncedSearch(searchInput.value, 0);
+		if (searchInput.value.trim().length >= 2) {
+			window.debouncedSearch(searchInput.value, 0);
+		}
 	};
 
 	initSearch();

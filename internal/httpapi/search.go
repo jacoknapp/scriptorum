@@ -43,20 +43,43 @@ type searchItem struct {
 }
 
 type discoveryCategory struct {
-	Name  string
-	Items []searchItem
+	Name        string
+	Description string
+	Items       []searchItem
 }
 
-type discoverySubject struct {
-	Name string
-	Slug string
+type discoveryQuery struct {
+	Name        string
+	Description string
+	Query       string
+	MinYear     int
 }
 
-var defaultDiscoverySubjects = []discoverySubject{
-	{Name: "Fantasy", Slug: "fantasy"},
-	{Name: "Science Fiction", Slug: "science_fiction"},
-	{Name: "Mystery", Slug: "mystery"},
-	{Name: "Romance", Slug: "romance"},
+var defaultDiscoveryQueries = []discoveryQuery{
+	{
+		Name:        "Fantasy Hits",
+		Description: "Romantasy, dragons, and high-stakes series readers are tearing through right now.",
+		Query:       "romantasy",
+		MinYear:     2018,
+	},
+	{
+		Name:        "Thriller Buzz",
+		Description: "Fast, twisty page-turners with recent momentum and bingeable energy.",
+		Query:       "psychological thriller",
+		MinYear:     2020,
+	},
+	{
+		Name:        "Rom-Com Favorites",
+		Description: "Smart contemporary romance picks with banter, chemistry, and recent release heat.",
+		Query:       "emily henry",
+		MinYear:     2020,
+	},
+	{
+		Name:        "Sci-Fi Series Hits",
+		Description: "Big-concept modern science fiction with sequel energy and strong fan followings.",
+		Query:       "murderbot",
+		MinYear:     2017,
+	},
 }
 
 func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
@@ -75,14 +98,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			}
 		}
 		if q == "" {
-			categories := u.loadDiscoveryCategories(r.Context())
-			for i := range categories {
-				decorateSearchItems(s, categories[i].Items)
-			}
-			data := map[string]any{
-				"IsDiscovery":         true,
-				"DiscoveryCategories": categories,
-			}
+			data := buildDiscoverySearchData(r.Context(), s, u)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_ = u.tpl.ExecuteTemplate(w, "search_partial.html", data)
 			return
@@ -323,24 +339,72 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 	}
 }
 
+func buildDiscoverySearchData(ctx context.Context, s *Server, u *searchUI) map[string]any {
+	var trending []searchItem
+	var categories []discoveryCategory
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		trending = u.loadTrendingBooks(ctx)
+	}()
+	go func() {
+		defer wg.Done()
+		categories = u.loadDiscoveryCategories(ctx)
+	}()
+	wg.Wait()
+
+	decorateSearchItems(s, trending)
+	for i := range categories {
+		decorateSearchItems(s, categories[i].Items)
+	}
+	return map[string]any{
+		"IsDiscovery":         true,
+		"TrendingNow":         trending,
+		"DiscoveryCategories": categories,
+	}
+}
+
+func (u *searchUI) loadTrendingBooks(ctx context.Context) []searchItem {
+	ol := providers.NewOpenLibrary()
+	books, err := ol.TrendingWorks(ctx, "weekly", 24)
+	if err != nil || len(books) == 0 {
+		return nil
+	}
+	books = pickDiscoveryBooks(books, 2010, 6)
+	items := make([]searchItem, 0, len(books))
+	for _, book := range books {
+		items = append(items, searchItem{BookItem: book})
+	}
+	return items
+}
+
 func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCategory {
 	ol := providers.NewOpenLibrary()
-	results := make([]discoveryCategory, len(defaultDiscoverySubjects))
+	results := make([]discoveryCategory, len(defaultDiscoveryQueries))
 	var wg sync.WaitGroup
-	wg.Add(len(defaultDiscoverySubjects))
-	for i, subject := range defaultDiscoverySubjects {
-		go func(i int, subject discoverySubject) {
+	wg.Add(len(defaultDiscoveryQueries))
+	for i, query := range defaultDiscoveryQueries {
+		go func(i int, query discoveryQuery) {
 			defer wg.Done()
-			books, err := ol.SubjectWorks(ctx, subject.Slug, 4)
+			books, err := ol.Search(ctx, query.Query, 12, 1)
 			if err != nil || len(books) == 0 {
+				return
+			}
+			books = pickDiscoveryBooks(books, query.MinYear, 4)
+			if len(books) == 0 {
 				return
 			}
 			items := make([]searchItem, 0, len(books))
 			for _, book := range books {
 				items = append(items, searchItem{BookItem: book})
 			}
-			results[i] = discoveryCategory{Name: subject.Name, Items: items}
-		}(i, subject)
+			results[i] = discoveryCategory{
+				Name:        query.Name,
+				Description: query.Description,
+				Items:       items,
+			}
+		}(i, query)
 	}
 	wg.Wait()
 
@@ -352,6 +416,65 @@ func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCateg
 		categories = append(categories, category)
 	}
 	return categories
+}
+
+func pickDiscoveryBooks(books []providers.BookItem, minYear, limit int) []providers.BookItem {
+	if limit <= 0 {
+		limit = 4
+	}
+	selected := make([]providers.BookItem, 0, limit)
+	seen := make(map[string]struct{}, limit)
+	appendIfEligible := func(book providers.BookItem) bool {
+		key := strings.ToLower(strings.TrimSpace(book.Title))
+		if key == "" {
+			return false
+		}
+		if _, ok := seen[key]; ok {
+			return false
+		}
+		if !isDiscoveryCandidate(book) {
+			return false
+		}
+		seen[key] = struct{}{}
+		selected = append(selected, book)
+		return len(selected) >= limit
+	}
+
+	for _, book := range books {
+		if book.FirstPublishYear >= minYear && appendIfEligible(book) {
+			return selected
+		}
+	}
+	for _, book := range books {
+		if appendIfEligible(book) {
+			return selected
+		}
+	}
+	return selected
+}
+
+func isDiscoveryCandidate(book providers.BookItem) bool {
+	title := strings.ToLower(strings.TrimSpace(book.Title))
+	if title == "" {
+		return false
+	}
+	blockedSnippets := []string{
+		"summary",
+		"study guide",
+		"biography",
+		"workbook",
+		"collection set",
+		"box set",
+		"journal",
+		"review",
+		"analysis",
+	}
+	for _, snippet := range blockedSnippets {
+		if strings.Contains(title, snippet) {
+			return false
+		}
+	}
+	return true
 }
 
 func decorateSearchItems(s *Server, items []searchItem) {

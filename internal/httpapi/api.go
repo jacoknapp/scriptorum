@@ -26,6 +26,19 @@ type RequestPayload struct {
 	ProviderPayload string   `json:"provider_payload"`
 }
 
+func (s *Server) readarrInstanceForLookup(format string) (providers.ReadarrInstance, bool) {
+	if inst, ok := s.readarrInstanceForFormat(format); ok {
+		return inst, true
+	}
+	if normalizeSyncKind(format) == "audiobook" {
+		return s.readarrInstanceForFormat("ebook")
+	}
+	if inst, ok := s.readarrInstanceForFormat("ebook"); ok {
+		return inst, true
+	}
+	return s.readarrInstanceForFormat("audiobook")
+}
+
 func (s *Server) mountAPI(r chi.Router) {
 	r.Route("/api/v1/requests", func(rr chi.Router) {
 		rr.Post("/", s.requireLogin(s.apiCreateRequest))
@@ -212,12 +225,9 @@ func (s *Server) apiBookDetails(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Prefer Readarr if configured (ebooks first)
-	cfg := s.settings.Get()
-	var inst providers.ReadarrInstance
-	if cfg != nil && strings.TrimSpace(cfg.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cfg.Readarr.Ebooks.APIKey) != "" {
-		inst = providers.ReadarrInstance{BaseURL: cfg.Readarr.Ebooks.BaseURL, APIKey: cfg.Readarr.Ebooks.APIKey, DefaultQualityProfileID: cfg.Readarr.Ebooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Ebooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Ebooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Ebooks.InsecureSkipVerify}
-	}
-	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+	format, _ := in["format"].(string)
+	inst, ok := s.readarrInstanceForLookup(format)
+	if !ok || strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
 		// No Readarr configured — return basic info from inputs
 		out := map[string]any{"title": in["title"], "isbn13": in["isbn13"], "isbn10": in["isbn10"], "asin": in["asin"], "authors": in["authors"]}
 		writeNormalized(out)
@@ -382,12 +392,9 @@ func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Get Readarr configuration
-	cfg := s.settings.Get()
-	var inst providers.ReadarrInstance
-	if cfg != nil && strings.TrimSpace(cfg.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cfg.Readarr.Ebooks.APIKey) != "" {
-		inst = providers.ReadarrInstance{BaseURL: cfg.Readarr.Ebooks.BaseURL, APIKey: cfg.Readarr.Ebooks.APIKey, DefaultQualityProfileID: cfg.Readarr.Ebooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Ebooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Ebooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Ebooks.InsecureSkipVerify}
-	}
-	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+	format, _ := in["format"].(string)
+	inst, ok := s.readarrInstanceForLookup(format)
+	if !ok || strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
 		writeJSON(w, map[string]any{"error": "Readarr not configured"}, 500)
 		return
 	}

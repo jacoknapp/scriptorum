@@ -24,14 +24,28 @@ func NewOpenLibrary() *OpenLibrary {
 }
 
 type OLDoc struct {
-	Title      string   `json:"title"`
-	AuthorName []string `json:"author_name"`
-	ISBN10     []string `json:"isbn"`
-	ISBN13     []string `json:"isbn13"`
-	CoverId    int      `json:"cover_i"`
+	Title            string   `json:"title"`
+	AuthorName       []string `json:"author_name"`
+	ISBN10           []string `json:"isbn"`
+	ISBN13           []string `json:"isbn13"`
+	CoverId          int      `json:"cover_i"`
+	CoverEditionKey  string   `json:"cover_edition_key"`
+	FirstPublishYear int      `json:"first_publish_year"`
 }
 type OLResp struct {
 	Docs []OLDoc `json:"docs"`
+}
+
+type OLTrendingWork struct {
+	Title            string   `json:"title"`
+	AuthorName       []string `json:"author_name"`
+	CoverID          int      `json:"cover_i"`
+	CoverEditionKey  string   `json:"cover_edition_key"`
+	FirstPublishYear int      `json:"first_publish_year"`
+}
+
+type OLTrendingResp struct {
+	Works []OLTrendingWork `json:"works"`
 }
 
 type OLSubjectAuthor struct {
@@ -50,13 +64,14 @@ type OLSubjectResp struct {
 }
 
 type BookItem struct {
-	ASIN        string
-	Title       string
-	Authors     []string
-	ISBN10      string
-	ISBN13      string
-	CoverSmall  string
-	CoverMedium string
+	ASIN             string
+	Title            string
+	Authors          []string
+	ISBN10           string
+	ISBN13           string
+	FirstPublishYear int
+	CoverSmall       string
+	CoverMedium      string
 }
 
 func (ol *OpenLibrary) Search(ctx context.Context, q string, limit, page int) ([]BookItem, error) {
@@ -92,11 +107,51 @@ func (ol *OpenLibrary) Search(ctx context.Context, q string, limit, page int) ([
 		if len(d.ISBN13) > 0 {
 			i13 = d.ISBN13[0]
 		}
-		cover := ""
-		if d.CoverId != 0 {
-			cover = fmt.Sprintf("https://covers.openlibrary.org/b/id/%d-M.jpg", d.CoverId)
-		}
-		items = append(items, BookItem{Title: d.Title, Authors: d.AuthorName, ISBN10: i10, ISBN13: i13, CoverSmall: cover, CoverMedium: cover})
+		cover := openLibraryCoverURL(d.CoverId, d.CoverEditionKey)
+		items = append(items, BookItem{
+			Title:            d.Title,
+			Authors:          d.AuthorName,
+			ISBN10:           i10,
+			ISBN13:           i13,
+			FirstPublishYear: d.FirstPublishYear,
+			CoverSmall:       cover,
+			CoverMedium:      cover,
+		})
+	}
+	return items, nil
+}
+
+func (ol *OpenLibrary) TrendingWorks(ctx context.Context, period string, limit int) ([]BookItem, error) {
+	period = strings.ToLower(strings.TrimSpace(period))
+	switch period {
+	case "daily", "weekly", "monthly", "yearly", "all":
+	default:
+		period = "weekly"
+	}
+	if limit <= 0 {
+		limit = 10
+	}
+	u := ol.apiURL("/trending/" + url.PathEscape(period) + ".json?limit=" + strconv.Itoa(limit))
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	resp, err := ol.cl.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	var out OLTrendingResp
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	items := make([]BookItem, 0, len(out.Works))
+	for _, w := range out.Works {
+		cover := openLibraryCoverURL(w.CoverID, w.CoverEditionKey)
+		items = append(items, BookItem{
+			Title:            w.Title,
+			Authors:          w.AuthorName,
+			FirstPublishYear: w.FirstPublishYear,
+			CoverSmall:       cover,
+			CoverMedium:      cover,
+		})
 	}
 	return items, nil
 }
@@ -128,15 +183,20 @@ func (ol *OpenLibrary) SubjectWorks(ctx context.Context, subject string, limit i
 				authors = append(authors, author.Name)
 			}
 		}
-		cover := ""
-		if w.CoverID != 0 {
-			cover = fmt.Sprintf("https://covers.openlibrary.org/b/id/%d-M.jpg", w.CoverID)
-		} else if strings.TrimSpace(w.CoverEditionKey) != "" {
-			cover = "https://covers.openlibrary.org/b/olid/" + url.PathEscape(strings.TrimSpace(w.CoverEditionKey)) + "-M.jpg"
-		}
+		cover := openLibraryCoverURL(w.CoverID, w.CoverEditionKey)
 		items = append(items, BookItem{Title: w.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover})
 	}
 	return items, nil
+}
+
+func openLibraryCoverURL(coverID int, coverEditionKey string) string {
+	if coverID != 0 {
+		return fmt.Sprintf("https://covers.openlibrary.org/b/id/%d-M.jpg", coverID)
+	}
+	if strings.TrimSpace(coverEditionKey) != "" {
+		return "https://covers.openlibrary.org/b/olid/" + url.PathEscape(strings.TrimSpace(coverEditionKey)) + "-M.jpg"
+	}
+	return ""
 }
 
 func (ol *OpenLibrary) apiURL(path string) string {
