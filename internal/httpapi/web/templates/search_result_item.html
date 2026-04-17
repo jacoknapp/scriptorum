@@ -5,6 +5,8 @@
     <!-- Use placeholder if no cover; clicking opens details modal -->
     <img src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
       class="w-16 h-24 object-cover rounded-lg border border-white/10 bg-night-900"
+      loading="lazy"
+      decoding="async"
       onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
 
     <div class="min-w-0 pl-2 md:pl-0">

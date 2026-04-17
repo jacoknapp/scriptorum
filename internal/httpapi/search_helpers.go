@@ -1,9 +1,7 @@
 package httpapi
 
 import (
-	"strconv"
 	"strings"
-	"time"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 )
@@ -63,12 +61,6 @@ func mergeCover(existing, incoming string) string {
 	if incoming == existing {
 		return existing
 	}
-	// Append cache-busting param so browsers will refetch changed images.
-	sep := "?"
-	if strings.Contains(incoming, "?") {
-		sep = "&"
-	}
-	incoming = incoming + sep + "v=" + strconv.FormatInt(time.Now().Unix(), 10)
 	return incoming
 }
 

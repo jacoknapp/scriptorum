@@ -41,7 +41,7 @@ func TestCoverOverwriteWhenMergingItems(t *testing.T) {
 	if !strings.HasPrefix(merged, "https://two.example/") && !strings.Contains(merged, "two.example") {
 		t.Fatalf("expected merged cover to include incoming host, got %s", merged)
 	}
-	if !strings.Contains(merged, "v=") {
-		t.Fatalf("expected cache-buster param in merged cover, got %s", merged)
+	if strings.Contains(merged, "v=") {
+		t.Fatalf("expected merged cover to stay stable across renders, got %s", merged)
 	}
 }

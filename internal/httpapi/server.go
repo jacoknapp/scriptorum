@@ -32,6 +32,9 @@ type Server struct {
 	settings           *settings.Store
 	chi                *chi.Mux
 	backgroundTasks    sync.Once
+	discoveryCacheMu   sync.RWMutex
+	discoveryCache     map[string]any
+	discoveryCacheAt   int64
 	oidc               *oidcMgr
 	csrf               *csrfManager
 	rateLimiter        *rateLimiter
@@ -87,7 +90,7 @@ func (s *Server) Router() http.Handler {
 	})
 	// Serve embedded static files under /static from the web/static folder
 	sub, _ := fs.Sub(staticFS, "web/static")
-	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.FS(sub))))
+	r.Handle("/static/*", s.staticCache(http.StripPrefix("/static/", http.FileServer(http.FS(sub)))))
 
 	// Protect the main application routes behind authentication by default.
 	// Individual sub-mounts may still apply admin middleware where needed.
@@ -121,6 +124,13 @@ func (s *Server) Router() http.Handler {
 	r.Get("/approve/{token}", s.handleApprovalToken)
 
 	return r
+}
+
+func (s *Server) staticCache(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) setupGate(next http.Handler) http.Handler {

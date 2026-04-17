@@ -79,8 +79,6 @@ func installOpenLibraryDiscoveryTransport(t *testing.T) {
 }
 
 func TestSearchPageServerRendersDiscoveryOnFirstLoad(t *testing.T) {
-	installOpenLibraryDiscoveryTransport(t)
-
 	s := newServerForTest(t)
 	req := httptest.NewRequest(http.MethodGet, "/search", nil)
 	req.AddCookie(makeCookie(t, s, "user", false))
@@ -94,24 +92,16 @@ func TestSearchPageServerRendersDiscoveryOnFirstLoad(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		"Your next bad bedtime decision",
-		"Trending This Week",
-		"Fantasy Hits",
-		"Project Hail Mary",
-		"Assistant to the Villain",
-		"System Collapse",
+		`hx-get="/ui/search"`,
+		`hx-trigger="load"`,
+		"Loading discovery shelves...",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("expected %q in body: %s", want, body)
 		}
 	}
-	if strings.Contains(body, "Current picks you can open and request without typing first.") {
-		t.Fatalf("expected extra current-picks copy to be removed: %s", body)
-	}
-	if count := strings.Count(body, `data-open-book="1"`); count < 35 {
-		t.Fatalf("expected fuller category shelves, found %d cards in body: %s", count, body)
-	}
-	if strings.Contains(body, "Loading discovery shelves...") {
-		t.Fatalf("expected initial discovery content instead of loading placeholder: %s", body)
+	if strings.Contains(body, "Trending This Week") {
+		t.Fatalf("expected discovery content to load asynchronously: %s", body)
 	}
 }
 
@@ -163,5 +153,48 @@ func TestSearchUIShowsDiscoveryWhenQueryBlank(t *testing.T) {
 	}
 	if strings.Contains(body, "4 picks") {
 		t.Fatalf("expected discovery count label to be removed: %s", body)
+	}
+}
+
+func TestReadarrCoverSetsCacheHeaders(t *testing.T) {
+	prevTransport := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader("cover-bytes")),
+			Header: http.Header{
+				"Content-Type":  []string{"image/jpeg"},
+				"Etag":          []string{`"cover-123"`},
+				"Last-Modified": []string{"Mon, 02 Jan 2006 15:04:05 GMT"},
+			},
+		}, nil
+	})
+	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+
+	s := newServerForTest(t)
+	cfg := s.settings.Get()
+	cfg.Readarr.Ebooks.BaseURL = "https://readarr.example.internal"
+	cfg.Readarr.Ebooks.APIKey = "test-key"
+	if err := s.settings.Update(cfg); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/readarr-cover?u=https%3A%2F%2Freadarr.example.internal%2FMediaCover%2F12.jpg", nil)
+	req.AddCookie(makeCookie(t, s, "user", false))
+	rec := httptest.NewRecorder()
+
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Header().Get("Cache-Control"); got != "private, max-age=3600" {
+		t.Fatalf("unexpected Cache-Control header %q", got)
+	}
+	if got := rec.Header().Get("ETag"); got != `"cover-123"` {
+		t.Fatalf("unexpected ETag header %q", got)
+	}
+	if got := rec.Header().Get("Last-Modified"); got != "Mon, 02 Jan 2006 15:04:05 GMT" {
+		t.Fatalf("unexpected Last-Modified header %q", got)
 	}
 }

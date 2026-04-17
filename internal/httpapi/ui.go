@@ -107,10 +107,9 @@ func (u *ui) handleHome(s *Server) http.HandlerFunc {
 			name, isAdmin = ses.Name, ses.Admin
 		}
 		data := map[string]any{
-			"UserName":             name,
-			"IsAdmin":              isAdmin,
-			"CSRFToken":            s.getCSRFToken(r),
-			"InitialSearchResults": buildDiscoverySearchData(r.Context(), s, &searchUI{}),
+			"UserName":  name,
+			"IsAdmin":   isAdmin,
+			"CSRFToken": s.getCSRFToken(r),
 		}
 		_ = u.tpl.ExecuteTemplate(w, "home.html", data)
 	}

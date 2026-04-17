@@ -21,8 +21,14 @@
 		</div>
 	</div>
 </div>
-<div id="results" class="mt-4">
-	{{ template "search_partial.html" .InitialSearchResults }}
+<div id="results"
+	 class="mt-4"
+	 hx-get="/ui/search"
+	 hx-trigger="load"
+	 hx-swap="innerHTML">
+	<div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6 text-slate-400">
+		Loading discovery shelves...
+	</div>
 </div>
 <div id="more" class="md:block"
 		 style="display: none;"

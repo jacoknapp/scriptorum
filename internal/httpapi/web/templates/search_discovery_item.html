@@ -3,6 +3,8 @@
   <div class="flex gap-4 items-start min-w-0 flex-1">
     <img src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
       class="w-24 h-32 object-cover rounded-lg border border-white/10 bg-night-800 shrink-0"
+      loading="lazy"
+      decoding="async"
       onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
 
     <div class="min-w-0 flex-1 flex flex-col">

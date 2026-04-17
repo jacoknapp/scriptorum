@@ -59,6 +59,7 @@ type discoveryQuery struct {
 const (
 	discoveryCategorySize = 8
 	discoveryTrendingSize = 8
+	discoveryCacheTTL     = 15 * time.Minute
 )
 
 var defaultDiscoveryQueries = []discoveryQuery{
@@ -104,7 +105,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			}
 		}
 		if q == "" {
-			data := buildDiscoverySearchData(r.Context(), s, u)
+			data := s.cachedDiscoverySearchData(r.Context(), u)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			_ = u.tpl.ExecuteTemplate(w, "search_partial.html", data)
 			return
@@ -372,6 +373,37 @@ func buildDiscoverySearchData(ctx context.Context, s *Server, u *searchUI) map[s
 		"TrendingNow":         trending,
 		"DiscoveryCategories": categories,
 	}
+}
+
+func (s *Server) cachedDiscoverySearchData(ctx context.Context, u *searchUI) map[string]any {
+	if cached := s.loadDiscoverySearchData(); cached != nil {
+		return cached
+	}
+
+	s.discoveryCacheMu.Lock()
+	defer s.discoveryCacheMu.Unlock()
+
+	if s.discoveryCache != nil && time.Since(time.Unix(s.discoveryCacheAt, 0)) < discoveryCacheTTL {
+		return s.discoveryCache
+	}
+
+	fresh := buildDiscoverySearchData(ctx, s, u)
+	s.discoveryCache = fresh
+	s.discoveryCacheAt = time.Now().Unix()
+	return fresh
+}
+
+func (s *Server) loadDiscoverySearchData() map[string]any {
+	s.discoveryCacheMu.RLock()
+	defer s.discoveryCacheMu.RUnlock()
+
+	if s.discoveryCache == nil {
+		return nil
+	}
+	if time.Since(time.Unix(s.discoveryCacheAt, 0)) >= discoveryCacheTTL {
+		return nil
+	}
+	return s.discoveryCache
 }
 
 func (u *searchUI) loadTrendingBooks(ctx context.Context) []searchItem {
@@ -660,15 +692,20 @@ func (s *Server) serveReadarrCover() http.HandlerFunc {
 			http.Error(w, "remote not ok", http.StatusBadGateway)
 			return
 		}
-		// copy some headers and force no-cache so browser will fetch fresh
+		// Copy useful metadata through so browsers can reuse successful cover fetches.
 		if ct := resp.Header.Get("Content-Type"); ct != "" {
 			w.Header().Set("Content-Type", ct)
 		}
 		if cl := resp.Header.Get("Content-Length"); cl != "" {
 			w.Header().Set("Content-Length", cl)
 		}
-		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
-		w.Header().Set("Pragma", "no-cache")
+		if etag := resp.Header.Get("ETag"); etag != "" {
+			w.Header().Set("ETag", etag)
+		}
+		if modified := resp.Header.Get("Last-Modified"); modified != "" {
+			w.Header().Set("Last-Modified", modified)
+		}
+		w.Header().Set("Cache-Control", "private, max-age=3600")
 		// stream body with a reasonable size limit to avoid resource abuse
 		const maxCoverBytes = int64(5 * 1024 * 1024) // 5 MB
 		lr := io.LimitReader(resp.Body, maxCoverBytes)
