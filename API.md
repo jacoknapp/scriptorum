@@ -446,14 +446,14 @@ Get Readarr configuration debug information (admin only).
     "api_key": "***redacted***",
     "insecure_skip_verify": false,
     "connected": true,
-    "version": "0.1.0.0"
+    "version": "1.0.0"
   },
   "audiobooks": {
     "base_url": "https://readarr-audio.example.com",
     "api_key": "***redacted***",
     "insecure_skip_verify": false,
     "connected": true,
-    "version": "0.1.0.0"
+    "version": "1.0.0"
   }
 }
 ```
