@@ -919,6 +919,7 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 	// If missing, try to attach by looking it up from Readarr now.
 	if strings.TrimSpace(p.ProviderPayload) != "" {
 		req.ReadarrReq = json.RawMessage([]byte(p.ProviderPayload))
+		req.CoverURL = s.requestCoverFromPayload(format, req.ReadarrReq)
 	} else {
 		// Attempt server-side attach for convenience/fallback
 		// Pick instance based on format
@@ -995,6 +996,7 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 					}
 					if b, err := json.Marshal(cand); err == nil {
 						req.ReadarrReq = json.RawMessage(b)
+						req.CoverURL = s.requestCoverFromPayload(format, req.ReadarrReq)
 					}
 				}
 			}
@@ -1277,6 +1279,9 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 						}
 						_ = s.db.ApproveRequest(ctx, id, username)
 						_ = s.db.UpdateRequestStatus(ctx, id, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid), username, payload, respBody)
+						if cover := s.requestCoverFromPayload(req.Format, respBody); cover != "" {
+							_ = s.db.UpdateRequestCover(ctx, id, cover)
+						}
 						go s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
 						return
 					}
@@ -1285,6 +1290,9 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 			// Fallback: treat as already present without monitor update
 			_ = s.db.ApproveRequest(ctx, id, username)
 			_ = s.db.UpdateRequestStatus(ctx, id, "queued", "already in Readarr (duplicate edition)", username, payload, respBody)
+			if cover := s.requestCoverFromPayload(req.Format, respBody); cover != "" {
+				_ = s.db.UpdateRequestCover(ctx, id, cover)
+			}
 			go s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
 			return
 		}
@@ -1299,6 +1307,9 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 	// Success: book added to Readarr
 	_ = s.db.ApproveRequest(ctx, id, username)
 	_ = s.db.UpdateRequestStatus(ctx, id, "queued", "sent to Readarr", username, payload, respBody)
+	if cover := s.requestCoverFromPayload(req.Format, respBody); cover != "" {
+		_ = s.db.UpdateRequestCover(ctx, id, cover)
+	}
 
 	// Start background monitoring task for successful additions
 	if respBody != nil {
@@ -1608,6 +1619,9 @@ func (s *Server) apiHydrateRequest(w http.ResponseWriter, r *http.Request) {
 	if err := s.db.UpdateRequestStatus(r.Context(), id, req.Status, "hydrated", s.userEmail(r), cjson, nil); err != nil {
 		http.Error(w, "db: "+err.Error(), 500)
 		return
+	}
+	if cover := s.requestCoverFromPayload(req.Format, cjson); cover != "" {
+		_ = s.db.UpdateRequestCover(r.Context(), id, cover)
 	}
 	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 	writeJSON(w, map[string]any{"status": "ok"}, 200)

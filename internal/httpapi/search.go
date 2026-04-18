@@ -39,6 +39,7 @@ type searchItem struct {
 	ProviderEbookPayload     string
 	ProviderAudiobookPayload string
 	DetailsPayload           string
+	DiscoveryLabel           string
 	EbookState               string
 	AudiobookState           string
 }
@@ -336,7 +337,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 				ol := providers.NewOpenLibrary()
 				if olItems, err := ol.Search(r.Context(), q, limit, page); err == nil {
 					for _, b := range olItems {
-						items = append(items, openLibrarySearchItem(b))
+						items = append(items, openLibrarySearchItem(b, ""))
 					}
 				}
 			}
@@ -415,7 +416,7 @@ func (u *searchUI) loadTrendingBooks(ctx context.Context) []searchItem {
 	books = pickDiscoveryBooks(books, 2010, discoveryTrendingSize)
 	items := make([]searchItem, 0, len(books))
 	for _, book := range books {
-		items = append(items, openLibrarySearchItem(book))
+		items = append(items, openLibrarySearchItem(book, "Trending pick"))
 	}
 	return items
 }
@@ -434,7 +435,7 @@ func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCateg
 			}
 			items := make([]searchItem, 0, len(books))
 			for _, book := range books {
-				items = append(items, openLibrarySearchItem(book))
+				items = append(items, openLibrarySearchItem(book, "Shelf pick"))
 			}
 			results[i] = discoveryCategory{
 				Name:        query.Name,
@@ -455,10 +456,11 @@ func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCateg
 	return categories
 }
 
-func openLibrarySearchItem(book providers.BookItem) searchItem {
+func openLibrarySearchItem(book providers.BookItem, discoveryLabel string) searchItem {
 	return searchItem{
 		BookItem:       book,
 		DetailsPayload: buildOpenLibraryDetailsPayload(book),
+		DiscoveryLabel: discoveryLabel,
 	}
 }
 
@@ -625,13 +627,25 @@ func isDiscoveryCandidate(book providers.BookItem) bool {
 }
 
 func decorateSearchItems(s *Server, items []searchItem) {
+	stateCache := make(map[string]string, len(items)*2)
 	for i := range items {
 		if items[i].ProviderPayload == "" {
 			items[i].ProviderPayload = mergeProviderPayloads(items[i].ProviderEbookPayload, items[i].ProviderAudiobookPayload)
 		}
-		items[i].EbookState = s.loadCatalogState("ebook", items[i].Title, items[i].Authors, items[i].ISBN10, items[i].ISBN13, items[i].ASIN, items[i].ProviderEbookPayload)
-		items[i].AudiobookState = s.loadCatalogState("audiobook", items[i].Title, items[i].Authors, items[i].ISBN10, items[i].ISBN13, items[i].ASIN, items[i].ProviderAudiobookPayload)
+		items[i].EbookState = cachedCatalogState(stateCache, s, "ebook", items[i].Title, items[i].Authors, items[i].ISBN10, items[i].ISBN13, items[i].ASIN, items[i].ProviderEbookPayload)
+		items[i].AudiobookState = cachedCatalogState(stateCache, s, "audiobook", items[i].Title, items[i].Authors, items[i].ISBN10, items[i].ISBN13, items[i].ASIN, items[i].ProviderAudiobookPayload)
 	}
+}
+
+func cachedCatalogState(stateCache map[string]string, s *Server, kind, title string, authors []string, isbn10, isbn13, asin, payload string) string {
+	query := buildCatalogMatchQuery(kind, title, authors, isbn10, isbn13, asin, []byte(payload))
+	key := "state|" + catalogMatchCacheKey(query)
+	if state, ok := stateCache[key]; ok {
+		return state
+	}
+	state := s.loadCatalogState(kind, title, authors, isbn10, isbn13, asin, payload)
+	stateCache[key] = state
+	return state
 }
 
 // serveReadarrCover returns a handler that fetches a remote image and streams

@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,21 +12,71 @@ func TestMigrateAndCRUD(t *testing.T) {
 	tdir := t.TempDir()
 	path := filepath.Join(tdir, "scriptorum.db")
 	db, err := Open(path)
-	if err != nil { t.Fatalf("open: %v", err) }
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
 	defer db.Close()
-	if err := db.Migrate(context.Background()); err != nil { t.Fatalf("migrate: %v", err) }
+	if err := db.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
 
-	req := &Request{RequesterEmail:"user@example.com", Title:"Book", Authors:[]string{"Alice"}, Format:"ebook", Status:"pending"}
+	req := &Request{RequesterEmail: "user@example.com", Title: "Book", Authors: []string{"Alice"}, Format: "ebook", Status: "pending"}
 	id, err := db.CreateRequest(context.Background(), req)
-	if err != nil || id == 0 { t.Fatalf("create: %v %d", err, id) }
+	if err != nil || id == 0 {
+		t.Fatalf("create: %v %d", err, id)
+	}
 
 	items, err := db.ListRequests(context.Background(), "", 10)
-	if err != nil || len(items)==0 { t.Fatalf("list: %v %d", err, len(items)) }
+	if err != nil || len(items) == 0 {
+		t.Fatalf("list: %v %d", err, len(items))
+	}
 
-	if err := db.ApproveRequest(context.Background(), id, "admin@example.com"); err != nil { t.Fatalf("approve: %v", err) }
+	if err := db.ApproveRequest(context.Background(), id, "admin@example.com"); err != nil {
+		t.Fatalf("approve: %v", err)
+	}
 
 	if err := db.UpdateRequestStatus(context.Background(), id, "queued", "ok", "admin@example.com", []byte(`{}`), []byte(`{}`)); err != nil {
 		t.Fatalf("update: %v", err)
 	}
-	if _, err := os.Stat(path); err != nil { t.Fatalf("db file missing: %v", err) }
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("db file missing: %v", err)
+	}
+}
+
+func TestMigrateSetsSchemaVersionAndIndexes(t *testing.T) {
+	tdir := t.TempDir()
+	path := filepath.Join(tdir, "scriptorum.db")
+	db, err := Open(path)
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+
+	if err := db.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	var version int
+	if err := db.SQL().QueryRowContext(context.Background(), `PRAGMA user_version`).Scan(&version); err != nil {
+		t.Fatalf("query user_version: %v", err)
+	}
+	if version != schemaVersion {
+		t.Fatalf("expected schema version %d, got %d", schemaVersion, version)
+	}
+
+	indexes := []string{
+		"idx_requests_requester_email_id",
+		"idx_readarr_books_source_kind_isbn13",
+		"idx_readarr_books_source_kind_title_author",
+	}
+	for _, name := range indexes {
+		var got string
+		err := db.SQL().QueryRowContext(context.Background(), `SELECT name FROM sqlite_master WHERE type='index' AND name=?`, name).Scan(&got)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				t.Fatalf("expected index %s to exist", name)
+			}
+			t.Fatalf("query index %s: %v", name, err)
+		}
+	}
 }

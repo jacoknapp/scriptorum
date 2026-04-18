@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -26,36 +27,49 @@ var tplFS embed.FS
 var setupFS embed.FS
 
 type Server struct {
-	cfg                *config.Config
-	db                 *db.DB
-	cfgPath            string
-	settings           *settings.Store
-	chi                *chi.Mux
-	backgroundTasks    sync.Once
-	discoveryCacheMu   sync.RWMutex
-	discoveryCache     map[string]any
-	discoveryCacheAt   int64
-	oidc               *oidcMgr
-	csrf               *csrfManager
-	rateLimiter        *rateLimiter
-	readarrSyncMu      sync.Mutex
-	readarrSyncStateMu sync.RWMutex
-	readarrSyncState   readarrSyncRuntimeState
-	disableCSRF        bool // For testing purposes
-	approvalTokens     map[string]approvalTokenData
-	tokenMutex         sync.RWMutex
+	cfg                 *config.Config
+	db                  *db.DB
+	cfgPath             string
+	settings            *settings.Store
+	chi                 *chi.Mux
+	backgroundTasks     sync.Once
+	discoveryCacheMu    sync.RWMutex
+	discoveryCache      map[string]any
+	discoveryCacheAt    int64
+	catalogMatchCacheMu sync.RWMutex
+	catalogMatchCache   map[string]catalogMatchCacheEntry
+	oidc                *oidcMgr
+	csrf                *csrfManager
+	rateLimiter         *rateLimiter
+	readarrSyncMu       sync.Mutex
+	readarrSyncStateMu  sync.RWMutex
+	readarrSyncState    readarrSyncRuntimeState
+	disableCSRF         bool // For testing purposes
+	approvalTokens      map[string]approvalTokenData
+	tokenMutex          sync.RWMutex
+}
+
+type catalogMatchCacheEntry struct {
+	match    *db.ReadarrBook
+	exp      time.Time
+	notFound bool
 }
 
 func NewServer(cfg *config.Config, database *db.DB, cfgPath string) *Server {
+	if strings.TrimSpace(cfg.Auth.Salt) == "" {
+		cfg.Auth.Salt = genSalt()
+		_ = config.Save(cfgPath, cfg)
+	}
 	s := &Server{
-		cfg:            cfg,
-		db:             database,
-		cfgPath:        cfgPath,
-		settings:       settings.New(cfgPath, cfg),
-		chi:            chi.NewRouter(),
-		csrf:           newCSRFManager(),
-		rateLimiter:    newRateLimiter(),
-		approvalTokens: make(map[string]approvalTokenData),
+		cfg:               cfg,
+		db:                database,
+		cfgPath:           cfgPath,
+		settings:          settings.New(cfgPath, cfg),
+		chi:               chi.NewRouter(),
+		csrf:              newCSRFManager(),
+		rateLimiter:       newRateLimiter(),
+		catalogMatchCache: make(map[string]catalogMatchCacheEntry),
+		approvalTokens:    make(map[string]approvalTokenData),
 	}
 	_ = s.initOIDC()
 	return s

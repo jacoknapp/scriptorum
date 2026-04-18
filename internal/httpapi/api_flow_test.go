@@ -79,3 +79,30 @@ func TestCreateAndApproveFlow(t *testing.T) {
 		t.Fatalf("approve unexpected code=%d body=%s", rec2.Code, rec2.Body.String())
 	}
 }
+
+func TestCreateRequestPersistsCoverURLFromProviderPayload(t *testing.T) {
+	s := newServerForTest(t)
+	r := s.Router()
+
+	body := []byte(`{"title":"Book","authors":["Alice"],"format":"ebook","provider_payload":"{\"title\":\"Book\",\"remoteCover\":\"https://covers.example.test/book.jpg\"}"}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/requests", bytes.NewReader(body))
+	req.AddCookie(makeCookie(t, s, "user", false))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != 201 {
+		t.Fatalf("create code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &resp)
+	id := int64(resp["id"].(float64))
+
+	stored, err := s.db.GetRequest(req.Context(), id)
+	if err != nil {
+		t.Fatalf("get request: %v", err)
+	}
+	if stored.CoverURL != "https://covers.example.test/book.jpg" {
+		t.Fatalf("expected stored cover url, got %q", stored.CoverURL)
+	}
+}

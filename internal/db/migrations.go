@@ -6,6 +6,8 @@ import (
 	"fmt"
 )
 
+const schemaVersion = 3
+
 func (d *DB) Migrate(ctx context.Context) error {
 	if err := d.Exec(ctx, `
 CREATE TABLE IF NOT EXISTS requests (
@@ -34,6 +36,9 @@ CREATE TABLE IF NOT EXISTS requests (
 		return err
 	}
 	if err := d.ensureRequestColumn(ctx, "matched_readarr_id", "INTEGER"); err != nil {
+		return err
+	}
+	if err := d.ensureRequestColumn(ctx, "cover_url", "TEXT"); err != nil {
 		return err
 	}
 
@@ -138,6 +143,34 @@ CREATE TABLE IF NOT EXISTS readarr_books (
 		return err
 	}
 
+	if err := d.ensureIndexes(ctx); err != nil {
+		return err
+	}
+	if err := d.setSchemaVersion(ctx, schemaVersion); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (d *DB) ensureIndexes(ctx context.Context) error {
+	indexes := []string{
+		`CREATE INDEX IF NOT EXISTS idx_requests_requester_email_id ON requests(requester_email, id DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_requests_status ON requests(status)`,
+		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_readarr_id ON readarr_books(source_kind, readarr_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_foreign_edition_id ON readarr_books(source_kind, foreign_edition_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_foreign_book_id ON readarr_books(source_kind, foreign_book_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_isbn13 ON readarr_books(source_kind, isbn13)`,
+		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_isbn10 ON readarr_books(source_kind, isbn10)`,
+		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_asin ON readarr_books(source_kind, asin)`,
+		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_title_author ON readarr_books(source_kind, title COLLATE NOCASE, author_name)`,
+	}
+
+	for _, stmt := range indexes {
+		if err := d.Exec(ctx, stmt); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -180,4 +213,8 @@ func (d *DB) ensureTableColumn(ctx context.Context, table, name, colDef string) 
 	// Add the column
 	stmt := fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, name, colDef)
 	return d.Exec(ctx, stmt)
+}
+
+func (d *DB) setSchemaVersion(ctx context.Context, version int) error {
+	return d.Exec(ctx, fmt.Sprintf("PRAGMA user_version = %d", version))
 }

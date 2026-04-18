@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/bootstrap"
@@ -90,6 +91,38 @@ func TestApproveWithoutReadarrConfigured(t *testing.T) {
 	r.ServeHTTP(rec, req)
 	if rec.Code != 200 {
 		t.Fatalf("approve code=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRequestsPageUsesStoredCoverWithoutClientHydration(t *testing.T) {
+	s, database, _ := newServerForLoginTest(t)
+	t.Cleanup(func() { _ = database.Close() })
+
+	if _, err := database.CreateRequest(t.Context(), &db.Request{
+		RequesterEmail: "user",
+		Title:          "Book",
+		Authors:        []string{"Alice"},
+		Format:         "ebook",
+		Status:         "pending",
+		CoverURL:       "https://covers.example.test/book.jpg",
+	}); err != nil {
+		t.Fatalf("seed request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/requests", nil)
+	req.AddCookie(makeCookie(t, s, "user", false))
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("requests code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "https://covers.example.test/book.jpg") {
+		t.Fatalf("expected stored cover in requests page: %s", body)
+	}
+	if strings.Contains(body, "loadRequestCovers") || strings.Contains(body, "fetchRequestCover") {
+		t.Fatalf("expected cover hydration script to be removed: %s", body)
 	}
 }
 

@@ -133,6 +133,10 @@ func TestReadarrAutoSyncLoopImportsCatalog(t *testing.T) {
 		}
 		if count == 1 {
 			view := s.readarrSyncView()
+			if view.Running {
+				time.Sleep(20 * time.Millisecond)
+				continue
+			}
 			if !strings.Contains(strings.ToLower(view.LastRunLabel), "automatic") {
 				t.Fatalf("expected automatic sync label, got %q", view.LastRunLabel)
 			}

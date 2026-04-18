@@ -13,23 +13,30 @@
 	</div>
 </div>
 
+<style>
+.request-cover-thumb {
+	width: 68px;
+	height: 102px;
+}
+@media (min-width: 768px) {
+	.request-cover-thumb {
+		width: 72px;
+		height: 108px;
+	}
+}
+</style>
+
 <script>
 var requestsRefreshTimer = null;
 var requestsRefreshDelayMs = 15000;
-var requestCoverObserver = null;
-window.requestCoverCache = window.requestCoverCache || {};
-window.requestCoverPromises = window.requestCoverPromises || {};
-
 document.addEventListener('DOMContentLoaded', function() {
 	formatRequestAuthors();
-	loadRequestCovers();
 	scheduleRequestRefresh();
 });
 
 document.addEventListener('htmx:afterSwap', function(evt) {
 	if (evt.detail.target && evt.detail.target.id === 'req-table') {
 		formatRequestAuthors();
-		loadRequestCovers();
 		scheduleRequestRefresh();
 	}
 });
@@ -47,33 +54,6 @@ window.addEventListener('pagehide', function() {
 		requestsRefreshTimer = null;
 	}
 });
-
-function applyRequestCover(img, cover) {
-	if (!img) return;
-	if (cover) img.src = cover;
-	img.dataset.coverLoaded = 'true';
-}
-
-function ensureRequestCoverObserver() {
-	if (requestCoverObserver || !('IntersectionObserver' in window)) return;
-	requestCoverObserver = new IntersectionObserver(function(entries) {
-		entries.forEach(function(entry) {
-			if (!entry.isIntersecting) return;
-			requestCoverObserver.unobserve(entry.target);
-			hydrateRequestCover(entry.target);
-		});
-	}, { rootMargin: '240px 0px' });
-}
-
-function requestCoverKey(bookData) {
-	return [
-		(bookData.format || '').trim().toLowerCase(),
-		(bookData.isbn13 || '').trim(),
-		(bookData.isbn10 || '').trim(),
-		(bookData.asin || '').trim(),
-		(bookData.title || '').trim().toLowerCase()
-	].filter(Boolean).join('|');
-}
 
 function listRequestStatusCards() {
 	return Array.from(document.querySelectorAll('#req-table [data-request-status]'));
@@ -109,128 +89,19 @@ function refreshRequestsTable() {
 		.then(function(html) {
 			reqTable.innerHTML = html;
 			formatRequestAuthors();
-			loadRequestCovers();
 			scheduleRequestRefresh();
 		});
 }
 
-function loadRequestCovers() {
-	var coverImages = document.querySelectorAll('#req-table [data-request-cover]');
-	coverImages.forEach(function(img) {
-		if (img.dataset.coverLoaded === 'true') return;
-		var currentSrc = (img.getAttribute('src') || '').trim();
-		if (currentSrc && currentSrc.indexOf('/static/placeholder-cover.svg') === -1) {
-			img.dataset.coverLoaded = 'true';
-			return;
-		}
-		if ('IntersectionObserver' in window) {
-			ensureRequestCoverObserver();
-			if (requestCoverObserver) {
-				requestCoverObserver.observe(img);
-				return;
-			}
-		}
-		hydrateRequestCover(img);
-	});
-}
-
-function hydrateRequestCover(img) {
-	if (!img || img.dataset.coverLoaded === 'true') return;
-	var clickable = img.closest('[data-open-book]');
-	if (!clickable) {
-		img.dataset.coverLoaded = 'true';
-		return;
-	}
-	var jsonData = clickable.getAttribute('data-open-book');
-	if (!jsonData) {
-		img.dataset.coverLoaded = 'true';
-		return;
-	}
-	try {
-		var bookData = JSON.parse(jsonData);
-		if (!bookData || typeof bookData !== 'object') {
-			img.dataset.coverLoaded = 'true';
-			return;
-		}
-		if (bookData.cover) {
-			applyRequestCover(img, bookData.cover);
-			return;
-		}
-		var key = requestCoverKey(bookData);
-		if (!key) {
-			img.dataset.coverLoaded = 'true';
-			return;
-		}
-		if (window.requestCoverCache[key]) {
-			applyRequestCover(img, window.requestCoverCache[key]);
-			return;
-		}
-		if (!window.requestCoverPromises[key]) {
-			window.requestCoverPromises[key] = fetchRequestCover(bookData).then(function(cover) {
-				if (cover) window.requestCoverCache[key] = cover;
-				return cover;
-			}).catch(function() {
-				return '';
-			});
-		}
-		window.requestCoverPromises[key].then(function(cover) {
-			applyRequestCover(img, cover);
-		});
-	} catch(e) {
-		img.dataset.coverLoaded = 'true';
-	}
-}
-
-function requestCoverFromEndpoint(path, bookData) {
-	return fetch(path, {
-		method: 'POST',
-		headers: {
-			'Content-Type': 'application/json',
-			'HX-Request': 'true'
-		},
-		body: JSON.stringify(bookData),
-		credentials: 'same-origin'
-	})
-	.then(function(resp) {
-		if (!resp.ok) return null;
-		return resp.json();
-	})
-	.then(function(data) {
-		if (data && typeof data.cover === 'string' && data.cover.trim()) {
-			return data.cover;
-		}
-		return '';
-	});
-}
-
-function fetchRequestCover(bookData) {
-	return requestCoverFromEndpoint('/api/v1/book/details', bookData).then(function(cover) {
-		if (cover) return cover;
-		return requestCoverFromEndpoint('/api/v1/book/enriched', bookData);
-	});
-}
-
 function formatRequestAuthors() {
+	if (typeof window.formatAuthorName !== 'function') return;
 	var tableRows = document.querySelectorAll('#req-table table tbody tr');
 	tableRows.forEach(function(row) {
 		var authorElement = row.querySelector('.text-slate-400');
 		if (authorElement && authorElement.textContent.trim()) {
 			var originalAuthor = authorElement.textContent.trim();
-			if (originalAuthor && typeof window.formatAuthorName === 'function') {
-				var formattedAuthor = window.formatAuthorName(originalAuthor);
-				authorElement.textContent = formattedAuthor;
-
-				var clickableElement = row.querySelector('[data-open-book]');
-				if (clickableElement) {
-					try {
-						var bookData = JSON.parse(clickableElement.getAttribute('data-open-book'));
-						if (bookData.authors && bookData.authors.length > 0) {
-							bookData.authors[0] = formattedAuthor;
-							clickableElement.setAttribute('data-open-book', JSON.stringify(bookData));
-						}
-					} catch(e) {
-					}
-				}
+			if (originalAuthor) {
+				authorElement.textContent = window.formatAuthorName(originalAuthor);
 			}
 		}
 	});
@@ -240,21 +111,8 @@ function formatRequestAuthors() {
 		var authorElement = card.querySelector('.text-sm.text-slate-400');
 		if (authorElement && authorElement.textContent.trim()) {
 			var originalAuthor = authorElement.textContent.trim();
-			if (originalAuthor && typeof window.formatAuthorName === 'function') {
-				var formattedAuthor = window.formatAuthorName(originalAuthor);
-				authorElement.textContent = formattedAuthor;
-
-				var clickableElement = card.querySelector('[data-open-book]');
-				if (clickableElement) {
-					try {
-						var bookData = JSON.parse(clickableElement.getAttribute('data-open-book'));
-						if (bookData.authors && bookData.authors.length > 0) {
-							bookData.authors[0] = formattedAuthor;
-							clickableElement.setAttribute('data-open-book', JSON.stringify(bookData));
-						}
-					} catch(e) {
-					}
-				}
+			if (originalAuthor) {
+				authorElement.textContent = window.formatAuthorName(originalAuthor);
 			}
 		}
 	});

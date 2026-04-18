@@ -177,7 +177,11 @@
 
 			<div class="flex items-center justify-end gap-2">
 				<button type="button" id="cancelDeleteUser" class="px-3 py-2 rounded border border-white/10 bg-night-900">Cancel</button>
-				<a id="confirmDeleteUser" href="#" class="px-4 py-2 rounded bg-red-600 hover:bg-red-500 text-white">Delete User</a>
+				<form method="post" action="/users/delete" class="inline">
+					<input type="hidden" name="_csrf_token" value="{{ .CSRFToken }}">
+					<input type="hidden" name="id" id="deleteUserId">
+					<button id="confirmDeleteUser" class="px-4 py-2 rounded bg-red-600 hover:bg-red-500 text-white">Delete User</button>
+				</form>
 			</div>
 		</div>
 	</div>
@@ -197,7 +201,7 @@
 
 	function openDeleteModal(userId, username) {
 		document.getElementById('deleteUserName').textContent = username;
-		document.getElementById('confirmDeleteUser').href = '/users/delete?id=' + userId;
+		document.getElementById('deleteUserId').value = userId;
 		document.getElementById('deleteUserModal').classList.remove('hidden');
 	}
 

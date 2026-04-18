@@ -69,3 +69,40 @@ func TestSetAndReadSessionCookie(t *testing.T) {
 		mutated.Admin = false
 	}
 }
+
+func TestNewServerGeneratesSaltWhenMissing(t *testing.T) {
+	tdir := t.TempDir()
+	cfgPath := filepath.Join(tdir, "config.yaml")
+	dbPath := filepath.Join(tdir, "scriptorum.db")
+	cfg, database, err := bootstrap.EnsureFirstRun(context.Background(), cfgPath, dbPath)
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	cfg.Auth.Salt = ""
+	cfg.Setup.Completed = true
+	_ = config.Save(cfgPath, cfg)
+
+	s := NewServer(cfg, database, cfgPath)
+	if strings.TrimSpace(s.settings.Get().Auth.Salt) == "" {
+		t.Fatalf("expected auth salt to be generated")
+	}
+}
+
+func TestSessionCookieUsesSecureFlagForHTTPSServerURL(t *testing.T) {
+	s := newServerForAuthTest(t)
+	cur := *s.settings.Get()
+	cur.ServerURL = "https://scriptorum.example"
+	_ = s.settings.Update(&cur)
+
+	sess := &session{Username: "u", Name: "U", Admin: true, Exp: 9999999999}
+	rec := httptest.NewRecorder()
+	s.setSession(rec, sess)
+	cookies := rec.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatalf("expected session cookie")
+	}
+	if !cookies[0].Secure {
+		t.Fatalf("expected secure session cookie for HTTPS server url")
+	}
+}

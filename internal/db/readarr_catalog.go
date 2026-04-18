@@ -148,7 +148,7 @@ LIMIT 1`, kind, lookup.value)
 		row := d.sql.QueryRowContext(ctx, `
 SELECT id, source_kind, readarr_id, title, author_name, isbn10, isbn13, asin, foreign_book_id, foreign_edition_id, monitored, grabbed, book_file_count, readarr_data, created_at, updated_at
 FROM readarr_books
-WHERE source_kind=? AND lower(title)=? AND (?='' OR author_name=?)
+WHERE source_kind=? AND title=? COLLATE NOCASE AND (?='' OR author_name=?)
 ORDER BY book_file_count DESC, monitored DESC, grabbed DESC, readarr_id DESC
 LIMIT 1`, kind, title, author, author)
 		if book, err := scanReadarrBook(row); err == nil {
@@ -159,6 +159,64 @@ LIMIT 1`, kind, title, author, author)
 	}
 
 	return nil, sql.ErrNoRows
+}
+
+func (d *DB) ListReadarrBooksByIDs(ctx context.Context, sourceKind string, ids []int64) (map[int64]ReadarrBook, error) {
+	if len(ids) == 0 {
+		return map[int64]ReadarrBook{}, nil
+	}
+
+	kind := strings.ToLower(strings.TrimSpace(sourceKind))
+	unique := make([]int64, 0, len(ids))
+	seen := make(map[int64]struct{}, len(ids))
+	for _, id := range ids {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		unique = append(unique, id)
+	}
+	if len(unique) == 0 {
+		return map[int64]ReadarrBook{}, nil
+	}
+
+	placeholders := make([]string, len(unique))
+	args := make([]any, 0, len(unique)+1)
+	args = append(args, kind)
+	for i, id := range unique {
+		placeholders[i] = "?"
+		args = append(args, id)
+	}
+
+	rows, err := d.sql.QueryContext(ctx, `
+SELECT id, source_kind, readarr_id, title, author_name, isbn10, isbn13, asin, foreign_book_id, foreign_edition_id, monitored, grabbed, book_file_count, readarr_data, created_at, updated_at
+FROM readarr_books
+WHERE source_kind=? AND readarr_id IN (`+strings.Join(placeholders, ",")+`)`,
+		args...,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[int64]ReadarrBook, len(unique))
+	for rows.Next() {
+		book, err := scanReadarrBook(rows)
+		if err != nil {
+			return nil, err
+		}
+		if book == nil {
+			continue
+		}
+		out[book.ReadarrID] = *book
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 func (d *DB) UpdateRequestExternalStatus(ctx context.Context, id int64, externalStatus string, readarrID int64, reason string) error {

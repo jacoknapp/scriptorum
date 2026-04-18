@@ -29,6 +29,8 @@ const (
 
 var errReadarrSyncInProgress = errors.New("readarr sync already in progress")
 
+const catalogMatchCacheTTL = 5 * time.Minute
+
 type readarrSyncRuntimeState struct {
 	Running         bool
 	Trigger         string
@@ -232,6 +234,7 @@ func (s *Server) syncReadarrCatalog(ctx context.Context, requestedKind string) (
 		if err := s.db.ReplaceReadarrBooks(ctx, kind, books); err != nil {
 			return nil, fmt.Errorf("%s import failed: %w", kind, err)
 		}
+		s.clearCatalogMatchCache()
 		reconciled, matched, err := s.reconcileRequestsAgainstCatalog(ctx, kind)
 		if err != nil {
 			return nil, fmt.Errorf("%s reconcile failed: %w", kind, err)
@@ -294,6 +297,9 @@ func (s *Server) reconcileRequestsAgainstCatalog(ctx context.Context, kind strin
 			if err := s.db.UpdateRequestExternalStatus(ctx, req.ID, match.Availability(), match.ReadarrID, reason); err != nil {
 				return reconciled, matched, err
 			}
+			if cover := s.requestCoverFromPayload(req.Format, match.ReadarrData); cover != "" {
+				_ = s.db.UpdateRequestCover(ctx, req.ID, cover)
+			}
 			continue
 		}
 		if err != nil && err != sql.ErrNoRows {
@@ -308,32 +314,8 @@ func (s *Server) reconcileRequestsAgainstCatalog(ctx context.Context, kind strin
 }
 
 func (s *Server) findCatalogMatch(ctx context.Context, kind, title string, authors []string, isbn10, isbn13, asin string, providerPayload []byte) (*db.ReadarrBook, error) {
-	query := db.ReadarrMatchQuery{
-		SourceKind: normalizeSyncKind(kind),
-		Title:      strings.TrimSpace(title),
-		Authors:    authors,
-		ISBN10:     strings.TrimSpace(isbn10),
-		ISBN13:     strings.TrimSpace(isbn13),
-		ASIN:       strings.TrimSpace(asin),
-	}
-	if len(providerPayload) > 0 {
-		var raw map[string]any
-		if json.Unmarshal(providerPayload, &raw) == nil {
-			query.ForeignBookID = strings.TrimSpace(fmt.Sprint(raw["foreignBookId"]))
-			query.ForeignEditionID = strings.TrimSpace(fmt.Sprint(raw["foreignEditionId"]))
-			if query.Title == "" {
-				query.Title = strings.TrimSpace(fmt.Sprint(raw["title"]))
-			}
-			if len(query.Authors) == 0 {
-				if author, ok := raw["author"].(map[string]any); ok {
-					if name, _ := author["name"].(string); name != "" {
-						query.Authors = []string{name}
-					}
-				}
-			}
-		}
-	}
-	return s.db.FindReadarrBookMatch(ctxOrBackground(ctx), query)
+	query := buildCatalogMatchQuery(kind, title, authors, isbn10, isbn13, asin, providerPayload)
+	return s.findCatalogMatchQuery(ctx, query)
 }
 
 func (s *Server) findCatalogMatchForPayload(kind string, p RequestPayload) (*db.ReadarrBook, error) {
@@ -440,4 +422,118 @@ func (s *Server) loadCatalogState(kind, title string, authors []string, isbn10, 
 		return ""
 	}
 	return match.Availability()
+}
+
+func buildCatalogMatchQuery(kind, title string, authors []string, isbn10, isbn13, asin string, providerPayload []byte) db.ReadarrMatchQuery {
+	query := db.ReadarrMatchQuery{
+		SourceKind: normalizeSyncKind(kind),
+		Title:      strings.TrimSpace(title),
+		Authors:    authors,
+		ISBN10:     strings.TrimSpace(isbn10),
+		ISBN13:     strings.TrimSpace(isbn13),
+		ASIN:       strings.TrimSpace(asin),
+	}
+	if len(providerPayload) == 0 {
+		return query
+	}
+
+	var raw map[string]any
+	if json.Unmarshal(providerPayload, &raw) != nil {
+		return query
+	}
+	query.ForeignBookID = strings.TrimSpace(fmt.Sprint(raw["foreignBookId"]))
+	query.ForeignEditionID = strings.TrimSpace(fmt.Sprint(raw["foreignEditionId"]))
+	if query.Title == "" {
+		query.Title = strings.TrimSpace(fmt.Sprint(raw["title"]))
+	}
+	if len(query.Authors) == 0 {
+		if author, ok := raw["author"].(map[string]any); ok {
+			if name, _ := author["name"].(string); name != "" {
+				query.Authors = []string{name}
+			}
+		}
+	}
+	return query
+}
+
+func (s *Server) findCatalogMatchQuery(ctx context.Context, query db.ReadarrMatchQuery) (*db.ReadarrBook, error) {
+	key := catalogMatchCacheKey(query)
+	if key != "" {
+		if match, ok, found := s.catalogMatchCacheLookup(key); ok {
+			if !found {
+				return nil, sql.ErrNoRows
+			}
+			return match, nil
+		}
+	}
+
+	match, err := s.db.FindReadarrBookMatch(ctxOrBackground(ctx), query)
+	if key != "" {
+		switch err {
+		case nil:
+			s.catalogMatchCacheStore(key, match, true)
+		case sql.ErrNoRows:
+			s.catalogMatchCacheStore(key, nil, false)
+		}
+	}
+	return match, err
+}
+
+func catalogMatchCacheKey(query db.ReadarrMatchQuery) string {
+	parts := []string{
+		strings.TrimSpace(query.SourceKind),
+		strings.ToLower(strings.TrimSpace(query.Title)),
+		strings.TrimSpace(query.ISBN13),
+		strings.TrimSpace(query.ISBN10),
+		strings.TrimSpace(query.ASIN),
+		strings.TrimSpace(query.ForeignBookID),
+		strings.TrimSpace(query.ForeignEditionID),
+	}
+	if len(query.Authors) > 0 {
+		parts = append(parts, strings.ToLower(strings.TrimSpace(query.Authors[0])))
+	}
+	return strings.Join(parts, "|")
+}
+
+func (s *Server) catalogMatchCacheLookup(key string) (*db.ReadarrBook, bool, bool) {
+	s.catalogMatchCacheMu.RLock()
+	entry, ok := s.catalogMatchCache[key]
+	s.catalogMatchCacheMu.RUnlock()
+	if !ok {
+		return nil, false, false
+	}
+	if time.Now().After(entry.exp) {
+		s.catalogMatchCacheMu.Lock()
+		delete(s.catalogMatchCache, key)
+		s.catalogMatchCacheMu.Unlock()
+		return nil, false, false
+	}
+	if entry.notFound {
+		return nil, true, false
+	}
+	if entry.match == nil {
+		return nil, false, false
+	}
+	copy := *entry.match
+	return &copy, true, true
+}
+
+func (s *Server) catalogMatchCacheStore(key string, match *db.ReadarrBook, found bool) {
+	entry := catalogMatchCacheEntry{
+		exp:      time.Now().Add(catalogMatchCacheTTL),
+		notFound: !found,
+	}
+	if match != nil {
+		copy := *match
+		entry.match = &copy
+	}
+	s.catalogMatchCacheMu.Lock()
+	s.catalogMatchCache[key] = entry
+	s.catalogMatchCacheMu.Unlock()
+}
+
+func (s *Server) clearCatalogMatchCache() {
+	s.catalogMatchCacheMu.Lock()
+	s.catalogMatchCache = make(map[string]catalogMatchCacheEntry)
+	s.catalogMatchCacheMu.Unlock()
 }

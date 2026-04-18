@@ -24,6 +24,8 @@ type Request struct {
 	MatchedReadarrID int64           `json:"matchedReadarrId"`
 	ApproverEmail    string          `json:"approverEmail"`
 	ApprovedAt       *time.Time      `json:"approvedAt,omitempty"`
+	HasReadarrReq    bool            `json:"hasReadarrRequest,omitempty"`
+	CoverURL         string          `json:"coverUrl,omitempty"`
 	ReadarrReq       json.RawMessage `json:"readarrRequest,omitempty"`
 	ReadarrResp      json.RawMessage `json:"readarrResponse,omitempty"`
 }
@@ -34,11 +36,11 @@ func (d *DB) CreateRequest(ctx context.Context, r *Request) (int64, error) {
 	authorsJSON, _ := json.Marshal(r.Authors)
 	res, err := d.sql.ExecContext(ctx, `
 INSERT INTO requests
-(created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, readarr_request, readarr_response)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+(created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, cover_url, readarr_request, readarr_response)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano),
 		strings.ToLower(r.RequesterEmail), r.Title, string(authorsJSON),
-		r.ISBN10, r.ISBN13, r.Format, r.Status, r.StatusReason, r.ExternalStatus, r.MatchedReadarrID,
+		r.ISBN10, r.ISBN13, r.Format, r.Status, r.StatusReason, r.ExternalStatus, r.MatchedReadarrID, r.CoverURL,
 		bytesOrNil(r.ReadarrReq), bytesOrNil(r.ReadarrResp),
 	)
 	if err != nil {
@@ -79,7 +81,7 @@ WHERE id=?`,
 
 func (d *DB) GetRequest(ctx context.Context, id int64) (*Request, error) {
 	row := d.sql.QueryRowContext(ctx, `
-SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, readarr_request, readarr_response
+SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, cover_url, readarr_request, readarr_response
 FROM requests WHERE id=?`, id)
 	var rr Request
 	var created, updated, approved sql.NullString
@@ -87,8 +89,9 @@ FROM requests WHERE id=?`, id)
 	var approver sql.NullString
 	var externalStatus sql.NullString
 	var matchedReadarrID sql.NullInt64
+	var coverURL sql.NullString
 	var readarrReqStr, readarrRespStr sql.NullString
-	if err := row.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &externalStatus, &matchedReadarrID, &approver, &approved, &readarrReqStr, &readarrRespStr); err != nil {
+	if err := row.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &externalStatus, &matchedReadarrID, &approver, &approved, &coverURL, &readarrReqStr, &readarrRespStr); err != nil {
 		return nil, err
 	}
 	if externalStatus.Valid {
@@ -99,6 +102,9 @@ FROM requests WHERE id=?`, id)
 	}
 	if approver.Valid {
 		rr.ApproverEmail = approver.String
+	}
+	if coverURL.Valid {
+		rr.CoverURL = coverURL.String
 	}
 	if readarrReqStr.Valid {
 		rr.ReadarrReq = json.RawMessage([]byte(readarrReqStr.String))
@@ -126,13 +132,13 @@ func (d *DB) ListRequests(ctx context.Context, mine string, limit int) ([]Reques
 	var err error
 	if mine != "" {
 		rows, err = d.sql.QueryContext(ctx, `
-SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, readarr_request, readarr_response
+SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, cover_url, readarr_request, readarr_response
 FROM requests
 WHERE requester_email=?
 ORDER BY id DESC LIMIT ?`, strings.ToLower(mine), limit)
 	} else {
 		rows, err = d.sql.QueryContext(ctx, `
-SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, readarr_request, readarr_response
+SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, cover_url, readarr_request, readarr_response
 FROM requests
 ORDER BY id DESC LIMIT ?`, limit)
 	}
@@ -149,8 +155,9 @@ ORDER BY id DESC LIMIT ?`, limit)
 		var approver sql.NullString
 		var externalStatus sql.NullString
 		var matchedReadarrID sql.NullInt64
+		var coverURL sql.NullString
 		var readarrReqStr, readarrRespStr sql.NullString
-		if err := rows.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &externalStatus, &matchedReadarrID, &approver, &approved, &readarrReqStr, &readarrRespStr); err != nil {
+		if err := rows.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &externalStatus, &matchedReadarrID, &approver, &approved, &coverURL, &readarrReqStr, &readarrRespStr); err != nil {
 			return nil, err
 		}
 		if externalStatus.Valid {
@@ -161,6 +168,9 @@ ORDER BY id DESC LIMIT ?`, limit)
 		}
 		if approver.Valid {
 			rr.ApproverEmail = approver.String
+		}
+		if coverURL.Valid {
+			rr.CoverURL = coverURL.String
 		}
 		if readarrReqStr.Valid {
 			rr.ReadarrReq = json.RawMessage([]byte(readarrReqStr.String))
@@ -182,8 +192,84 @@ ORDER BY id DESC LIMIT ?`, limit)
 	return out, nil
 }
 
+func (d *DB) ListRequestsPage(ctx context.Context, mine string, limit int) ([]Request, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	var rows *sql.Rows
+	var err error
+	query := `
+SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, cover_url,
+       CASE WHEN readarr_request IS NOT NULL AND TRIM(readarr_request) <> '' THEN 1 ELSE 0 END AS has_readarr_request
+FROM requests`
+	if mine != "" {
+		rows, err = d.sql.QueryContext(ctx, query+`
+WHERE requester_email=?
+ORDER BY id DESC LIMIT ?`, strings.ToLower(mine), limit)
+	} else {
+		rows, err = d.sql.QueryContext(ctx, query+`
+ORDER BY id DESC LIMIT ?`, limit)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Request
+	for rows.Next() {
+		var rr Request
+		var created, updated, approved sql.NullString
+		var authorsStr sql.NullString
+		var approver sql.NullString
+		var externalStatus sql.NullString
+		var matchedReadarrID sql.NullInt64
+		var coverURL sql.NullString
+		var hasReadarrReq int
+		if err := rows.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &externalStatus, &matchedReadarrID, &approver, &approved, &coverURL, &hasReadarrReq); err != nil {
+			return nil, err
+		}
+		if externalStatus.Valid {
+			rr.ExternalStatus = externalStatus.String
+		}
+		if matchedReadarrID.Valid {
+			rr.MatchedReadarrID = matchedReadarrID.Int64
+		}
+		if approver.Valid {
+			rr.ApproverEmail = approver.String
+		}
+		if coverURL.Valid {
+			rr.CoverURL = coverURL.String
+		}
+		rr.HasReadarrReq = hasReadarrReq == 1
+		rr.CreatedAt, _ = time.Parse(time.RFC3339Nano, created.String)
+		rr.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated.String)
+		if approved.Valid {
+			t, _ := time.Parse(time.RFC3339Nano, approved.String)
+			rr.ApprovedAt = &t
+		}
+		if authorsStr.Valid && authorsStr.String != "" {
+			_ = json.Unmarshal([]byte(authorsStr.String), &rr.Authors)
+		}
+		out = append(out, rr)
+	}
+	return out, nil
+}
+
 func (d *DB) DeleteRequest(ctx context.Context, id int64) error {
 	_, err := d.sql.ExecContext(ctx, `DELETE FROM requests WHERE id=?`, id)
+	return err
+}
+
+func (d *DB) UpdateRequestCover(ctx context.Context, id int64, coverURL string) error {
+	now := time.Now().UTC()
+	_, err := d.sql.ExecContext(ctx, `
+UPDATE requests
+SET cover_url=?, updated_at=?
+WHERE id=?`,
+		strings.TrimSpace(coverURL),
+		now.Format(time.RFC3339Nano),
+		id,
+	)
 	return err
 }
 

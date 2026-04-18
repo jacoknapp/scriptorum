@@ -28,7 +28,7 @@ func (s *Server) mountUI(r chi.Router) {
 			if ses == nil || !ses.Admin {
 				mine = s.userEmail(r)
 			}
-			items, _ := s.db.ListRequests(r.Context(), mine, 200)
+			items, _ := s.db.ListRequestsPage(r.Context(), mine, 200)
 			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": s.buildRequestListItems(r.Context(), items), "FallbackAll": false, "CSRFToken": s.getCSRFToken(r)}
 			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
 		}))
@@ -40,7 +40,7 @@ func (s *Server) mountUI(r chi.Router) {
 			if ses == nil || !ses.Admin {
 				mine = s.userEmail(r)
 			}
-			items, _ := s.db.ListRequests(r.Context(), mine, 200)
+			items, _ := s.db.ListRequestsPage(r.Context(), mine, 200)
 			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": s.buildRequestListItems(r.Context(), items), "FallbackAll": false, "CSRFToken": s.getCSRFToken(r)}
 			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
 		}))
@@ -49,8 +49,14 @@ func (s *Server) mountUI(r chi.Router) {
 	r.Get("/ui/requests/table", s.requireLogin(u.handleRequestsTable(s)))
 	r.Group(func(rt chi.Router) {
 		rt.Use(func(next http.Handler) http.Handler { return s.requireAdmin(next.ServeHTTP) })
-		rt.Get("/users/delete", func(w http.ResponseWriter, r *http.Request) {
+		rt.Post("/users/delete", func(w http.ResponseWriter, r *http.Request) {
+			_ = r.ParseForm()
 			if id := r.URL.Query().Get("id"); id != "" {
+				if n, err := strconv.ParseInt(id, 10, 64); err == nil {
+					_ = s.db.DeleteUser(r.Context(), n)
+				}
+			}
+			if id := r.FormValue("id"); id != "" {
 				if n, err := strconv.ParseInt(id, 10, 64); err == nil {
 					_ = s.db.DeleteUser(r.Context(), n)
 				}
@@ -81,8 +87,9 @@ func (s *Server) mountUI(r chi.Router) {
 			}
 			http.Redirect(w, r, "/users", http.StatusFound)
 		})
-		rt.Get("/users/toggle", func(w http.ResponseWriter, r *http.Request) {
-			if id := r.URL.Query().Get("id"); id != "" {
+		rt.Post("/users/toggle", func(w http.ResponseWriter, r *http.Request) {
+			_ = r.ParseForm()
+			if id := r.FormValue("id"); id != "" {
 				if n, err := strconv.ParseInt(id, 10, 64); err == nil {
 					users, _ := s.db.ListUsers(r.Context())
 					for _, u := range users {
@@ -130,7 +137,7 @@ func (u *ui) handleRequestsTable(s *Server) http.HandlerFunc {
 		if ses == nil || !ses.Admin {
 			mine = s.userEmail(r)
 		}
-		items, _ := s.db.ListRequests(r.Context(), mine, 200)
+		items, _ := s.db.ListRequestsPage(r.Context(), mine, 200)
 		data := map[string]any{"Items": s.buildRequestListItems(r.Context(), items), "IsAdmin": ses != nil && ses.Admin, "FallbackAll": false}
 		_ = u.tpl.ExecuteTemplate(w, "requests_table", data)
 	}
@@ -138,42 +145,64 @@ func (u *ui) handleRequestsTable(s *Server) http.HandlerFunc {
 
 type requestListItem struct {
 	db.Request
-	Cover        string
-	CoverPayload string
+	Cover string
 }
 
 func (s *Server) buildRequestListItems(ctx context.Context, items []db.Request) []requestListItem {
+	matchedBooks := s.requestListMatchedBooks(ctx, items)
 	out := make([]requestListItem, 0, len(items))
 	for _, item := range items {
-		cover, coverPayload := s.requestListCoverData(ctx, item)
+		cover := s.requestListCoverData(item, matchedBooks)
 		out = append(out, requestListItem{
-			Request:      item,
-			Cover:        cover,
-			CoverPayload: coverPayload,
+			Request: item,
+			Cover:   cover,
 		})
 	}
 	return out
 }
 
-func (s *Server) requestListCoverData(ctx context.Context, req db.Request) (string, string) {
-	payloads := make([]json.RawMessage, 0, 3)
-
-	if match, err := s.findCatalogMatch(ctx, req.Format, req.Title, req.Authors, req.ISBN10, req.ISBN13, "", req.ReadarrReq); err == nil && match != nil && len(match.ReadarrData) > 0 {
-		payloads = append(payloads, match.ReadarrData)
-	}
-	if len(req.ReadarrResp) > 0 {
-		payloads = append(payloads, req.ReadarrResp)
-	}
-	if len(req.ReadarrReq) > 0 {
-		payloads = append(payloads, req.ReadarrReq)
+func (s *Server) requestListMatchedBooks(ctx context.Context, items []db.Request) map[string]db.ReadarrBook {
+	idsByKind := make(map[string][]int64)
+	for _, item := range items {
+		if item.MatchedReadarrID <= 0 {
+			continue
+		}
+		kind := normalizeSyncKind(item.Format)
+		idsByKind[kind] = append(idsByKind[kind], item.MatchedReadarrID)
 	}
 
-	for _, raw := range payloads {
-		if cover := s.requestCoverFromPayload(req.Format, raw); cover != "" {
-			return cover, strings.TrimSpace(string(raw))
+	out := make(map[string]db.ReadarrBook)
+	for kind, ids := range idsByKind {
+		books, err := s.db.ListReadarrBooksByIDs(ctx, kind, ids)
+		if err != nil {
+			continue
+		}
+		for id, book := range books {
+			out[kind+"|"+strconv.FormatInt(id, 10)] = book
 		}
 	}
-	return "", ""
+	return out
+}
+
+func requestListMatchedBookKey(format string, readarrID int64) string {
+	if readarrID <= 0 {
+		return ""
+	}
+	return normalizeSyncKind(format) + "|" + strconv.FormatInt(readarrID, 10)
+}
+
+func (s *Server) requestListCoverData(req db.Request, matchedBooks map[string]db.ReadarrBook) string {
+	if cover := strings.TrimSpace(req.CoverURL); cover != "" {
+		return cover
+	}
+	if key := requestListMatchedBookKey(req.Format, req.MatchedReadarrID); key != "" {
+		if book, ok := matchedBooks[key]; ok && len(book.ReadarrData) > 0 {
+			if cover := s.requestCoverFromPayload(req.Format, book.ReadarrData); cover != "" {
+				return cover
+			}
+		}
+	}
+	return ""
 }
 
 func (s *Server) requestCoverFromPayload(format string, raw json.RawMessage) string {
