@@ -521,31 +521,14 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 	}
 
 	for _, term := range query.Queries {
-		books, err := ol.Search(ctx, term, 18, 1)
-		if err != nil || len(books) == 0 {
-			continue
-		}
-		appendCandidates(books)
-		if selected := pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize); len(selected) >= discoveryCategorySize {
-			return selected
-		}
-	}
-
-	if len(pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)) < discoveryCategorySize {
-		if trending, err := ol.TrendingWorks(ctx, "weekly", 24); err == nil {
-			appendCandidates(trending)
-		}
-	}
-
-	if len(pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)) < discoveryCategorySize {
-		for _, fallbackTerm := range []string{query.Name, "booktok books", "new releases fiction"} {
-			books, err := ol.Search(ctx, fallbackTerm, 18, 1)
+		for page := 1; page <= 2; page++ {
+			books, err := ol.Search(ctx, term, 18, page)
 			if err != nil || len(books) == 0 {
-				continue
+				break
 			}
 			appendCandidates(books)
-			if len(pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)) >= discoveryCategorySize {
-				break
+			if selected := pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize); len(selected) >= discoveryCategorySize {
+				return selected
 			}
 		}
 	}
