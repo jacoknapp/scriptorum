@@ -1182,6 +1182,13 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 	reqCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 
+	if matched, err := s.tryCompleteApprovalFromCatalogMatch(reqCtx, req, inst, username, "", true); matched {
+		return
+	} else if err != nil {
+		_ = s.db.UpdateRequestStatus(ctx, id, "error", err.Error(), "system", nil, nil)
+		return
+	}
+
 	// Require an exact selection payload saved at request-time
 	if len(req.ReadarrReq) == 0 {
 		_ = s.db.UpdateRequestStatus(ctx, id, "error", "request has no stored selection payload; please re-request from search", username, nil, nil)
@@ -1279,6 +1286,11 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 						}
 						_ = s.db.ApproveRequest(ctx, id, username)
 						_ = s.db.UpdateRequestStatus(ctx, id, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid), username, payload, respBody)
+						externalStatus := "monitored"
+						if _, status := readarrStateFromResponse(gotBody); status != "" {
+							externalStatus = status
+						}
+						_ = s.db.UpdateRequestExternalStatus(ctx, id, externalStatus, int64(bid), fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid))
 						if cover := s.requestCoverFromPayload(req.Format, respBody); cover != "" {
 							_ = s.db.UpdateRequestCover(ctx, id, cover)
 						}
@@ -1290,6 +1302,9 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 			// Fallback: treat as already present without monitor update
 			_ = s.db.ApproveRequest(ctx, id, username)
 			_ = s.db.UpdateRequestStatus(ctx, id, "queued", "already in Readarr (duplicate edition)", username, payload, respBody)
+			if bid, status := readarrStateFromResponse(respBody); bid > 0 || status != "" {
+				_ = s.db.UpdateRequestExternalStatus(ctx, id, status, bid, "already in Readarr (duplicate edition)")
+			}
 			if cover := s.requestCoverFromPayload(req.Format, respBody); cover != "" {
 				_ = s.db.UpdateRequestCover(ctx, id, cover)
 			}
@@ -1307,6 +1322,12 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 	// Success: book added to Readarr
 	_ = s.db.ApproveRequest(ctx, id, username)
 	_ = s.db.UpdateRequestStatus(ctx, id, "queued", "sent to Readarr", username, payload, respBody)
+	if bid, status := readarrStateFromResponse(respBody); bid > 0 || status != "" {
+		if status == "" {
+			status = "monitored"
+		}
+		_ = s.db.UpdateRequestExternalStatus(ctx, id, status, bid, "sent to Readarr")
+	}
 	if cover := s.requestCoverFromPayload(req.Format, respBody); cover != "" {
 		_ = s.db.UpdateRequestCover(ctx, id, cover)
 	}
@@ -1495,17 +1516,37 @@ func (s *Server) apiApproveAllRequests(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Approve each pending request by updating status to "queued"
+	// Approve each pending request using the same processing path as single approvals.
 	username := r.Context().Value(ctxUser).(*session).Username
-	for _, req := range pendingRequests {
-		err := s.db.UpdateRequestStatus(r.Context(), req.ID, "queued", "bulk approved", username, nil, nil)
-		if err != nil {
+	for _, pendingReq := range pendingRequests {
+		req := pendingReq
+		var inst providers.ReadarrInstance
+		if req.Format == "audiobook" {
+			c := s.settings.Get().Readarr.Audiobooks
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
+		} else {
+			c := s.settings.Get().Readarr.Ebooks
+			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
+		}
+
+		if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+			if err := s.db.ApproveRequest(r.Context(), req.ID, username); err != nil {
+				http.Error(w, fmt.Sprintf("failed to approve request %d", req.ID), 500)
+				return
+			}
+			if err := s.db.UpdateRequestStatus(r.Context(), req.ID, "approved", "approved via bulk action (no Readarr configured)", username, nil, nil); err != nil {
+				http.Error(w, fmt.Sprintf("failed to approve request %d", req.ID), 500)
+				return
+			}
+			s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
+			continue
+		}
+
+		if err := s.db.UpdateRequestStatus(r.Context(), req.ID, "processing", "bulk approval in progress", username, nil, nil); err != nil {
 			http.Error(w, fmt.Sprintf("failed to approve request %d", req.ID), 500)
 			return
 		}
-
-		// Send notification for each approved request
-		s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
+		go s.processAsyncApproval(req.ID, &req, inst, username)
 	}
 
 	w.Header().Set("HX-Trigger", `{"request:updated": {}}`)

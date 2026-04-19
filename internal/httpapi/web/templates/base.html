@@ -1117,6 +1117,13 @@
 				// Build metadata from actual Readarr data
 				var metaParts = [];
 				if (enrichedData.ratings && enrichedData.ratings.value) {
+					var ratingValue = Number(enrichedData.ratings.value);
+					var displayRating = Number.isFinite(ratingValue) ? ratingValue.toFixed(1) : String(enrichedData.ratings.value);
+					var filledStars = Number.isFinite(ratingValue) ? Math.max(0, Math.min(5, Math.round(ratingValue))) : 0;
+					var stars = '\u2605'.repeat(filledStars) + '\u2606'.repeat(5 - filledStars);
+					metaParts.push(`Rating: ${displayRating}/5 ${stars} (${enrichedData.ratings.votes} votes)`);
+				}
+				if (false && enrichedData.ratings && enrichedData.ratings.value) {
 					var stars = '★'.repeat(Math.floor(enrichedData.ratings.value)) + '☆'.repeat(5 - Math.floor(enrichedData.ratings.value));
 					metaParts.push(`Rating: ${enrichedData.ratings.value.toFixed(1)}/5 ${stars} (${enrichedData.ratings.votes} votes)`);
 				}

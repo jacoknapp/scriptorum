@@ -221,6 +221,12 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 	reqCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
 	defer cancel()
 
+	if matched, err := s.tryCompleteApprovalFromCatalogMatch(reqCtx, req, inst, username, " via notification", true); matched {
+		return &ApprovalResult{Status: "queued", Error: nil}
+	} else if err != nil {
+		return &ApprovalResult{Status: "", Error: err}
+	}
+
 	// Require an exact selection payload saved at request-time
 	if len(req.ReadarrReq) == 0 {
 		return &ApprovalResult{Status: "", Error: fmt.Errorf("request has no stored selection payload")}
@@ -294,6 +300,11 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 						}
 						_ = s.db.ApproveRequest(ctx, req.ID, username)
 						_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d via notification", bid), username, payload, respBody)
+						externalStatus := "monitored"
+						if _, status := readarrStateFromResponse(gotBody); status != "" {
+							externalStatus = status
+						}
+						_ = s.db.UpdateRequestExternalStatus(ctx, req.ID, externalStatus, int64(bid), fmt.Sprintf("already in Readarr; monitoring enabled for id %d via notification", bid))
 
 						// Send notification for approved request
 						s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
@@ -306,6 +317,9 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 			// Fallback: treat as already present without monitor update
 			_ = s.db.ApproveRequest(ctx, req.ID, username)
 			_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", "already in Readarr (duplicate edition) via notification", username, payload, respBody)
+			if bid, status := readarrStateFromResponse(respBody); bid > 0 || status != "" {
+				_ = s.db.UpdateRequestExternalStatus(ctx, req.ID, status, bid, "already in Readarr (duplicate edition) via notification")
+			}
 
 			// Send notification for approved request
 			s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
@@ -320,6 +334,12 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 	// Success - book added to Readarr
 	_ = s.db.ApproveRequest(ctx, req.ID, username)
 	_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", "sent to Readarr via notification", username, payload, respBody)
+	if bid, status := readarrStateFromResponse(respBody); bid > 0 || status != "" {
+		if status == "" {
+			status = "monitored"
+		}
+		_ = s.db.UpdateRequestExternalStatus(ctx, req.ID, status, bid, "sent to Readarr via notification")
+	}
 
 	// Start background monitoring task for successful additions
 	if respBody != nil {
