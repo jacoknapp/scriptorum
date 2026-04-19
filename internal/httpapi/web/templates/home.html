@@ -3,7 +3,7 @@
 	<div class="p-6 md:py-8">
 		<div class="max-w-3xl">
 			<div class="text-xs uppercase tracking-wide text-royal-300">Search books</div>
-			<h1 class="mt-3 text-2xl font-semibold text-slate-100">Your next bad bedtime decision</h1>
+			<h1 id="searchTagline" class="mt-3 text-2xl font-semibold text-slate-100">Your next bad bedtime decision</h1>
 			<p class="mt-2 text-sm text-slate-300">Search by title, author, ISBN, or browse the shelves while the box is empty.</p>
 		</div>
 
@@ -49,43 +49,156 @@
 </div>
 
 <script>
+var SEARCH_TAGLINES = [
+	"Your next bad bedtime decision",
+	"The fastest route to just one more chapter",
+	"A terrible place to be responsible",
+	"Browse now, sleep later",
+	"Your TBR's newest bad influence",
+	"Plot twists start here",
+	"For readers with no self-control",
+	"One search away from ignoring your chores",
+	"Books that will absolutely ruin your bedtime",
+	"Come for one title, leave with eight",
+	"Your next fictional obsession is probably in here",
+	"Dangerous for anyone with a bookmark collection",
+	"Where just looking turns into a stack",
+	"Good luck stopping at one",
+	"Built for accidental all-nighters",
+	"The internet's most polite bad idea",
+	"A little search bar with huge consequences",
+	"Find the book that steals your evening",
+	"Curated chaos for your reading life",
+	"The easiest way to derail your schedule",
+	"Your future favorite distraction",
+	"For noble readers and messy sleep schedules",
+	"Books worth pretending you were productive for",
+	"Search first, explain the late bedtime later",
+	"An excellent way to lose track of time",
+	"Fictional problems, real consequences",
+	"The shelf where your free time disappears",
+	"Your next I-finished-it-in-one-sitting story",
+	"A soft launch for your next obsession",
+	"Where your weekend plans go to change",
+	"Search here, vanish responsibly",
+	"Mood: one more chapter",
+	"Because self-control is overrated",
+	"The page-turner portal",
+	"Pick a book. Cancel your plans.",
+	"Stories with suspiciously strong gravitational pull",
+	"Browse with caution and a charger nearby",
+	"For when your current book is almost done",
+	"The algorithm wants you to read irresponsibly",
+	"Your next favorite mistake",
+	"Where curiosity becomes a reading slump cure",
+	"One click closer to literary trouble",
+	"Books with main-character energy",
+	"The scenic route to a full TBR",
+	"Browse first. Be accountable later.",
+	"Reading chaos, tastefully organized",
+	"Enter a title. Exit with a problem.",
+	"Home of the wait, is it 2 a.m.? effect",
+	"The search bar for people who own too many bookmarks",
+	"A curated threat to your bedtime",
+	"Your next rabbit hole has a dust jacket",
+	"Find something impossible to put down",
+	"For people who say I needed a break and mean another book",
+	"Literary mischief, one query at a time",
+	"The fastest way to make tomorrow sleepy",
+	"Search like you mean it",
+	"Books that absolutely have your number",
+	"Tasteful temptation for readers",
+	"Come get emotionally attached to something fictional",
+	"Where your next reread begins",
+	"Browse boldly",
+	"Slightly too good at finding page-turners",
+	"The search page equivalent of treat yourself",
+	"If you are here, bedtime already lost",
+	"One more book won't hurt",
+	"A professional-grade distraction",
+	"Search by title, stay for the poor decisions",
+	"For readers who like their nights unproductive",
+	"This is how the stack gets taller",
+	"Your next commute companion or 2 a.m. regret",
+	"Fresh trouble for your nightstand",
+	"Search now. Pretend you planned it.",
+	"The quietest way to lose an evening",
+	"For when you need a book more than a plan",
+	"Welcome to your next chapter problem",
+	"Books selected by vibes and consequences",
+	"Find something with dangerous momentum",
+	"Search here for responsibly irresponsible reading",
+	"Literature, but make it impossible to stop",
+	"Where your next favorite sentence is hiding",
+	"A surprisingly effective procrastination tool",
+	"Your TBR called. It wants company.",
+	"A great day to get attached to fictional people",
+	"The shortest path to do not disturb",
+	"Search once. Obsess immediately.",
+	"Stories with no respect for your schedule",
+	"This page pairs well with tea and poor restraint",
+	"A small box with big reading energy",
+	"The I-will-start-this-tonight machine",
+	"Browse until something ruins your plans",
+	"Search by title. Stay for the obsession.",
+	"For readers who like a little collateral damage",
+	"The shelf that fights back",
+	"Start here if you enjoy being captivated",
+	"Your next literary detour",
+	"A better use of your attention span",
+	"Page-turners, heartbreak, and excellent distractions",
+	"You were not going to sleep early anyway",
+	"The search page for future sleep-deprived geniuses",
+	"Find the one that makes dinner go cold"
+];
+
+function setRandomSearchTagline() {
+	var searchTagline = document.getElementById('searchTagline');
+	if (!searchTagline || SEARCH_TAGLINES.length === 0) {
+		return;
+	}
+
+	var index;
+	if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+		var values = new Uint32Array(1);
+		window.crypto.getRandomValues(values);
+		index = values[0] % SEARCH_TAGLINES.length;
+	} else {
+		index = Math.floor(Math.random() * SEARCH_TAGLINES.length);
+	}
+
+	searchTagline.textContent = SEARCH_TAGLINES[index];
+}
+
 document.addEventListener('DOMContentLoaded', function() {
-	console.log('Search page: DOM loaded, initializing search...');
+	setRandomSearchTagline();
 
 	var searchInput = document.getElementById('searchInput');
 	var searchForm = document.getElementById('searchForm');
 
 	if (!searchInput) {
-		console.error('Search input not found!');
 		return;
 	}
 
 	if (!searchForm) {
-		console.error('Search form not found!');
 		return;
 	}
 
 	var initSearch = function() {
 		if (typeof window.debouncedSearch !== 'function') {
-			console.log('debouncedSearch not ready, waiting...');
 			setTimeout(initSearch, 100);
 			return;
 		}
 
-		console.log('Setting up search event listeners...');
-
 		searchInput.addEventListener('input', function(e) {
-			console.log('Search input:', e.target.value);
 			window.debouncedSearch(e.target.value);
 		});
 
 		searchForm.addEventListener('submit', function(e) {
 			e.preventDefault();
-			console.log('Search form submitted:', searchInput.value);
 			window.debouncedSearch(searchInput.value, 0);
 		});
 
-		console.log('Search initialization complete!');
 		searchInput.focus();
 		if (searchInput.value.trim().length >= 2) {
 			window.debouncedSearch(searchInput.value, 0);

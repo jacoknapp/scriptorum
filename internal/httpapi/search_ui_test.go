@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -33,7 +35,8 @@ func installOpenLibraryDiscoveryTransport(t *testing.T) {
 				Header:     make(http.Header),
 			}, nil
 		}
-		if r.URL.Path == "/search.json" {
+	if r.URL.Path == "/search.json" {
+			nowYear := time.Now().Year()
 			queryBodies := map[string]string{
 				"romantasy":                       `{"docs":[{"title":"Assistant to the Villain","author_name":["Hannah Nicole Maehrer"],"cover_i":10,"first_publish_year":2023},{"title":"The Serpent & the Wings of Night","author_name":["Carissa Broadbent"],"cover_i":11,"first_publish_year":2022}]}`,
 				"dragon fantasy":                  `{"docs":[{"title":"When the Moon Hatched","author_name":["Sarah A. Parker"],"cover_i":18,"first_publish_year":2024},{"title":"A Fate Inked in Blood","author_name":["Danielle L. Jensen"],"cover_i":19,"first_publish_year":2024}]}`,
@@ -58,6 +61,18 @@ func installOpenLibraryDiscoveryTransport(t *testing.T) {
 				"Rom-Com Favorites":               `{"docs":[]}`,
 				"Sci-Fi Series Hits":              `{"docs":[]}`,
 			}
+			queryBodies[fmt.Sprintf("thriller %d", nowYear)] = `{"docs":[{"title":"The Tenant","author_name":["Freida McFadden"],"cover_i":46,"first_publish_year":2025},{"title":"We Don't Talk About Carol","author_name":["Kristen L. Berry"],"cover_i":47,"first_publish_year":2025}]}`
+			queryBodies[fmt.Sprintf("thriller %d", nowYear-1)] = `{"docs":[{"title":"Middle of the Night","author_name":["Riley Sager"],"cover_i":48,"first_publish_year":2024},{"title":"Listen for the Lie","author_name":["Amy Tintera"],"cover_i":30,"first_publish_year":2024}]}`
+			queryBodies[fmt.Sprintf("thriller %d", nowYear-2)] = `{"docs":[{"title":"Everyone Here Is Lying","author_name":["Shari Lapena"],"cover_i":49,"first_publish_year":2023}]}`
+			queryBodies[fmt.Sprintf("crime thriller %d", nowYear)] = `{"docs":[{"title":"Capture or Kill","author_name":["Vince Flynn"],"cover_i":50,"first_publish_year":2025}]}`
+			queryBodies[fmt.Sprintf("crime thriller %d", nowYear-1)] = `{"docs":[{"title":"The Hunter","author_name":["Tana French"],"cover_i":51,"first_publish_year":2024}]}`
+			queryBodies[fmt.Sprintf("crime thriller %d", nowYear-2)] = `{"docs":[{"title":"The Trap","author_name":["Catherine Ryan Howard"],"cover_i":52,"first_publish_year":2023}]}`
+			queryBodies[fmt.Sprintf("science fiction %d", nowYear)] = `{"docs":[{"title":"Death of the Author","author_name":["Nnedi Okorafor"],"cover_i":53,"first_publish_year":2025},{"title":"The Martian Contingency","author_name":["Mary Robinette Kowal"],"cover_i":54,"first_publish_year":2025}]}`
+			queryBodies[fmt.Sprintf("science fiction %d", nowYear-1)] = `{"docs":[{"title":"Ghostdrift","author_name":["Suzanne Palmer"],"cover_i":55,"first_publish_year":2024},{"title":"The Stardust Grail","author_name":["Yume Kitasei"],"cover_i":56,"first_publish_year":2024}]}`
+			queryBodies[fmt.Sprintf("science fiction %d", nowYear-2)] = `{"docs":[{"title":"The Terraformers","author_name":["Annalee Newitz"],"cover_i":57,"first_publish_year":2023}]}`
+			queryBodies[fmt.Sprintf("space opera %d", nowYear)] = `{"docs":[{"title":"Shroud","author_name":["Adrian Tchaikovsky"],"cover_i":58,"first_publish_year":2025}]}`
+			queryBodies[fmt.Sprintf("space opera %d", nowYear-1)] = `{"docs":[{"title":"The Mercy of Gods","author_name":["James S. A. Corey"],"cover_i":25,"first_publish_year":2024}]}`
+			queryBodies[fmt.Sprintf("space opera %d", nowYear-2)] = `{"docs":[{"title":"Infinity Gate","author_name":["M. R. Carey"],"cover_i":59,"first_publish_year":2023}]}`
 			body, ok := queryBodies[r.URL.Query().Get("q")]
 			if !ok {
 				return &http.Response{
@@ -130,9 +145,11 @@ func TestSearchUIShowsDiscoveryWhenQueryBlank(t *testing.T) {
 		"When the Moon Hatched",
 		"The Familiar",
 		"Never Lie",
+		"The Tenant",
 		"Bride",
 		"Some Desperate Glory",
 		"Service Model",
+		"Death of the Author",
 		"View details",
 	} {
 		if !strings.Contains(body, want) {
@@ -144,6 +161,14 @@ func TestSearchUIShowsDiscoveryWhenQueryBlank(t *testing.T) {
 	}
 	if count := strings.Count(body, `data-open-book="1"`); count < 35 {
 		t.Fatalf("expected fuller category shelves, found %d cards in body: %s", count, body)
+	}
+	for _, unwanted := range []string{
+		"Red Rising",
+		"The Last Mrs. Parrish",
+	} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("expected older fallback title %q to stay out of discovery shelves: %s", unwanted, body)
+		}
 	}
 	if strings.Contains(body, `Results for "`) {
 		t.Fatalf("expected discovery view, got search results wrapper: %s", body)

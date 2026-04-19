@@ -4,10 +4,12 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -54,6 +56,7 @@ type discoveryQuery struct {
 	Name        string
 	Description string
 	Queries     []string
+	RecentTerms []string
 	MinYear     int
 }
 
@@ -68,24 +71,28 @@ var defaultDiscoveryQueries = []discoveryQuery{
 		Name:        "Fantasy Hits",
 		Description: "Romantasy, dragons, and high-stakes series readers are tearing through right now.",
 		Queries:     []string{"romantasy", "dragon fantasy", "epic fantasy bestseller", "fantasy 2024"},
+		RecentTerms: []string{"fantasy", "fantasy romance"},
 		MinYear:     2018,
 	},
 	{
 		Name:        "Thriller Buzz",
 		Description: "Fast, twisty page-turners with recent momentum and bingeable energy.",
 		Queries:     []string{"psychological thriller", "freida mcfadden", "thriller bestseller", "domestic thriller"},
+		RecentTerms: []string{"thriller", "crime thriller"},
 		MinYear:     2020,
 	},
 	{
 		Name:        "Rom-Com Favorites",
 		Description: "Smart contemporary romance picks with banter, chemistry, and recent release heat.",
 		Queries:     []string{"emily henry", "ali hazelwood", "contemporary romance bestseller", "rom com 2024"},
+		RecentTerms: []string{"rom com", "romance"},
 		MinYear:     2020,
 	},
 	{
 		Name:        "Sci-Fi Series Hits",
 		Description: "Big-concept modern science fiction with sequel energy and strong fan followings.",
 		Queries:     []string{"murderbot", "space opera", "science fiction bestseller", "sci fi 2024"},
+		RecentTerms: []string{"science fiction", "space opera", "sci fi"},
 		MinYear:     2017,
 	},
 }
@@ -506,6 +513,9 @@ func buildOpenLibraryDetailsPayload(book providers.BookItem) string {
 func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary, query discoveryQuery) []providers.BookItem {
 	candidates := make([]providers.BookItem, 0, discoveryCategorySize*3)
 	seen := make(map[string]struct{}, discoveryCategorySize*3)
+	selectedCount := func() int {
+		return len(pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize))
+	}
 	appendCandidates := func(books []providers.BookItem) {
 		for _, book := range books {
 			key := discoveryBookKey(book)
@@ -527,8 +537,21 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 				break
 			}
 			appendCandidates(books)
-			if selected := pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize); len(selected) >= discoveryCategorySize {
-				return selected
+			if selectedCount() >= discoveryCategorySize {
+				return pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)
+			}
+		}
+	}
+
+	if selectedCount() < discoveryCategorySize {
+		for _, term := range discoveryRecentFallbackQueries(query) {
+			books, err := ol.Search(ctx, term, 18, 1)
+			if err != nil || len(books) == 0 {
+				continue
+			}
+			appendCandidates(books)
+			if selectedCount() >= discoveryCategorySize {
+				break
 			}
 		}
 	}
@@ -536,39 +559,82 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 	return pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)
 }
 
+func discoveryRecentFallbackQueries(query discoveryQuery) []string {
+	years := []int{time.Now().Year(), time.Now().Year() - 1, time.Now().Year() - 2}
+	seen := make(map[string]struct{}, len(query.RecentTerms)*len(years))
+	terms := make([]string, 0, len(query.RecentTerms)*len(years))
+	for _, base := range query.RecentTerms {
+		base = strings.TrimSpace(base)
+		if base == "" {
+			continue
+		}
+		for _, year := range years {
+			term := fmt.Sprintf("%s %d", base, year)
+			if _, ok := seen[term]; ok {
+				continue
+			}
+			seen[term] = struct{}{}
+			terms = append(terms, term)
+		}
+	}
+	return terms
+}
+
 func pickDiscoveryBooks(books []providers.BookItem, minYear, limit int) []providers.BookItem {
 	if limit <= 0 {
 		limit = discoveryCategorySize
 	}
-	selected := make([]providers.BookItem, 0, limit)
-	seen := make(map[string]struct{}, limit)
-	appendIfEligible := func(book providers.BookItem) bool {
+	candidates := make([]providers.BookItem, 0, len(books))
+	seen := make(map[string]struct{}, len(books))
+	for _, book := range books {
 		key := discoveryBookKey(book)
 		if key == "" {
-			return false
+			continue
 		}
 		if _, ok := seen[key]; ok {
-			return false
+			continue
 		}
 		if !isDiscoveryCandidate(book) {
-			return false
+			continue
 		}
 		seen[key] = struct{}{}
-		selected = append(selected, book)
-		return len(selected) >= limit
+		candidates = append(candidates, book)
+	}
+	if len(candidates) == 0 {
+		return nil
 	}
 
-	for _, book := range books {
-		if book.FirstPublishYear >= minYear && appendIfEligible(book) {
-			return selected
+	sort.SliceStable(candidates, func(i, j int) bool {
+		left := candidates[i].FirstPublishYear
+		right := candidates[j].FirstPublishYear
+		if left == right {
+			return false
+		}
+		if left == 0 {
+			return false
+		}
+		if right == 0 {
+			return true
+		}
+		return left > right
+	})
+
+	if minYear > 0 {
+		recent := make([]providers.BookItem, 0, len(candidates))
+		for _, book := range candidates {
+			if book.FirstPublishYear >= minYear {
+				recent = append(recent, book)
+			}
+		}
+		if len(recent) > 0 {
+			candidates = recent
 		}
 	}
-	for _, book := range books {
-		if appendIfEligible(book) {
-			return selected
-		}
+
+	if len(candidates) > limit {
+		return candidates[:limit]
 	}
-	return selected
+	return candidates
 }
 
 func discoveryBookKey(book providers.BookItem) string {

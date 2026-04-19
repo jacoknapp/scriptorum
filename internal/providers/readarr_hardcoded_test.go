@@ -360,7 +360,68 @@ func TestReadarrAddBookUsesCorrectEndpointAndMethod(t *testing.T) {
 			if payload["authorTitle"] != "Test Author" {
 				t.Errorf("Expected authorTitle 'Test Author', got %v", payload["authorTitle"])
 			}
+			if monitored, ok := payload["monitored"].(bool); !ok || !monitored {
+				t.Errorf("Expected monitored=true, got %v", payload["monitored"])
+			}
+			addOptions, ok := payload["addOptions"].(map[string]any)
+			if !ok {
+				t.Fatalf("Expected addOptions object, got %T", payload["addOptions"])
+			}
+			if monitor, _ := addOptions["monitor"].(string); monitor != "all" {
+				t.Errorf("Expected addOptions.monitor 'all', got %v", addOptions["monitor"])
+			}
+			if monitored, ok := addOptions["monitored"].(bool); !ok || !monitored {
+				t.Errorf("Expected addOptions.monitored=true, got %v", addOptions["monitored"])
+			}
 		}
+	}
+}
+
+func TestReadarrAddBookRawKeepsTopLevelMonitoringEnabled(t *testing.T) {
+	var capturedBody []byte
+
+	readarr := NewReadarrWithDB(ReadarrInstance{
+		BaseURL: "http://test-readarr:8787",
+		APIKey:  "test-key",
+	}, nil)
+
+	readarr.cl.Transport = rtFunc(func(req *http.Request) (*http.Response, error) {
+		if req.Body != nil {
+			capturedBody, _ = io.ReadAll(req.Body)
+		}
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(strings.NewReader("{\"id\": 1}")),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	raw := json.RawMessage(`{
+		"title":"Raw Book",
+		"author":{"name":"Raw Author","addOptions":{"monitor":"none"},"monitorNewItems":"none"},
+		"addOptions":{"monitor":"none","monitored":false},
+		"editions":[{"foreignEditionId":"raw-edition","monitored":true}],
+		"foreignBookId":"raw-book",
+		"foreignEditionId":"raw-edition"
+	}`)
+
+	if _, _, err := readarr.AddBookRaw(context.Background(), raw); err != nil {
+		t.Fatalf("AddBookRaw failed: %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(capturedBody, &payload); err != nil {
+		t.Fatalf("sent payload is not valid JSON: %v", err)
+	}
+	addOptions, ok := payload["addOptions"].(map[string]any)
+	if !ok {
+		t.Fatalf("Expected addOptions object, got %T", payload["addOptions"])
+	}
+	if monitor, _ := addOptions["monitor"].(string); monitor != "all" {
+		t.Fatalf("Expected addOptions.monitor 'all', got %v", addOptions["monitor"])
+	}
+	if monitored, ok := addOptions["monitored"].(bool); !ok || !monitored {
+		t.Fatalf("Expected addOptions.monitored=true, got %v", addOptions["monitored"])
 	}
 }
 

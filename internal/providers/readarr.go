@@ -185,11 +185,12 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 		pmap["monitored"] = true
 	}
 	if _, ok := pmap["addOptions"]; !ok {
-		pmap["addOptions"] = map[string]any{"addType": "automatic", "monitor": "none", "monitored": true, "booksToMonitor": []any{}, "searchForMissingBooks": true, "searchForNewBook": true}
+		pmap["addOptions"] = map[string]any{"addType": "automatic", "monitor": "all", "monitored": true, "booksToMonitor": []any{}, "searchForMissingBooks": true, "searchForNewBook": true}
 	} else {
-		// If addOptions exists, ensure the monitor mode for new books is set to "none"
+		// Keep the selected book monitored when it is added.
 		if ao, ok := pmap["addOptions"].(map[string]any); ok {
-			ao["monitor"] = "none"
+			ao["monitor"] = "all"
+			ao["monitored"] = true
 			pmap["addOptions"] = ao
 		}
 	}
