@@ -29,14 +29,19 @@
 <script>
 var requestsRefreshTimer = null;
 var requestsRefreshDelayMs = 15000;
+var requestCoverRecoveryObserver = null;
+var requestCoverRecoveryCache = Object.create(null);
+var requestPlaceholderCoverPath = '/static/placeholder-cover.svg';
 document.addEventListener('DOMContentLoaded', function() {
 	formatRequestAuthors();
+	recoverRequestListCovers();
 	scheduleRequestRefresh();
 });
 
 document.addEventListener('htmx:afterSwap', function(evt) {
 	if (evt.detail.target && evt.detail.target.id === 'req-table') {
 		formatRequestAuthors();
+		recoverRequestListCovers();
 		scheduleRequestRefresh();
 	}
 });
@@ -89,6 +94,7 @@ function refreshRequestsTable() {
 		.then(function(html) {
 			reqTable.innerHTML = html;
 			formatRequestAuthors();
+			recoverRequestListCovers();
 			scheduleRequestRefresh();
 		});
 }
@@ -115,6 +121,171 @@ function formatRequestAuthors() {
 				authorElement.textContent = window.formatAuthorName(originalAuthor);
 			}
 		}
+	});
+}
+
+function isPlaceholderRequestCover(src) {
+	if (!src) return true;
+	return String(src).indexOf(requestPlaceholderCoverPath) !== -1;
+}
+
+function requestCoverLookupKey(bookData) {
+	if (!bookData || typeof bookData !== 'object') return '';
+	if (bookData.requestId) return 'request:' + String(bookData.requestId);
+	return [
+		bookData.format || '',
+		bookData.isbn13 || '',
+		bookData.isbn10 || '',
+		bookData.title || '',
+		Array.isArray(bookData.authors) ? bookData.authors.join('|') : (bookData.authors || '')
+	].join('::');
+}
+
+function readRequestBookData(img) {
+	if (!img || !img.closest) return null;
+	var trigger = img.closest('[data-open-book]');
+	if (!trigger) return null;
+	var raw = trigger.getAttribute('data-open-book');
+	if (!raw || !/^\s*[{\[]/.test(raw)) return null;
+	try {
+		var data = JSON.parse(raw);
+		if (!data || typeof data !== 'object') return null;
+		return { trigger: trigger, data: data };
+	} catch (err) {
+		return null;
+	}
+}
+
+function updateRequestBookCover(trigger, cover) {
+	if (!trigger || !cover) return;
+	var raw = trigger.getAttribute('data-open-book');
+	if (!raw || !/^\s*[{\[]/.test(raw)) return;
+	try {
+		var data = JSON.parse(raw);
+		if (!data || typeof data !== 'object') return;
+		data.cover = cover;
+		trigger.setAttribute('data-open-book', JSON.stringify(data));
+	} catch (err) {
+	}
+}
+
+function recoverRequestCover(img) {
+	if (!img || img.dataset.coverRecoveryState === 'loading' || img.dataset.coverRecoveryState === 'done') return;
+	if (!isPlaceholderRequestCover(img.getAttribute('src') || img.src)) {
+		img.dataset.coverRecoveryState = 'done';
+		return;
+	}
+
+	var parsed = readRequestBookData(img);
+	if (!parsed || !parsed.data) {
+		img.dataset.coverRecoveryState = 'done';
+		return;
+	}
+
+	var bookData = parsed.data;
+	if (!(bookData.title || bookData.isbn13 || bookData.isbn10 || bookData.asin)) {
+		img.dataset.coverRecoveryState = 'done';
+		return;
+	}
+
+	var key = requestCoverLookupKey(bookData);
+	if (!key) {
+		img.dataset.coverRecoveryState = 'done';
+		return;
+	}
+
+	var cached = requestCoverRecoveryCache[key];
+	if (cached && cached.cover) {
+		img.src = cached.cover;
+		updateRequestBookCover(parsed.trigger, cached.cover);
+		img.dataset.coverRecoveryState = 'done';
+		return;
+	}
+
+	img.dataset.coverRecoveryState = 'loading';
+
+	var applyRecoveredCover = function(cover) {
+		if (cover) {
+			img.src = cover;
+			updateRequestBookCover(parsed.trigger, cover);
+		}
+		img.dataset.coverRecoveryState = 'done';
+	};
+
+	if (cached && cached.promise) {
+		cached.promise.then(applyRecoveredCover);
+		return;
+	}
+
+	var payload = {
+		title: bookData.title,
+		authors: bookData.authors,
+		format: bookData.format,
+		requestId: bookData.requestId
+	};
+	if (bookData.isbn13) payload.isbn13 = bookData.isbn13;
+	if (bookData.isbn10) payload.isbn10 = bookData.isbn10;
+	if (bookData.asin) payload.asin = bookData.asin;
+	if (bookData.cover && !isPlaceholderRequestCover(bookData.cover)) payload.cover = bookData.cover;
+
+	var promise = fetch('/api/v1/book/enriched', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'HX-Request': 'true'
+		},
+		body: JSON.stringify(payload),
+		credentials: 'same-origin'
+	})
+	.then(function(resp) {
+		if (!resp.ok) return null;
+		return resp.json();
+	})
+	.then(function(data) {
+		var cover = data && typeof data.cover === 'string' ? data.cover.trim() : '';
+		if (!cover || isPlaceholderRequestCover(cover)) {
+			requestCoverRecoveryCache[key] = { cover: '' };
+			return '';
+		}
+		requestCoverRecoveryCache[key] = { cover: cover };
+		return cover;
+	})
+	.catch(function() {
+		requestCoverRecoveryCache[key] = { cover: '' };
+		return '';
+	});
+
+	requestCoverRecoveryCache[key] = { promise: promise };
+	promise.then(applyRecoveredCover);
+}
+
+function recoverRequestListCovers() {
+	if (requestCoverRecoveryObserver) {
+		requestCoverRecoveryObserver.disconnect();
+		requestCoverRecoveryObserver = null;
+	}
+
+	var covers = Array.from(document.querySelectorAll('#req-table [data-request-cover]'));
+	if (!covers.length) return;
+
+	if (!('IntersectionObserver' in window)) {
+		covers.forEach(recoverRequestCover);
+		return;
+	}
+
+	requestCoverRecoveryObserver = new IntersectionObserver(function(entries) {
+		entries.forEach(function(entry) {
+			if (!entry.isIntersecting) return;
+			requestCoverRecoveryObserver.unobserve(entry.target);
+			recoverRequestCover(entry.target);
+		});
+	}, {
+		rootMargin: '200px 0px'
+	});
+
+	covers.forEach(function(img) {
+		if (!isPlaceholderRequestCover(img.getAttribute('src') || img.src)) return;
+		requestCoverRecoveryObserver.observe(img);
 	});
 }
 </script>

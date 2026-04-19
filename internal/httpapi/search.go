@@ -66,35 +66,40 @@ const (
 	discoveryCacheTTL     = 15 * time.Minute
 )
 
-var defaultDiscoveryQueries = []discoveryQuery{
-	{
-		Name:        "Fantasy Hits",
-		Description: "Romantasy, dragons, and high-stakes series readers are tearing through right now.",
-		Queries:     []string{"romantasy", "dragon fantasy", "epic fantasy bestseller", "fantasy 2024"},
-		RecentTerms: []string{"fantasy", "fantasy romance"},
-		MinYear:     2018,
-	},
-	{
-		Name:        "Thriller Buzz",
-		Description: "Fast, twisty page-turners with recent momentum and bingeable energy.",
-		Queries:     []string{"psychological thriller", "freida mcfadden", "thriller bestseller", "domestic thriller"},
-		RecentTerms: []string{"thriller", "crime thriller"},
-		MinYear:     2020,
-	},
-	{
-		Name:        "Rom-Com Favorites",
-		Description: "Smart contemporary romance picks with banter, chemistry, and recent release heat.",
-		Queries:     []string{"emily henry", "ali hazelwood", "contemporary romance bestseller", "rom com 2024"},
-		RecentTerms: []string{"rom com", "romance"},
-		MinYear:     2020,
-	},
-	{
-		Name:        "Sci-Fi Series Hits",
-		Description: "Big-concept modern science fiction with sequel energy and strong fan followings.",
-		Queries:     []string{"murderbot", "space opera", "science fiction bestseller", "sci fi 2024"},
-		RecentTerms: []string{"science fiction", "space opera", "sci fi"},
-		MinYear:     2017,
-	},
+// defaultDiscoveryQueries returns the discovery query set with MinYear
+// set dynamically to 10 years before the current year.
+func defaultDiscoveryQueriesFn() []discoveryQuery {
+	minYear := time.Now().Year() - 10
+	return []discoveryQuery{
+		{
+			Name:        "Fantasy Hits",
+			Description: "Romantasy, dragons, and high-stakes series readers are tearing through right now.",
+			Queries:     []string{"fantasy novel bestseller", "epic fantasy novel bestseller", "fantasy fiction", "dark fantasy novel"},
+			RecentTerms: []string{"fantasy novel", "fantasy fiction", "epic fantasy novel"},
+			MinYear:     minYear,
+		},
+		{
+			Name:        "Thriller Buzz",
+			Description: "Fast, twisty page-turners with recent momentum and bingeable energy.",
+			Queries:     []string{"psychological thriller novel", "domestic thriller novel", "crime thriller novel", "suspense thriller novel"},
+			RecentTerms: []string{"thriller novel", "domestic suspense novel", "mystery thriller novel"},
+			MinYear:     minYear,
+		},
+		{
+			Name:        "Romance Favorites",
+			Description: "Big contemporary romances, buzzy love stories, and crossover hits with real reader momentum.",
+			Queries:     []string{"romance novel", "contemporary romance novel", "rom com romance novel", "love story novel"},
+			RecentTerms: []string{"romance novel", "contemporary romance novel", "romantic comedy novel"},
+			MinYear:     minYear,
+		},
+		{
+			Name:        "Sci-Fi Series Hits",
+			Description: "Big-concept modern science fiction with sequel energy and strong fan followings.",
+			Queries:     []string{"science fiction novel", "space opera novel", "dystopian science fiction novel", "hard science fiction novel"},
+			RecentTerms: []string{"science fiction novel", "space opera novel", "sci fi novel"},
+			MinYear:     minYear,
+		},
+	}
 }
 
 func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
@@ -183,6 +188,9 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			}
 			if list, err := ra.LookupByTerm(r.Context(), term); err == nil {
 				for _, b := range list {
+					if !isRenderableSearchBook(b.Title, b.Disambiguation) {
+						continue
+					}
 					var author map[string]any
 					if b.Author != nil {
 						author = b.Author
@@ -236,15 +244,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 					if strings.HasPrefix(cover, "/") && strings.TrimSpace(instE.BaseURL) != "" {
 						cover = strings.TrimRight(instE.BaseURL, "/") + cover
 					}
-					// If this cover comes from the configured Readarr instance, route
-					// it through our local proxy so we can cache/stabilize the image URL.
-					if cover != "" && strings.HasPrefix(strings.TrimSpace(instE.BaseURL), "http") {
-						if u, err := url.Parse(cover); err == nil {
-							if strings.EqualFold(u.Host, urlHost(instE.BaseURL)) {
-								cover = "/ui/readarr-cover?u=" + url.QueryEscape(cover)
-							}
-						}
-					}
+					cover = s.normalizeRequestCover("ebook", cover)
 					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-ebook"}, true, string(cjson))
 				}
 			}
@@ -258,6 +258,9 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			}
 			if list, err := ra.LookupByTerm(r.Context(), term); err == nil {
 				for _, b := range list {
+					if !isRenderableSearchBook(b.Title, b.Disambiguation) {
+						continue
+					}
 					var author map[string]any
 					if b.Author != nil {
 						author = b.Author
@@ -310,15 +313,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 					if strings.HasPrefix(cover, "/") && strings.TrimSpace(instA.BaseURL) != "" {
 						cover = strings.TrimRight(instA.BaseURL, "/") + cover
 					}
-					// If this cover comes from the configured Readarr instance, route
-					// it through our local proxy so we can cache/stabilize the image URL.
-					if cover != "" && strings.HasPrefix(strings.TrimSpace(instA.BaseURL), "http") {
-						if u, err := url.Parse(cover); err == nil {
-							if strings.EqualFold(u.Host, urlHost(instA.BaseURL)) {
-								cover = "/ui/readarr-cover?u=" + url.QueryEscape(cover)
-							}
-						}
-					}
+					cover = s.normalizeRequestCover("audiobook", cover)
 					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-audiobook"}, false, string(cjson))
 				}
 			}
@@ -335,6 +330,9 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			} else if q != "" {
 				if pubItems, err := ap.SearchBooks(r.Context(), q, page, limit); err == nil {
 					for _, b := range pubItems {
+						if !isRenderableSearchBook(b.Title) {
+							continue
+						}
 						items = append(items, searchItem{BookItem: providers.BookItem{ASIN: b.ASIN, Title: b.Title, Authors: b.Authors, CoverSmall: b.Image, CoverMedium: b.Image}})
 					}
 				}
@@ -344,6 +342,9 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 				ol := providers.NewOpenLibrary()
 				if olItems, err := ol.Search(r.Context(), q, limit, page); err == nil {
 					for _, b := range olItems {
+						if !isRenderableSearchBook(b.Title) {
+							continue
+						}
 						items = append(items, openLibrarySearchItem(b, ""))
 					}
 				}
@@ -421,6 +422,7 @@ func (u *searchUI) loadTrendingBooks(ctx context.Context) []searchItem {
 		return nil
 	}
 	books = pickDiscoveryBooks(books, 2010, discoveryTrendingSize)
+	books = backfillOpenLibraryWorkCovers(ctx, ol, books)
 	items := make([]searchItem, 0, len(books))
 	for _, book := range books {
 		items = append(items, openLibrarySearchItem(book, "Trending pick"))
@@ -430,10 +432,11 @@ func (u *searchUI) loadTrendingBooks(ctx context.Context) []searchItem {
 
 func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCategory {
 	ol := providers.NewOpenLibrary()
-	results := make([]discoveryCategory, len(defaultDiscoveryQueries))
+	queries := defaultDiscoveryQueriesFn()
+	results := make([]discoveryCategory, len(queries))
 	var wg sync.WaitGroup
-	wg.Add(len(defaultDiscoveryQueries))
-	for i, query := range defaultDiscoveryQueries {
+	wg.Add(len(queries))
+	for i, query := range queries {
 		go func(i int, query discoveryQuery) {
 			defer wg.Done()
 			books := gatherDiscoveryCategoryBooks(ctx, ol, query)
@@ -556,7 +559,8 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 		}
 	}
 
-	return pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)
+	selected := pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)
+	return backfillOpenLibraryWorkCovers(ctx, ol, selected)
 }
 
 func discoveryRecentFallbackQueries(query discoveryQuery) []string {
@@ -657,12 +661,18 @@ func isDiscoveryCandidate(book providers.BookItem) bool {
 		return false
 	}
 	blockedSnippets := []string{
+		"cookbook",
+		"cook book",
+		"recipe",
+		"tarot deck",
+		"oracle deck",
 		"summary",
 		"study guide",
 		"biography",
 		"workbook",
 		"collection set",
 		"box set",
+		"boxset",
 		"journal",
 		"review",
 		"analysis",
@@ -673,6 +683,56 @@ func isDiscoveryCandidate(book providers.BookItem) bool {
 		}
 	}
 	return true
+}
+
+func backfillOpenLibraryWorkCovers(ctx context.Context, ol *providers.OpenLibrary, books []providers.BookItem) []providers.BookItem {
+	if ol == nil || len(books) == 0 {
+		return books
+	}
+
+	type coverResult struct {
+		index int
+		cover string
+	}
+
+	results := make(chan coverResult, len(books))
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+
+	for i, book := range books {
+		if strings.TrimSpace(book.CoverMedium) != "" || strings.TrimSpace(book.CoverSmall) != "" {
+			continue
+		}
+		workKey := strings.TrimSpace(book.OpenLibraryWorkKey)
+		if workKey == "" {
+			continue
+		}
+		wg.Add(1)
+		go func(index int, workKey string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			details, err := ol.WorkDetails(ctx, workKey)
+			if err != nil || details == nil || strings.TrimSpace(details.CoverMedium) == "" {
+				return
+			}
+			results <- coverResult{index: index, cover: strings.TrimSpace(details.CoverMedium)}
+		}(i, workKey)
+	}
+
+	wg.Wait()
+	close(results)
+
+	for result := range results {
+		if strings.TrimSpace(books[result.index].CoverMedium) == "" {
+			books[result.index].CoverMedium = result.cover
+		}
+		if strings.TrimSpace(books[result.index].CoverSmall) == "" {
+			books[result.index].CoverSmall = result.cover
+		}
+	}
+	return books
 }
 
 func decorateSearchItems(s *Server, items []searchItem) {

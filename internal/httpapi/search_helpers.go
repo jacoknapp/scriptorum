@@ -1,10 +1,55 @@
 package httpapi
 
 import (
+	"regexp"
 	"strings"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 )
+
+var (
+	searchBookRangePattern      = regexp.MustCompile(`\b(?:books?|vol(?:ume)?s?)\.?\s*\d+\s*[-–]\s*\d+\b`)
+	searchBookListPattern       = regexp.MustCompile(`\b(?:books?|vol(?:ume)?s?)\.?\s*\d+(?:\s*,\s*\d+)+(?:\s*(?:and|&)\s*\d+)?\b`)
+	searchInOnePattern          = regexp.MustCompile(`\b\d+\s*(?:-| )?in(?:-| )one\b`)
+	searchBookCollectionPattern = regexp.MustCompile(`\b\d+\s*(?:-| )?book collection\b`)
+)
+
+var blockedSearchTitleSnippets = []string{
+	"anthology",
+	"omnibus",
+	"boxed set",
+	"boxed sets",
+	"box set",
+	"boxset",
+	"bundle",
+	"companion guide",
+	"study guide",
+	"teacher's guide",
+	"teachers guide",
+	"workbook",
+	"planner",
+	"calendar",
+	"coloring book",
+	"poster book",
+	"short story collection",
+	"collected stories",
+	"complete works",
+	"complete series",
+	"collection set",
+	"activity book",
+	"guided journal",
+	"prompt journal",
+	"crossword",
+	"word search",
+	"notebook",
+	"2-in-1",
+	"3-in-1",
+	"4-in-1",
+	"two-in-one",
+	"three-in-one",
+	"four-in-one",
+	"all-in-one",
+}
 
 func dedupeKey(b providers.BookItem) string {
 	if s := strings.TrimSpace(strings.ToUpper(b.ASIN)); s != "" {
@@ -57,7 +102,6 @@ func mergeCover(existing, incoming string) string {
 	if incoming == "" {
 		return existing
 	}
-	// If incoming is different and non-empty, prefer incoming
 	if incoming == existing {
 		return existing
 	}
@@ -68,4 +112,30 @@ func norm(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.Join(strings.Fields(s), " ")
 	return s
+}
+
+func isRenderableSearchBook(title string, extras ...string) bool {
+	parts := []string{strings.TrimSpace(title)}
+	for _, extra := range extras {
+		if trimmed := strings.TrimSpace(extra); trimmed != "" {
+			parts = append(parts, trimmed)
+		}
+	}
+	joined := norm(strings.Join(parts, " "))
+	if joined == "" {
+		return false
+	}
+
+	for _, snippet := range blockedSearchTitleSnippets {
+		if strings.Contains(joined, snippet) {
+			return false
+		}
+	}
+	if searchBookRangePattern.MatchString(joined) ||
+		searchBookListPattern.MatchString(joined) ||
+		searchInOnePattern.MatchString(joined) ||
+		searchBookCollectionPattern.MatchString(joined) {
+		return false
+	}
+	return true
 }

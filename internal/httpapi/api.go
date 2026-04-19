@@ -514,9 +514,10 @@ func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
 			result["cover"] = cover
 		}
 	}
-	if !hasDetailedBookDescription(result) {
+	if !hasDetailedBookDescription(result) || isBlankJSONValue(result["cover"]) {
 		mergeBookEnrichment(result, s.openLibraryEnrichedData(ctx, in))
 	}
+	s.persistRecoveredRequestCover(ctx, in, result)
 
 	writeJSON(w, result, 200)
 }
@@ -602,6 +603,30 @@ func isBlankJSONValue(value any) bool {
 		return len(v) == 0
 	}
 	return false
+}
+
+func (s *Server) persistRecoveredRequestCover(ctx context.Context, in map[string]any, book map[string]any) {
+	if in == nil || book == nil {
+		return
+	}
+	requestID := int64(inputIntValue(in, "requestId"))
+	if requestID <= 0 {
+		requestID = int64(inputIntValue(in, "request_id"))
+	}
+	if requestID <= 0 {
+		return
+	}
+
+	cover := inputStringValue(book, "cover")
+	if cover == "" || strings.Contains(cover, "/static/placeholder-cover.svg") {
+		return
+	}
+
+	format := inputStringValue(in, "format")
+	if normalized := s.normalizeRequestCover(format, cover); normalized != "" {
+		book["cover"] = normalized
+		_ = s.db.UpdateRequestCover(ctx, requestID, normalized)
+	}
 }
 
 func (s *Server) openLibraryEnrichedData(ctx context.Context, in map[string]any) map[string]any {
