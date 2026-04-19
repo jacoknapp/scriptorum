@@ -3,11 +3,11 @@
   <!-- Clickable area spans first two columns (cover + text). Buttons/forms on the right should not open the modal. -->
   <div class="col-span-2 md:col-span-2 flex gap-2 items-start" data-open-book="1" role="button" tabindex="0" style="cursor:pointer;">
     <!-- Use placeholder if no cover; clicking opens details modal -->
-    <img src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
+    <img data-search-cover src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
       class="w-16 h-24 object-cover rounded-lg border border-white/10 bg-night-900"
       loading="lazy"
       decoding="async"
-      onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
+      onerror="this.onerror=null; this.src='/static/placeholder-cover.svg'; if (window.scriptorumRecoverSearchCover) { window.scriptorumRecoverSearchCover(this); }">
 
     <div class="min-w-0 pl-2 md:pl-0">
       <div class="font-medium leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">{{ .Title }}</div>

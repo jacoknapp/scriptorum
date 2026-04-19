@@ -1,11 +1,11 @@
 {{ define "search_discovery_item" }}
 <article class="rounded-xl border border-white/10 bg-night-900 p-4 shadow-card h-full flex flex-col" data-open-book="1" role="button" tabindex="0" style="cursor:pointer;">
   <div class="flex gap-4 items-start min-w-0 flex-1">
-    <img src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
+    <img data-search-cover src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
       class="w-24 h-32 object-cover rounded-lg border border-white/10 bg-night-800 shrink-0"
       loading="lazy"
       decoding="async"
-      onerror="this.onerror=null; this.src='/static/placeholder-cover.svg';">
+      onerror="this.onerror=null; this.src='/static/placeholder-cover.svg'; if (window.scriptorumRecoverSearchCover) { window.scriptorumRecoverSearchCover(this); }">
 
     <div class="min-w-0 flex-1 flex flex-col">
       <div class="flex flex-wrap gap-2 items-center mb-2">

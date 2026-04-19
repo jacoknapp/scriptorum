@@ -1371,6 +1371,183 @@
 			});
 		}
 
+		var scriptorumSearchCoverObserver = null;
+		var scriptorumSearchCoverCache = Object.create(null);
+
+		function scriptorumIsPlaceholderCover(src) {
+			return !src || String(src).indexOf('/static/placeholder-cover.svg') !== -1;
+		}
+
+		function scriptorumReadSearchCoverData(img) {
+			if (!img || !img.closest) return null;
+			var container = img.closest('li, article');
+			if (!container) return null;
+			var form = container.querySelector('form[action="/api/v1/requests"]');
+			if (!form) return null;
+
+			var ds = form.dataset || {};
+			var data = {
+				title: ds.title || form.querySelector('input[name="title"]')?.value || '',
+				isbn10: ds.isbn10 || form.querySelector('input[name="isbn10"]')?.value || '',
+				isbn13: ds.isbn13 || form.querySelector('input[name="isbn13"]')?.value || '',
+				asin: ds.asin || form.querySelector('input[name="asin"]')?.value || ''
+			};
+
+			var authEls = form.querySelectorAll('input[name="authors"]');
+			if (authEls && authEls.length) {
+				data.authors = Array.from(authEls).map(function(input) { return input.value; });
+			}
+
+			var providerPayload = form.querySelector('input[name="provider_payload"]');
+			var providerPayloadEbook = form.querySelector('input[name="provider_payload_ebook"]');
+			var providerPayloadAudiobook = form.querySelector('input[name="provider_payload_audiobook"]');
+			var detailsPayload = form.querySelector('input[name="details_payload"]');
+			if (providerPayload && providerPayload.value) data.provider_payload = providerPayload.value;
+			if (providerPayloadEbook && providerPayloadEbook.value) data.provider_payload_ebook = providerPayloadEbook.value;
+			if (providerPayloadAudiobook && providerPayloadAudiobook.value) data.provider_payload_audiobook = providerPayloadAudiobook.value;
+			if (detailsPayload && detailsPayload.value) data.details_payload = detailsPayload.value;
+			if (!scriptorumIsPlaceholderCover(img.getAttribute('src') || img.src)) data.cover = img.getAttribute('src') || img.src;
+
+			return { container: container, data: data };
+		}
+
+		function scriptorumSearchCoverKey(data) {
+			if (!data || typeof data !== 'object') return '';
+			return [
+				data.title || '',
+				data.isbn13 || '',
+				data.isbn10 || '',
+				data.asin || '',
+				Array.isArray(data.authors) ? data.authors.join('|') : (data.authors || '')
+			].join('::');
+		}
+
+		function scriptorumApplyRecoveredSearchCover(container, cover) {
+			if (!container || !cover) return;
+			container.querySelectorAll('img[data-search-cover]').forEach(function(node) {
+				node.src = cover;
+			});
+		}
+
+		window.scriptorumRecoverSearchCover = function(img) {
+			if (!img || img.dataset.coverRecoveryState === 'loading' || img.dataset.coverRecoveryState === 'done') return;
+			if (!scriptorumIsPlaceholderCover(img.getAttribute('src') || img.src)) {
+				img.dataset.coverRecoveryState = 'done';
+				return;
+			}
+
+			var parsed = scriptorumReadSearchCoverData(img);
+			if (!parsed || !parsed.data) {
+				img.dataset.coverRecoveryState = 'done';
+				return;
+			}
+
+			var data = parsed.data;
+			if (!(data.title || data.isbn13 || data.isbn10 || data.asin || data.details_payload || data.provider_payload || data.provider_payload_ebook || data.provider_payload_audiobook)) {
+				img.dataset.coverRecoveryState = 'done';
+				return;
+			}
+
+			var key = scriptorumSearchCoverKey(data);
+			if (!key) {
+				img.dataset.coverRecoveryState = 'done';
+				return;
+			}
+
+			var cached = scriptorumSearchCoverCache[key];
+			if (cached && cached.cover) {
+				scriptorumApplyRecoveredSearchCover(parsed.container, cached.cover);
+				img.dataset.coverRecoveryState = 'done';
+				return;
+			}
+
+			img.dataset.coverRecoveryState = 'loading';
+
+			var applyRecovered = function(cover) {
+				if (cover) scriptorumApplyRecoveredSearchCover(parsed.container, cover);
+				img.dataset.coverRecoveryState = 'done';
+			};
+
+			if (cached && cached.promise) {
+				cached.promise.then(applyRecovered);
+				return;
+			}
+
+			var promise = fetch('/api/v1/book/enriched', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					'HX-Request': 'true'
+				},
+				body: JSON.stringify(data),
+				credentials: 'same-origin'
+			})
+			.then(function(resp) {
+				if (!resp.ok) return null;
+				return resp.json();
+			})
+			.then(function(enrichedData) {
+				var cover = enrichedData && typeof enrichedData.cover === 'string' ? enrichedData.cover.trim() : '';
+				if (!cover || scriptorumIsPlaceholderCover(cover)) {
+					scriptorumSearchCoverCache[key] = { cover: '' };
+					return '';
+				}
+				scriptorumSearchCoverCache[key] = { cover: cover };
+				return cover;
+			})
+			.catch(function() {
+				scriptorumSearchCoverCache[key] = { cover: '' };
+				return '';
+			});
+
+			scriptorumSearchCoverCache[key] = { promise: promise };
+			promise.then(applyRecovered);
+		};
+
+		window.scriptorumHydrateSearchCovers = function(root) {
+			if (scriptorumSearchCoverObserver) {
+				scriptorumSearchCoverObserver.disconnect();
+				scriptorumSearchCoverObserver = null;
+			}
+
+			var scope = root || document;
+			var covers = Array.from(scope.querySelectorAll('img[data-search-cover]'));
+			if (!covers.length) return;
+
+			if (!('IntersectionObserver' in window)) {
+				covers.forEach(window.scriptorumRecoverSearchCover);
+				return;
+			}
+
+			scriptorumSearchCoverObserver = new IntersectionObserver(function(entries) {
+				entries.forEach(function(entry) {
+					if (!entry.isIntersecting) return;
+					scriptorumSearchCoverObserver.unobserve(entry.target);
+					window.scriptorumRecoverSearchCover(entry.target);
+				});
+			}, {
+				rootMargin: '200px 0px'
+			});
+
+			covers.forEach(function(img) {
+				if (!scriptorumIsPlaceholderCover(img.getAttribute('src') || img.src)) return;
+				scriptorumSearchCoverObserver.observe(img);
+			});
+		};
+
+		document.addEventListener('DOMContentLoaded', function() {
+			var results = document.getElementById('results');
+			window.scriptorumHydrateSearchCovers(results || document);
+		});
+
+		document.addEventListener('htmx:afterSwap', function(evt) {
+			if (!evt.detail || !evt.detail.target) return;
+			var target = evt.detail.target;
+			if (target.id === 'results' || (target.closest && target.closest('#results'))) {
+				window.scriptorumHydrateSearchCovers(target.id === 'results' ? target : document.getElementById('results'));
+			}
+		});
+
 		// Helper: open modal from an element inside a search/discovery result card.
 		window.openBookModalFromElem = function(el){
 			try {

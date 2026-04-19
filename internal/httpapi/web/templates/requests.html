@@ -258,6 +258,7 @@ function recoverRequestCover(img) {
 	requestCoverRecoveryCache[key] = { promise: promise };
 	promise.then(applyRecoveredCover);
 }
+window.scriptorumRecoverRequestCover = recoverRequestCover;
 
 function recoverRequestListCovers() {
 	if (requestCoverRecoveryObserver) {
