@@ -12,7 +12,11 @@ import (
 )
 
 func (s *Server) mountSettings(r chi.Router) {
-	funcMap := template.FuncMap{"toJSON": func(v any) string { b, _ := json.Marshal(v); return string(b) }}
+	funcMap := template.FuncMap{
+		"toJSON":        func(v any) string { b, _ := json.Marshal(v); return string(b) },
+		"authorsText":   authorsText,
+		"truncateChars": truncateChars,
+	}
 	u := &settingsUI{tpl: template.Must(template.New("tpl").Funcs(funcMap).ParseFS(tplFS, "web/templates/*.html"))}
 	r.Group(func(rt chi.Router) {
 		rt.Use(func(next http.Handler) http.Handler { return s.requireAdmin(next.ServeHTTP) })

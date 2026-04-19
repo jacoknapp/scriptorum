@@ -22,14 +22,49 @@ import (
 
 func (s *Server) mountSearch(r chi.Router) {
 	funcMap := template.FuncMap{
-		"toJSON":    func(v any) string { b, _ := json.Marshal(v); return string(b) },
-		"urlquery":  url.QueryEscape,
-		"csrfToken": func(r *http.Request) string { return s.getCSRFToken(r) },
+		"toJSON":        func(v any) string { b, _ := json.Marshal(v); return string(b) },
+		"urlquery":      url.QueryEscape,
+		"csrfToken":     func(r *http.Request) string { return s.getCSRFToken(r) },
+		"authorsText":   authorsText,
+		"truncateChars": truncateChars,
 	}
 	u := &searchUI{tpl: template.Must(template.New("tpl").Funcs(funcMap).ParseFS(tplFS, "web/templates/*.html"))}
 	r.Get("/ui/search", u.handleSearch(s))
 	// Readarr cover proxy (fetch fresh each call). Search UI will link images here
 	r.Get("/ui/readarr-cover", s.requireLogin(s.serveReadarrCover()))
+}
+
+func authorsText(authors []string) string {
+	if len(authors) == 0 {
+		return "Unknown Author"
+	}
+	names := make([]string, 0, len(authors))
+	for _, author := range authors {
+		author = strings.TrimSpace(author)
+		if author == "" {
+			continue
+		}
+		names = append(names, author)
+	}
+	if len(names) == 0 {
+		return "Unknown Author"
+	}
+	return strings.Join(names, ", ")
+}
+
+func truncateChars(value string, limit int) string {
+	value = strings.TrimSpace(value)
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(value)
+	if len(runes) <= limit {
+		return value
+	}
+	if limit <= 3 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-3]) + "..."
 }
 
 type searchUI struct{ tpl *template.Template }
@@ -630,9 +665,7 @@ func pickDiscoveryBooks(books []providers.BookItem, minYear, limit int) []provid
 				recent = append(recent, book)
 			}
 		}
-		if len(recent) > 0 {
-			candidates = recent
-		}
+		candidates = recent
 	}
 
 	if len(candidates) > limit {

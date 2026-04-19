@@ -16,8 +16,10 @@ import (
 
 func (s *Server) mountUI(r chi.Router) {
 	funcMap := template.FuncMap{
-		"toJSON":    func(v any) string { b, _ := json.Marshal(v); return string(b) },
-		"csrfToken": func(r *http.Request) string { return s.getCSRFToken(r) },
+		"toJSON":        func(v any) string { b, _ := json.Marshal(v); return string(b) },
+		"csrfToken":     func(r *http.Request) string { return s.getCSRFToken(r) },
+		"authorsText":   authorsText,
+		"truncateChars": truncateChars,
 	}
 	u := &ui{tpl: template.Must(template.New("tpl").Funcs(funcMap).ParseFS(tplFS, "web/templates/*.html"))}
 	r.Group(func(rt chi.Router) {

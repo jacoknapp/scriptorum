@@ -48,3 +48,11 @@ func TestOpenLibraryHTTPError(t *testing.T) {
 		t.Fatalf("expected error")
 	}
 }
+
+func TestOpenLibraryCoverURLNormalizesBookPathEditionKey(t *testing.T) {
+	got := openLibraryCoverURL(0, "/books/OL36647151M")
+	want := "https://covers.openlibrary.org/b/olid/OL36647151M-M.jpg"
+	if got != want {
+		t.Fatalf("expected normalized cover URL %q, got %q", want, got)
+	}
+}

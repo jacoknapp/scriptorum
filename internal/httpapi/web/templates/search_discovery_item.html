@@ -18,17 +18,7 @@
       </div>
 
       <div class="font-semibold text-slate-100 whitespace-normal break-words" style="display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;">{{ .Title }}</div>
-      <div class="mt-2 text-sm text-slate-300 whitespace-normal break-words">
-        {{ if gt (len .Authors) 0 }}
-          {{ if eq (len .Authors) 1 }}
-            {{ index .Authors 0 }}
-          {{ else }}
-            {{ range $i, $author := .Authors }}{{ if $i }}, {{ end }}{{ $author }}{{ end }}
-          {{ end }}
-        {{ else }}
-          Unknown Author
-        {{ end }}
-      </div>
+      <div class="mt-2 text-sm text-slate-300 whitespace-normal break-words">{{ truncateChars (authorsText .Authors) 72 }}</div>
 
       <div class="mt-3 flex flex-wrap gap-2 text-xs">
         {{ if .EbookState }}

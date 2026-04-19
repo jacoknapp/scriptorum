@@ -267,10 +267,24 @@ func openLibraryCoverURL(coverID int, coverEditionKey string) string {
 	if coverID != 0 {
 		return fmt.Sprintf("https://covers.openlibrary.org/b/id/%d-M.jpg", coverID)
 	}
-	if strings.TrimSpace(coverEditionKey) != "" {
-		return "https://covers.openlibrary.org/b/olid/" + url.PathEscape(strings.TrimSpace(coverEditionKey)) + "-M.jpg"
+	normalizedEditionKey := normalizeOpenLibraryEditionKey(coverEditionKey)
+	if normalizedEditionKey != "" {
+		return "https://covers.openlibrary.org/b/olid/" + url.PathEscape(normalizedEditionKey) + "-M.jpg"
 	}
 	return ""
+}
+
+func normalizeOpenLibraryEditionKey(coverEditionKey string) string {
+	key := strings.TrimSpace(coverEditionKey)
+	if key == "" {
+		return ""
+	}
+	key = strings.TrimPrefix(key, "/")
+	key = strings.TrimPrefix(key, "books/")
+	if slash := strings.IndexRune(key, '/'); slash >= 0 {
+		key = key[:slash]
+	}
+	return strings.TrimSpace(key)
 }
 
 func parseOpenLibraryText(raw json.RawMessage) string {
