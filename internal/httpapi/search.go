@@ -456,8 +456,8 @@ func (u *searchUI) loadTrendingBooks(ctx context.Context) []searchItem {
 	if err != nil || len(books) == 0 {
 		return nil
 	}
-	books = pickDiscoveryBooks(books, 2010, discoveryTrendingSize)
-	books = backfillOpenLibraryWorkCovers(ctx, ol, books)
+	books = pickDiscoveryBooks(books, 2010, len(books))
+	books = backfillOpenLibraryDiscoveryMetadata(ctx, ol, books, discoveryTrendingSize)
 	items := make([]searchItem, 0, len(books))
 	for _, book := range books {
 		items = append(items, openLibrarySearchItem(book, "Trending pick"))
@@ -551,8 +551,9 @@ func buildOpenLibraryDetailsPayload(book providers.BookItem) string {
 func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary, query discoveryQuery) []providers.BookItem {
 	candidates := make([]providers.BookItem, 0, discoveryCategorySize*3)
 	seen := make(map[string]struct{}, discoveryCategorySize*3)
+	detailsCache := make(map[string]*providers.OpenLibraryWorkDetails, discoveryCategorySize*4)
 	selectedCount := func() int {
-		return len(pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize))
+		return len(selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache))
 	}
 	appendCandidates := func(books []providers.BookItem) {
 		for _, book := range books {
@@ -576,7 +577,7 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 			}
 			appendCandidates(books)
 			if selectedCount() >= discoveryCategorySize {
-				return pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)
+				return selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache)
 			}
 		}
 	}
@@ -589,13 +590,12 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 			}
 			appendCandidates(books)
 			if selectedCount() >= discoveryCategorySize {
-				break
+				return selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache)
 			}
 		}
 	}
 
-	selected := pickDiscoveryBooks(candidates, query.MinYear, discoveryCategorySize)
-	return backfillOpenLibraryWorkCovers(ctx, ol, selected)
+	return selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache)
 }
 
 func discoveryRecentFallbackQueries(query discoveryQuery) []string {
@@ -766,6 +766,96 @@ func backfillOpenLibraryWorkCovers(ctx context.Context, ol *providers.OpenLibrar
 		}
 	}
 	return books
+}
+
+func backfillOpenLibraryDiscoveryMetadata(ctx context.Context, ol *providers.OpenLibrary, books []providers.BookItem, limit int) []providers.BookItem {
+	return backfillOpenLibraryDiscoveryMetadataWithCache(ctx, ol, books, limit, nil)
+}
+
+func backfillOpenLibraryDiscoveryMetadataWithCache(ctx context.Context, ol *providers.OpenLibrary, books []providers.BookItem, limit int, detailsCache map[string]*providers.OpenLibraryWorkDetails) []providers.BookItem {
+	if len(books) == 0 {
+		return nil
+	}
+	if limit <= 0 || limit > len(books) {
+		limit = len(books)
+	}
+
+	if detailsCache == nil {
+		detailsCache = make(map[string]*providers.OpenLibraryWorkDetails, len(books))
+	}
+	filtered := make([]providers.BookItem, 0, limit)
+	for _, book := range books {
+		if len(filtered) >= limit {
+			break
+		}
+		book = enrichDiscoveryBook(ctx, ol, book, detailsCache)
+		if !hasDiscoveryMetadata(book) {
+			continue
+		}
+		filtered = append(filtered, book)
+	}
+	return filtered
+}
+
+func selectDiscoveryBooks(ctx context.Context, ol *providers.OpenLibrary, books []providers.BookItem, minYear, limit int, detailsCache map[string]*providers.OpenLibraryWorkDetails) []providers.BookItem {
+	ranked := pickDiscoveryBooks(books, minYear, len(books))
+	return backfillOpenLibraryDiscoveryMetadataWithCache(ctx, ol, ranked, limit, detailsCache)
+}
+
+func enrichDiscoveryBook(ctx context.Context, ol *providers.OpenLibrary, book providers.BookItem, detailsCache map[string]*providers.OpenLibraryWorkDetails) providers.BookItem {
+	book = normalizeDiscoveryBookCovers(book)
+	if ol == nil {
+		return book
+	}
+	if strings.TrimSpace(book.Description) != "" && strings.TrimSpace(book.CoverMedium) != "" && strings.TrimSpace(book.CoverSmall) != "" {
+		return book
+	}
+
+	workKey := strings.TrimSpace(book.OpenLibraryWorkKey)
+	if workKey == "" {
+		return book
+	}
+
+	details, ok := detailsCache[workKey]
+	if !ok {
+		fetched, err := ol.WorkDetails(ctx, workKey)
+		if err != nil {
+			detailsCache[workKey] = nil
+			return book
+		}
+		details = fetched
+		detailsCache[workKey] = fetched
+	}
+	if details == nil {
+		return book
+	}
+	if strings.TrimSpace(book.Description) == "" {
+		book.Description = strings.TrimSpace(details.Description)
+	}
+	if strings.TrimSpace(book.CoverMedium) == "" {
+		book.CoverMedium = strings.TrimSpace(details.CoverMedium)
+	}
+	if strings.TrimSpace(book.CoverSmall) == "" {
+		book.CoverSmall = util.FirstNonEmpty(strings.TrimSpace(details.CoverMedium), strings.TrimSpace(book.CoverMedium))
+	}
+	return normalizeDiscoveryBookCovers(book)
+}
+
+func normalizeDiscoveryBookCovers(book providers.BookItem) providers.BookItem {
+	if strings.TrimSpace(book.CoverMedium) == "" && strings.TrimSpace(book.CoverSmall) != "" {
+		book.CoverMedium = strings.TrimSpace(book.CoverSmall)
+	}
+	if strings.TrimSpace(book.CoverSmall) == "" && strings.TrimSpace(book.CoverMedium) != "" {
+		book.CoverSmall = strings.TrimSpace(book.CoverMedium)
+	}
+	return book
+}
+
+func hasDiscoveryMetadata(book providers.BookItem) bool {
+	if strings.TrimSpace(book.Description) == "" {
+		return false
+	}
+	return util.FirstNonEmpty(strings.TrimSpace(book.CoverMedium), strings.TrimSpace(book.CoverSmall)) != ""
 }
 
 func decorateSearchItems(s *Server, items []searchItem) {

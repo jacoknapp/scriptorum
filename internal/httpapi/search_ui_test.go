@@ -1,10 +1,12 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +15,45 @@ import (
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+var openLibraryTestSlugPattern = regexp.MustCompile(`[^a-z0-9]+`)
+
+func openLibraryTestWorkKey(title string) string {
+	slug := strings.ToLower(strings.TrimSpace(title))
+	slug = openLibraryTestSlugPattern.ReplaceAllString(slug, "-")
+	slug = strings.Trim(slug, "-")
+	if slug == "" {
+		slug = "unknown"
+	}
+	return "/works/TEST-" + slug
+}
+
+func withOpenLibrarySearchWorkKeys(raw string) string {
+	var payload struct {
+		Docs []map[string]any `json:"docs"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return raw
+	}
+	for _, doc := range payload.Docs {
+		if doc == nil {
+			continue
+		}
+		if _, ok := doc["key"]; ok {
+			continue
+		}
+		title, _ := doc["title"].(string)
+		if strings.TrimSpace(title) == "" {
+			continue
+		}
+		doc["key"] = openLibraryTestWorkKey(title)
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return raw
+	}
+	return string(encoded)
+}
 
 func installOpenLibraryDiscoveryTransport(t *testing.T) {
 	prevTransport := http.DefaultTransport
@@ -23,12 +64,21 @@ func installOpenLibraryDiscoveryTransport(t *testing.T) {
 
 		bodyByPath := map[string]string{
 			"/trending/weekly.json": `{"works":[
-				{"title":"Project Hail Mary","author_name":["Andy Weir"],"cover_i":1,"first_publish_year":2021},
-				{"title":"Funny Story","author_name":["Emily Henry"],"cover_i":2,"first_publish_year":2024},
-				{"title":"Fourth Wing","author_name":["Rebecca Yarros"],"cover_i":3,"first_publish_year":2023}
+				{"title":"Project Hail Mary","author_name":["Andy Weir"],"cover_i":1,"first_publish_year":2021,"key":"/works/TEST-project-hail-mary"},
+				{"title":"Funny Story","author_name":["Emily Henry"],"cover_i":2,"first_publish_year":2024,"key":"/works/TEST-funny-story"},
+				{"title":"Fourth Wing","author_name":["Rebecca Yarros"],"cover_i":3,"first_publish_year":2023,"key":"/works/TEST-fourth-wing"}
 			]}`,
 		}
 		if body, ok := bodyByPath[r.URL.Path]; ok {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     make(http.Header),
+			}, nil
+		}
+		if strings.HasPrefix(r.URL.Path, "/works/") && strings.HasSuffix(r.URL.Path, ".json") {
+			workKey := strings.TrimSuffix(r.URL.Path, ".json")
+			body := fmt.Sprintf(`{"key":%q,"description":"Detailed discovery metadata for %s.","covers":[112233],"first_publish_date":"2024-01-01"}`, workKey, workKey)
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(strings.NewReader(body)),
@@ -111,6 +161,7 @@ func installOpenLibraryDiscoveryTransport(t *testing.T) {
 					Header:     make(http.Header),
 				}, nil
 			}
+			body = withOpenLibrarySearchWorkKeys(body)
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(strings.NewReader(body)),
