@@ -160,6 +160,9 @@ func (u *setupUI) handleTestOAuth(s *Server) http.HandlerFunc {
 			tokenURL = cfg.OAuth.TokenURL
 		}
 
+		// Set response header early, before any early returns
+		w.Header().Set("HX-Trigger", "setup-saved")
+
 		// Quick validation
 		if issuer == "" || clientID == "" || redirect == "" {
 			writeProbeHTML(w, false, "missing issuer/client_id/redirect")
@@ -186,7 +189,6 @@ func (u *setupUI) handleTestOAuth(s *Server) http.HandlerFunc {
 
 		ok := err == nil
 		stepFlags["oauth"] = ok
-		w.Header().Set("HX-Trigger", "setup-saved")
 		writeProbeHTML(w, ok, errString(err))
 	}
 }

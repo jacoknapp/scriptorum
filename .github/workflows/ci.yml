@@ -1,4 +1,5 @@
 name: ci-cd
+# Platform: GitHub Actions
 
 on:
   push:
@@ -21,9 +22,8 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-
-      - name: Go mod download
-        run: go mod download
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Build
         run: |
@@ -35,26 +35,19 @@ jobs:
             exit 1
           fi
 
-      - name: Test (per-package coverage merge)
+      - name: Test (single-pass coverage)
         run: |
-          # Run tests per-package and merge coverage profiles to avoid requiring
-          # the covdata tool which may not be available in all module versions.
-          set -eu
-          BASE=coverage.out
-          echo "mode: atomic" > $BASE
-          for pkg in $(go list ./...); do
-            echo "testing $pkg"
-            # run package tests; continue on failure so coverage can be collected for others
-            if go test -covermode=atomic -coverprofile=tmp_cov.out $pkg; then
-              # append profile lines excluding the header
-              if [ -f tmp_cov.out ]; then
-                tail -n +2 tmp_cov.out >> $BASE
-                rm -f tmp_cov.out
-              fi
-            else
-              echo "tests failed for $pkg, continuing"
-            fi
-          done
+          # Run all tests once and generate a single merged profile.
+          go test -covermode=atomic -coverprofile=coverage.out ./...
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v3
+        env:
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
+        with:
+          name: scriptorum-coverage
+          path: coverage.out
 
       - name: Show build output
         run: |
@@ -197,8 +190,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - name: Go mod download
-        run: go mod download
+          cache: true
+          cache-dependency-path: go.sum
       - name: Vet
         run: go vet ./...
       - name: Install golangci-lint (prebuilt)
@@ -221,7 +214,18 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-      - name: Run tests (no coverage)
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@v3
+        env:
+          NODE_TLS_REJECT_UNAUTHORIZED: '0'
+        with:
+          name: scriptorum-coverage
+          path: .
+
+      - name: Report coverage
         run: |
-          # Run all tests without generating coverage artifacts to avoid covdata/tooling issues
-          go test ./...
+          test -f coverage.out
+          go tool cover -func coverage.out | tee coverage-summary.txt

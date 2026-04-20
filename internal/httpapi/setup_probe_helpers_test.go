@@ -11,7 +11,7 @@ import (
 
 func TestHandleTestReadarrUsesSavedSettings(t *testing.T) {
 	readarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/book" {
+		if r.URL.Path != "/api/v1/book/lookup" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
 		w.WriteHeader(http.StatusOK)
