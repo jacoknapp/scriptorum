@@ -11,7 +11,8 @@ import (
 func TestOpenLibrarySearch(t *testing.T) {
 	ol := NewOpenLibrary()
 	ol.cl.Transport = rtFunc(func(r *http.Request) (*http.Response, error) {
-		body := `{"docs":[{"title":"Project Hail Mary","author_name":["Andy Weir"],"isbn":["1529157466"],"isbn13":["9781529157468"],"cover_i":12345,"cover_edition_key":"OL32553390M","first_publish_year":2021,"key":"/works/OL21745884W"}]}`
+		// Realistic OL search response: "isbn" field contains mixed ISBN-10 and ISBN-13 values
+		body := `{"docs":[{"title":"Project Hail Mary","author_name":["Andy Weir"],"isbn":["1529157466","9781529157468"],"cover_i":12345,"cover_edition_key":"OL32553390M","first_publish_year":2021,"key":"/works/OL21745884W"}]}`
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	})
 	items, err := ol.Search(context.Background(), "project hail mary", 10, 1)

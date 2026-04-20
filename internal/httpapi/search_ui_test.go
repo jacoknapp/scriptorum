@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 )
 
 type roundTripFunc func(*http.Request) (*http.Response, error)
@@ -57,6 +59,10 @@ func withOpenLibrarySearchWorkKeys(raw string) string {
 }
 
 func installOpenLibraryDiscoveryTransport(t *testing.T) {
+	// Disable the rate limiter since HTTP transport is mocked and instant
+	restore := providers.TestDisableOLRateLimiter()
+	t.Cleanup(restore)
+
 	prevTransport := http.DefaultTransport
 	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "openlibrary.org" {
@@ -311,6 +317,7 @@ func TestCachedDiscoverySearchDataReturnsLoadingThenCachesAsync(t *testing.T) {
 	s := newServerForTest(t)
 
 	originalBuilder := buildDiscoverySearchDataFn
+	originalProbe := discoveryProbeErrorFn
 	buildDiscoverySearchDataFn = func(ctx context.Context, _ *Server, _ *searchUI) map[string]any {
 		select {
 		case <-ctx.Done():
@@ -322,7 +329,11 @@ func TestCachedDiscoverySearchDataReturnsLoadingThenCachesAsync(t *testing.T) {
 			}
 		}
 	}
-	t.Cleanup(func() { buildDiscoverySearchDataFn = originalBuilder })
+	discoveryProbeErrorFn = func(context.Context) string { return "" }
+	t.Cleanup(func() {
+		buildDiscoverySearchDataFn = originalBuilder
+		discoveryProbeErrorFn = originalProbe
+	})
 
 	shortCtx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
 	defer cancel()
@@ -360,6 +371,7 @@ func TestCachedDiscoverySearchDataServesStaleWhileRefreshing(t *testing.T) {
 	s.discoveryCacheAt = time.Now().Add(-discoveryCacheTTL - time.Minute).Unix()
 
 	originalBuilder := buildDiscoverySearchDataFn
+	originalProbe := discoveryProbeErrorFn
 	buildDiscoverySearchDataFn = func(ctx context.Context, _ *Server, _ *searchUI) map[string]any {
 		select {
 		case <-ctx.Done():
@@ -374,7 +386,11 @@ func TestCachedDiscoverySearchDataServesStaleWhileRefreshing(t *testing.T) {
 			}
 		}
 	}
-	t.Cleanup(func() { buildDiscoverySearchDataFn = originalBuilder })
+	discoveryProbeErrorFn = func(context.Context) string { return "" }
+	t.Cleanup(func() {
+		buildDiscoverySearchDataFn = originalBuilder
+		discoveryProbeErrorFn = originalProbe
+	})
 
 	data := s.cachedDiscoverySearchData(context.Background(), &searchUI{})
 	categories, _ := data["DiscoveryCategories"].([]discoveryCategory)

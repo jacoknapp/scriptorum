@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"math/rand"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -16,9 +20,23 @@ type OpenLibrary struct {
 	baseURL string
 }
 
+// olRateLimiter is a global token-bucket rate limiter shared across all
+// OpenLibrary client instances. OpenLibrary allows ~3 req/s for identified
+// User-Agents; we target 2 req/s to stay safely under the limit.
+var olRateLimiter = newTokenBucket(2, 4) // 2 tokens/sec, burst of 4
+
+// TestDisableOLRateLimiter replaces the global rate limiter with a very
+// fast one so that tests using mocked HTTP transport are not throttled.
+// Call the returned function to restore the original limiter.
+func TestDisableOLRateLimiter() func() {
+	orig := olRateLimiter
+	olRateLimiter = newTokenBucket(100000, 10000)
+	return func() { olRateLimiter = orig }
+}
+
 func NewOpenLibrary() *OpenLibrary {
 	return &OpenLibrary{
-		cl:      &http.Client{Timeout: 8 * time.Second},
+		cl:      &http.Client{Timeout: 10 * time.Second},
 		baseURL: "https://openlibrary.org",
 	}
 }
@@ -26,8 +44,7 @@ func NewOpenLibrary() *OpenLibrary {
 type OLDoc struct {
 	Title            string   `json:"title"`
 	AuthorName       []string `json:"author_name"`
-	ISBN10           []string `json:"isbn"`
-	ISBN13           []string `json:"isbn13"`
+	ISBN             []string `json:"isbn"` // OL returns mixed ISBN-10 and ISBN-13 values in a single field
 	CoverId          int      `json:"cover_i"`
 	CoverEditionKey  string   `json:"cover_edition_key"`
 	FirstPublishYear int      `json:"first_publish_year"`
@@ -116,25 +133,14 @@ func (ol *OpenLibrary) Search(ctx context.Context, q string, limit, page int) ([
 	if page > 1 {
 		u += "&page=" + strconv.Itoa(page)
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	resp, err := ol.cl.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
 	var out OLResp
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := ol.getJSON(ctx, u, "search", &out); err != nil {
 		return nil, err
 	}
 	var items []BookItem
 	for _, d := range out.Docs {
-		var i10, i13 string
-		if len(d.ISBN10) > 0 {
-			i10 = d.ISBN10[0]
-		}
-		if len(d.ISBN13) > 0 {
-			i13 = d.ISBN13[0]
-		}
+		// OL search returns all ISBNs in a single "isbn" field; split by length
+		i10, i13 := splitISBNs(d.ISBN)
 		cover := openLibraryCoverURL(d.CoverId, d.CoverEditionKey)
 		items = append(items, BookItem{
 			Title:                 d.Title,
@@ -154,7 +160,7 @@ func (ol *OpenLibrary) Search(ctx context.Context, q string, limit, page int) ([
 func (ol *OpenLibrary) TrendingWorks(ctx context.Context, period string, limit int) ([]BookItem, error) {
 	period = strings.ToLower(strings.TrimSpace(period))
 	switch period {
-	case "daily", "weekly", "monthly", "yearly", "all":
+	case "daily", "weekly", "monthly", "yearly", "forever":
 	default:
 		period = "weekly"
 	}
@@ -162,14 +168,8 @@ func (ol *OpenLibrary) TrendingWorks(ctx context.Context, period string, limit i
 		limit = 10
 	}
 	u := ol.apiURL("/trending/" + url.PathEscape(period) + ".json?limit=" + strconv.Itoa(limit))
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	resp, err := ol.cl.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
 	var out OLTrendingResp
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := ol.getJSON(ctx, u, "trending", &out); err != nil {
 		return nil, err
 	}
 	items := make([]BookItem, 0, len(out.Works))
@@ -197,14 +197,8 @@ func (ol *OpenLibrary) SubjectWorks(ctx context.Context, subject string, limit i
 		limit = 6
 	}
 	u := ol.apiURL("/subjects/" + url.PathEscape(subject) + ".json?limit=" + strconv.Itoa(limit))
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	resp, err := ol.cl.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
 	var out OLSubjectResp
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := ol.getJSON(ctx, u, "subject", &out); err != nil {
 		return nil, err
 	}
 	items := make([]BookItem, 0, len(out.Works))
@@ -237,14 +231,8 @@ func (ol *OpenLibrary) WorkDetails(ctx context.Context, workKey string) (*OpenLi
 		workKey = "/" + workKey
 	}
 	u := ol.apiURL(workKey + ".json")
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	resp, err := ol.cl.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
 	var out OLWorkDetailsResp
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+	if err := ol.getJSON(ctx, u, "work details", &out); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(out.Key) == "" && strings.TrimSpace(out.Title) == "" && len(out.Subjects) == 0 && len(out.Covers) == 0 && len(out.Description) == 0 {
@@ -302,10 +290,159 @@ func parseOpenLibraryText(raw json.RawMessage) string {
 	return ""
 }
 
+// splitISBNs separates a mixed list of ISBNs (as returned by OpenLibrary's
+// search API "isbn" field) into the first ISBN-10 and first ISBN-13 found.
+func splitISBNs(isbns []string) (isbn10, isbn13 string) {
+	for _, raw := range isbns {
+		v := strings.TrimSpace(raw)
+		if v == "" {
+			continue
+		}
+		switch len(v) {
+		case 10:
+			if isbn10 == "" {
+				isbn10 = v
+			}
+		case 13:
+			if isbn13 == "" {
+				isbn13 = v
+			}
+		}
+		if isbn10 != "" && isbn13 != "" {
+			break
+		}
+	}
+	return
+}
+
 func (ol *OpenLibrary) apiURL(path string) string {
 	base := strings.TrimRight(strings.TrimSpace(ol.baseURL), "/")
 	if base == "" {
 		base = "https://openlibrary.org"
 	}
 	return base + path
+}
+
+// olMaxRetries is the maximum number of retries on 429 Too Many Requests.
+const olMaxRetries = 3
+
+func (ol *OpenLibrary) getJSON(ctx context.Context, endpointURL, endpointName string, out any) error {
+	for attempt := 0; attempt <= olMaxRetries; attempt++ {
+		// Wait for a rate-limit token before sending the request.
+		if err := olRateLimiter.Wait(ctx); err != nil {
+			return fmt.Errorf("openlibrary %s rate-limit wait: %w", endpointName, err)
+		}
+
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpointURL, nil)
+		req.Header.Set("User-Agent", openLibraryUserAgent())
+		req.Header.Set("Accept", "application/json")
+
+		resp, err := ol.cl.Do(req)
+		if err != nil {
+			return err
+		}
+
+		// On 429 Too Many Requests, back off with exponential delay + jitter.
+		if resp.StatusCode == http.StatusTooManyRequests {
+			resp.Body.Close()
+			if attempt == olMaxRetries {
+				return fmt.Errorf("openlibrary %s HTTP 429 Too Many Requests (after %d retries)", endpointName, olMaxRetries)
+			}
+			backoff := olBackoff(attempt)
+			select {
+			case <-time.After(backoff):
+				continue
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		defer resp.Body.Close()
+
+		if resp.StatusCode >= 400 {
+			body, _ := io.ReadAll(resp.Body)
+			msg := strings.TrimSpace(string(body))
+			if len(msg) > 200 {
+				msg = msg[:200] + "..."
+			}
+			return fmt.Errorf("openlibrary %s HTTP %s: %s", endpointName, resp.Status, msg)
+		}
+
+		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+			return err
+		}
+		return nil
+	}
+	return fmt.Errorf("openlibrary %s: exhausted retries", endpointName)
+}
+
+// olBackoff returns the backoff duration for the given retry attempt using
+// exponential backoff with jitter: base * 2^attempt + random(0, base).
+func olBackoff(attempt int) time.Duration {
+	base := 2 * time.Second
+	delay := base * time.Duration(1<<uint(attempt)) // 2s, 4s, 8s
+	jitter := time.Duration(rand.Int63n(int64(base)))
+	return delay + jitter
+}
+
+func openLibraryUserAgent() string {
+	if ua := strings.TrimSpace(os.Getenv("OPENLIBRARY_USER_AGENT")); ua != "" {
+		return ua
+	}
+	// OL grants higher rate limits (3 req/s) to User-Agents with contact info.
+	// Format: "AppName/Version (mailto:contact@domain; +homepage)"
+	if email := strings.TrimSpace(os.Getenv("OPENLIBRARY_CONTACT_EMAIL")); email != "" {
+		return "Scriptorum/1.0 (mailto:" + email + "; +https://openlibrary.org)"
+	}
+	return "Scriptorum/1.0 (+https://openlibrary.org)"
+}
+
+// tokenBucket implements a simple token-bucket rate limiter that is safe
+// for concurrent use. Tokens refill at a fixed rate up to a maximum burst.
+type tokenBucket struct {
+	mu       sync.Mutex
+	tokens   float64
+	max      float64
+	rate     float64 // tokens per second
+	lastFill time.Time
+}
+
+func newTokenBucket(ratePerSec, burst float64) *tokenBucket {
+	return &tokenBucket{
+		tokens:   burst,
+		max:      burst,
+		rate:     ratePerSec,
+		lastFill: time.Now(),
+	}
+}
+
+// Wait blocks until a token is available or ctx is cancelled.
+func (tb *tokenBucket) Wait(ctx context.Context) error {
+	for {
+		tb.mu.Lock()
+		now := time.Now()
+		elapsed := now.Sub(tb.lastFill).Seconds()
+		tb.tokens += elapsed * tb.rate
+		if tb.tokens > tb.max {
+			tb.tokens = tb.max
+		}
+		tb.lastFill = now
+
+		if tb.tokens >= 1.0 {
+			tb.tokens -= 1.0
+			tb.mu.Unlock()
+			return nil
+		}
+
+		// Calculate how long until the next token is available.
+		wait := time.Duration((1.0-tb.tokens)/tb.rate*1000) * time.Millisecond
+		tb.mu.Unlock()
+
+		select {
+		case <-time.After(wait):
+			// Try again after waiting.
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }

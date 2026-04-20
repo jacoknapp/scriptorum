@@ -91,19 +91,20 @@ type discoveryCategory struct {
 }
 
 type discoveryQuery struct {
-	Name        string
-	Description string
-	Queries     []string
-	RecentTerms []string
-	MinYear     int
+	Name             string
+	Description      string
+	Queries          []string
+	RecentTerms      []string
+	SubjectFallbacks []string
+	MinYear          int
 }
 
 const (
 	discoveryCategorySize = 8
 	discoveryTrendingSize = 8
-	discoveryCacheTTL     = 15 * time.Minute
+	discoveryCacheTTL     = 30 * time.Minute  // cache discovery results longer to reduce OL API calls
 	discoveryFastBuildTTL = 1200 * time.Millisecond
-	discoveryBuildTTL     = 12 * time.Second
+	discoveryBuildTTL     = 45 * time.Second  // sequential category loading with rate limiting needs more time
 )
 
 var buildDiscoverySearchDataFn = buildDiscoverySearchData
@@ -114,32 +115,36 @@ func defaultDiscoveryQueriesFn() []discoveryQuery {
 	minYear := time.Now().Year() - 10
 	return []discoveryQuery{
 		{
-			Name:        "Fantasy Hits",
-			Description: "Romantasy, dragons, and high-stakes series readers are tearing through right now.",
-			Queries:     []string{"fantasy novel bestseller", "epic fantasy novel bestseller", "fantasy fiction", "dark fantasy novel"},
-			RecentTerms: []string{"fantasy novel", "fantasy fiction", "epic fantasy novel"},
-			MinYear:     minYear,
+			Name:             "Fantasy Hits",
+			Description:      "Romantasy, dragons, and high-stakes series readers are tearing through right now.",
+			Queries:          []string{"fantasy novel bestseller", "epic fantasy novel bestseller", "fantasy fiction", "dark fantasy novel"},
+			RecentTerms:      []string{"fantasy novel", "fantasy fiction", "epic fantasy novel"},
+			SubjectFallbacks: []string{"fantasy"},
+			MinYear:          minYear,
 		},
 		{
-			Name:        "Thriller Buzz",
-			Description: "Fast, twisty page-turners with recent momentum and bingeable energy.",
-			Queries:     []string{"psychological thriller novel", "domestic thriller novel", "crime thriller novel", "suspense thriller novel"},
-			RecentTerms: []string{"thriller novel", "domestic suspense novel", "mystery thriller novel"},
-			MinYear:     minYear,
+			Name:             "Thriller Buzz",
+			Description:      "Fast, twisty page-turners with recent momentum and bingeable energy.",
+			Queries:          []string{"psychological thriller novel", "domestic thriller novel", "crime thriller novel", "suspense thriller novel"},
+			RecentTerms:      []string{"thriller novel", "domestic suspense novel", "mystery thriller novel"},
+			SubjectFallbacks: []string{"thriller", "mystery"},
+			MinYear:          minYear,
 		},
 		{
-			Name:        "Romance Favorites",
-			Description: "Big contemporary romances, buzzy love stories, and crossover hits with real reader momentum.",
-			Queries:     []string{"romance novel", "contemporary romance novel", "rom com romance novel", "love story novel"},
-			RecentTerms: []string{"romance novel", "contemporary romance novel", "romantic comedy novel"},
-			MinYear:     minYear,
+			Name:             "Romance Favorites",
+			Description:      "Big contemporary romances, buzzy love stories, and crossover hits with real reader momentum.",
+			Queries:          []string{"romance novel", "contemporary romance novel", "rom com romance novel", "love story novel"},
+			RecentTerms:      []string{"romance novel", "contemporary romance novel", "romantic comedy novel"},
+			SubjectFallbacks: []string{"romance"},
+			MinYear:          minYear,
 		},
 		{
-			Name:        "Sci-Fi Series Hits",
-			Description: "Big-concept modern science fiction with sequel energy and strong fan followings.",
-			Queries:     []string{"science fiction novel", "space opera novel", "dystopian science fiction novel", "hard science fiction novel"},
-			RecentTerms: []string{"science fiction novel", "space opera novel", "sci fi novel"},
-			MinYear:     minYear,
+			Name:             "Sci-Fi Series Hits",
+			Description:      "Big-concept modern science fiction with sequel energy and strong fan followings.",
+			Queries:          []string{"science fiction novel", "space opera novel", "dystopian science fiction novel", "hard science fiction novel"},
+			RecentTerms:      []string{"science fiction novel", "space opera novel", "sci fi novel"},
+			SubjectFallbacks: []string{"science fiction"},
+			MinYear:          minYear,
 		},
 	}
 }
@@ -419,6 +424,7 @@ func buildDiscoverySearchData(ctx context.Context, s *Server, u *searchUI) map[s
 	for i := range categories {
 		decorateSearchItems(s, categories[i].Items)
 	}
+	categories = ensureDiscoveryCategories(categories, trending)
 	return map[string]any{
 		"IsDiscovery":         true,
 		"TrendingNow":         trending,
@@ -455,6 +461,11 @@ func (s *Server) cachedDiscoverySearchData(ctx context.Context, u *searchUI) map
 		s.discoveryCacheAt = time.Now().Unix()
 		s.discoveryCacheMu.Unlock()
 		return fresh
+	}
+
+	if errMsg := discoveryProbeErrorFn(ctx); errMsg != "" {
+		s.triggerDiscoveryRefresh(u)
+		return discoveryErrorSearchData(errMsg)
 	}
 
 	s.triggerDiscoveryRefresh(u)
@@ -501,6 +512,50 @@ func hasDiscoveryContent(data map[string]any) bool {
 	return false
 }
 
+func ensureDiscoveryCategories(categories []discoveryCategory, trending []searchItem) []discoveryCategory {
+	if len(categories) > 0 || len(trending) == 0 {
+		return categories
+	}
+	limit := discoveryCategorySize
+	if len(trending) < limit {
+		limit = len(trending)
+	}
+	items := make([]searchItem, limit)
+	copy(items, trending[:limit])
+	return []discoveryCategory{{
+		Name:        "More to Explore",
+		Description: "Popular picks while full discovery shelves refresh.",
+		Items:       items,
+	}}
+}
+
+func discoveryErrorSearchData(errMsg string) map[string]any {
+	errMsg = strings.TrimSpace(errMsg)
+	if errMsg == "" {
+		errMsg = "Discovery provider is unreachable"
+	}
+	return map[string]any{
+		"IsDiscovery":    true,
+		"DiscoveryError": errMsg,
+	}
+}
+
+func discoveryProbeError(ctx context.Context) string {
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := providers.NewOpenLibrary().TrendingWorks(probeCtx, "weekly", 1)
+	if err == nil {
+		return ""
+	}
+	msg := strings.TrimSpace(err.Error())
+	if len(msg) > 220 {
+		msg = msg[:220] + "..."
+	}
+	return msg
+}
+
+var discoveryProbeErrorFn = discoveryProbeError
+
 func discoveryLoadingSearchData() map[string]any {
 	return map[string]any{
 		"IsDiscovery":      true,
@@ -539,35 +594,26 @@ func (u *searchUI) loadTrendingBooks(ctx context.Context) []searchItem {
 func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCategory {
 	ol := providers.NewOpenLibrary()
 	queries := defaultDiscoveryQueriesFn()
-	results := make([]discoveryCategory, len(queries))
-	var wg sync.WaitGroup
-	wg.Add(len(queries))
-	for i, query := range queries {
-		go func(i int, query discoveryQuery) {
-			defer wg.Done()
-			books := gatherDiscoveryCategoryBooks(ctx, ol, query)
-			if len(books) == 0 {
-				return
-			}
-			items := make([]searchItem, 0, len(books))
-			for _, book := range books {
-				items = append(items, openLibrarySearchItem(book, "Shelf pick"))
-			}
-			results[i] = discoveryCategory{
-				Name:        query.Name,
-				Description: query.Description,
-				Items:       items,
-			}
-		}(i, query)
-	}
-	wg.Wait()
+	categories := make([]discoveryCategory, 0, len(queries))
 
-	categories := make([]discoveryCategory, 0, len(results))
-	for _, category := range results {
-		if len(category.Items) == 0 {
+	// Load categories sequentially to respect rate limits (don't burst with parallel goroutines)
+	for _, query := range queries {
+		books := gatherDiscoveryCategoryBooks(ctx, ol, query)
+		if len(books) == 0 {
 			continue
 		}
-		categories = append(categories, category)
+		items := make([]searchItem, 0, len(books))
+		for _, book := range books {
+			items = append(items, openLibrarySearchItem(book, "Shelf pick"))
+		}
+		categories = append(categories, discoveryCategory{
+			Name:        query.Name,
+			Description: query.Description,
+			Items:       items,
+		})
+	}
+	if len(categories) == 0 {
+		return loadFallbackSubjectCategories(ctx, ol)
 	}
 	return categories
 }
@@ -667,6 +713,28 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 	}
 
 	return selected
+}
+
+func loadFallbackSubjectCategories(ctx context.Context, ol *providers.OpenLibrary) []discoveryCategory {
+	if ol == nil {
+		return nil
+	}
+	books, err := ol.SubjectWorks(ctx, "fantasy", 100)
+	if err != nil || len(books) == 0 {
+		return nil
+	}
+	items := make([]searchItem, 0, discoveryCategorySize)
+	for _, book := range backfillOpenLibraryDiscoveryMetadata(ctx, ol, books, discoveryCategorySize) {
+		items = append(items, openLibrarySearchItem(book, "Shelf pick"))
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	return []discoveryCategory{{
+		Name:        "Fantasy Spotlight",
+		Description: "Enchanting fantasy worlds and immersive magical adventures.",
+		Items:       items,
+	}}
 }
 
 func discoveryRecentFallbackQueries(query discoveryQuery) []string {
@@ -800,7 +868,7 @@ func backfillOpenLibraryWorkCovers(ctx context.Context, ol *providers.OpenLibrar
 	}
 
 	results := make(chan coverResult, len(books))
-	sem := make(chan struct{}, 4)
+	sem := make(chan struct{}, 2)  // Reduced from 4 to avoid excessive concurrent requests
 	var wg sync.WaitGroup
 
 	for i, book := range books {

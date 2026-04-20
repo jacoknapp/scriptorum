@@ -37,9 +37,12 @@
     </section>
     {{ end }}
   </div>
-  {{ else }}
+  {{ else if not .TrendingNow }}
   <div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6 text-slate-400">
-    Discovery shelves are unavailable right now. Start typing to search for a title, author, ISBN, or ASIN.
+    <div>Discovery shelves are unavailable right now. Start typing to search for a title, author, ISBN, or ASIN.</div>
+    {{ if .DiscoveryError }}
+    <div class="mt-2 text-sm text-red-300">Error: {{ .DiscoveryError }}</div>
+    {{ end }}
   </div>
   {{ end }}
   {{ end }}

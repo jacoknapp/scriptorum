@@ -65,6 +65,10 @@ func TestIsRenderableSearchBookKeepsNormalBooks(t *testing.T) {
 }
 
 func TestBackfillOpenLibraryWorkCoversUsesWorkDetails(t *testing.T) {
+	// Disable the rate limiter since HTTP transport is mocked and instant
+	restore := providers.TestDisableOLRateLimiter()
+	t.Cleanup(restore)
+
 	prevTransport := http.DefaultTransport
 	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "openlibrary.org" {
@@ -95,6 +99,10 @@ func TestBackfillOpenLibraryWorkCoversUsesWorkDetails(t *testing.T) {
 }
 
 func TestBackfillOpenLibraryDiscoveryMetadataRequiresDescription(t *testing.T) {
+	// Disable the rate limiter since HTTP transport is mocked and instant
+	restore := providers.TestDisableOLRateLimiter()
+	t.Cleanup(restore)
+
 	prevTransport := http.DefaultTransport
 	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "openlibrary.org" {
@@ -153,6 +161,10 @@ func TestBackfillOpenLibraryDiscoveryMetadataRequiresDescription(t *testing.T) {
 }
 
 func TestGatherDiscoveryCategoryBooksReplacesBlockedCandidates(t *testing.T) {
+	// Disable the rate limiter since HTTP transport is mocked and instant
+	restore := providers.TestDisableOLRateLimiter()
+	t.Cleanup(restore)
+
 	prevTransport := http.DefaultTransport
 	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "openlibrary.org" {
