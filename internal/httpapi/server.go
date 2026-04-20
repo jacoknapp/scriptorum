@@ -27,26 +27,28 @@ var tplFS embed.FS
 var setupFS embed.FS
 
 type Server struct {
-	cfg                 *config.Config
-	db                  *db.DB
-	cfgPath             string
-	settings            *settings.Store
-	chi                 *chi.Mux
-	backgroundTasks     sync.Once
-	discoveryCacheMu    sync.RWMutex
-	discoveryCache      map[string]any
-	discoveryCacheAt    int64
-	catalogMatchCacheMu sync.RWMutex
-	catalogMatchCache   map[string]catalogMatchCacheEntry
-	oidc                *oidcMgr
-	csrf                *csrfManager
-	rateLimiter         *rateLimiter
-	readarrSyncMu       sync.Mutex
-	readarrSyncStateMu  sync.RWMutex
-	readarrSyncState    readarrSyncRuntimeState
-	disableCSRF         bool // For testing purposes
-	approvalTokens      map[string]approvalTokenData
-	tokenMutex          sync.RWMutex
+	cfg                    *config.Config
+	db                     *db.DB
+	cfgPath                string
+	settings               *settings.Store
+	chi                    *chi.Mux
+	backgroundTasks        sync.Once
+	discoveryCacheMu       sync.RWMutex
+	discoveryCache         map[string]any
+	discoveryCacheAt       int64
+	discoveryBuildInFlight bool
+	catalogMatchCacheMu    sync.RWMutex
+	catalogMatchCache      map[string]catalogMatchCacheEntry
+	oidc                   *oidcMgr
+	csrf                   *csrfManager
+	rateLimiter            *rateLimiter
+	readarrSyncMu          sync.Mutex
+	readarrSyncStateMu     sync.RWMutex
+	readarrSyncState       readarrSyncRuntimeState
+	disableCSRF            bool // For testing purposes
+	disableDiscoveryWarmup bool // For testing purposes
+	approvalTokens         map[string]approvalTokenData
+	tokenMutex             sync.RWMutex
 }
 
 type catalogMatchCacheEntry struct {

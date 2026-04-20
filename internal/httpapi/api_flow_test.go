@@ -34,6 +34,7 @@ func newServerForTest(t *testing.T) *Server {
 	_ = config.Save(cfgPath, cfg)
 	s := NewServer(cfg, database, cfgPath)
 	s.disableCSRF = true // Disable CSRF for tests
+	s.disableDiscoveryWarmup = true
 	return s
 }
 

@@ -1,5 +1,14 @@
 {{ if .IsDiscovery }}
 <div class="space-y-4">
+  {{ if .DiscoveryLoading }}
+  <div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6 text-slate-300">
+    Building discovery shelves for this session...
+  </div>
+  <div hx-get="/ui/search"
+       hx-trigger="load delay:900ms"
+       hx-target="#results"
+       hx-swap="innerHTML"></div>
+  {{ else }}
   {{ if .TrendingNow }}
   <section class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 overflow-hidden">
     <div class="p-5 border-b border-white/5">
@@ -32,6 +41,7 @@
   <div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6 text-slate-400">
     Discovery shelves are unavailable right now. Start typing to search for a title, author, ISBN, or ASIN.
   </div>
+  {{ end }}
   {{ end }}
 </div>
 {{ else }}

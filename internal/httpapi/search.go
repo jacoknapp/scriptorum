@@ -32,6 +32,9 @@ func (s *Server) mountSearch(r chi.Router) {
 	r.Get("/ui/search", u.handleSearch(s))
 	// Readarr cover proxy (fetch fresh each call). Search UI will link images here
 	r.Get("/ui/readarr-cover", s.requireLogin(s.serveReadarrCover()))
+	if !s.disableDiscoveryWarmup {
+		s.triggerDiscoveryRefresh(u)
+	}
 }
 
 func authorsText(authors []string) string {
@@ -99,7 +102,11 @@ const (
 	discoveryCategorySize = 8
 	discoveryTrendingSize = 8
 	discoveryCacheTTL     = 15 * time.Minute
+	discoveryFastBuildTTL = 1200 * time.Millisecond
+	discoveryBuildTTL     = 12 * time.Second
 )
+
+var buildDiscoverySearchDataFn = buildDiscoverySearchData
 
 // defaultDiscoveryQueries returns the discovery query set with MinYear
 // set dynamically to 10 years before the current year.
@@ -424,17 +431,81 @@ func (s *Server) cachedDiscoverySearchData(ctx context.Context, u *searchUI) map
 		return cached
 	}
 
-	s.discoveryCacheMu.Lock()
-	defer s.discoveryCacheMu.Unlock()
+	s.discoveryCacheMu.RLock()
+	stale := s.discoveryCache
+	building := s.discoveryBuildInFlight
+	s.discoveryCacheMu.RUnlock()
 
-	if s.discoveryCache != nil && time.Since(time.Unix(s.discoveryCacheAt, 0)) < discoveryCacheTTL {
-		return s.discoveryCache
+	if stale != nil {
+		if !building {
+			s.triggerDiscoveryRefresh(u)
+		}
+		return stale
+	}
+	if building {
+		return discoveryLoadingSearchData()
 	}
 
-	fresh := buildDiscoverySearchData(ctx, s, u)
-	s.discoveryCache = fresh
-	s.discoveryCacheAt = time.Now().Unix()
-	return fresh
+	fastCtx, cancel := context.WithTimeout(ctx, discoveryFastBuildTTL)
+	fresh := buildDiscoverySearchDataFn(fastCtx, s, u)
+	cancel()
+	if hasDiscoveryContent(fresh) {
+		s.discoveryCacheMu.Lock()
+		s.discoveryCache = fresh
+		s.discoveryCacheAt = time.Now().Unix()
+		s.discoveryCacheMu.Unlock()
+		return fresh
+	}
+
+	s.triggerDiscoveryRefresh(u)
+	return discoveryLoadingSearchData()
+}
+
+func (s *Server) triggerDiscoveryRefresh(u *searchUI) {
+	s.discoveryCacheMu.Lock()
+	if s.discoveryBuildInFlight {
+		s.discoveryCacheMu.Unlock()
+		return
+	}
+	s.discoveryBuildInFlight = true
+	s.discoveryCacheMu.Unlock()
+
+	go s.refreshDiscoverySearchData(u)
+}
+
+func (s *Server) refreshDiscoverySearchData(u *searchUI) {
+	ctx, cancel := context.WithTimeout(context.Background(), discoveryBuildTTL)
+	defer cancel()
+
+	fresh := buildDiscoverySearchDataFn(ctx, s, u)
+
+	s.discoveryCacheMu.Lock()
+	defer s.discoveryCacheMu.Unlock()
+	if hasDiscoveryContent(fresh) {
+		s.discoveryCache = fresh
+		s.discoveryCacheAt = time.Now().Unix()
+	}
+	s.discoveryBuildInFlight = false
+}
+
+func hasDiscoveryContent(data map[string]any) bool {
+	if len(data) == 0 {
+		return false
+	}
+	if trending, ok := data["TrendingNow"].([]searchItem); ok && len(trending) > 0 {
+		return true
+	}
+	if categories, ok := data["DiscoveryCategories"].([]discoveryCategory); ok && len(categories) > 0 {
+		return true
+	}
+	return false
+}
+
+func discoveryLoadingSearchData() map[string]any {
+	return map[string]any{
+		"IsDiscovery":      true,
+		"DiscoveryLoading": true,
+	}
 }
 
 func (s *Server) loadDiscoverySearchData() map[string]any {
@@ -552,9 +623,6 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 	candidates := make([]providers.BookItem, 0, discoveryCategorySize*3)
 	seen := make(map[string]struct{}, discoveryCategorySize*3)
 	detailsCache := make(map[string]*providers.OpenLibraryWorkDetails, discoveryCategorySize*4)
-	selectedCount := func() int {
-		return len(selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache))
-	}
 	appendCandidates := func(books []providers.BookItem) {
 		for _, book := range books {
 			key := discoveryBookKey(book)
@@ -576,26 +644,29 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 				break
 			}
 			appendCandidates(books)
-			if selectedCount() >= discoveryCategorySize {
-				return selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache)
-			}
 		}
 	}
 
-	if selectedCount() < discoveryCategorySize {
+	selected := selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache)
+	if len(selected) >= discoveryCategorySize {
+		return selected
+	}
+
+	if len(selected) < discoveryCategorySize {
 		for _, term := range discoveryRecentFallbackQueries(query) {
 			books, err := ol.Search(ctx, term, 18, 1)
 			if err != nil || len(books) == 0 {
 				continue
 			}
 			appendCandidates(books)
-			if selectedCount() >= discoveryCategorySize {
-				return selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache)
+			selected = selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache)
+			if len(selected) >= discoveryCategorySize {
+				return selected
 			}
 		}
 	}
 
-	return selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache)
+	return selected
 }
 
 func discoveryRecentFallbackQueries(query discoveryQuery) []string {

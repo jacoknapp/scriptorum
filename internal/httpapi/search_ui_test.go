@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -303,5 +304,96 @@ func TestReadarrCoverSetsCacheHeaders(t *testing.T) {
 	}
 	if got := rec.Header().Get("Last-Modified"); got != "Mon, 02 Jan 2006 15:04:05 GMT" {
 		t.Fatalf("unexpected Last-Modified header %q", got)
+	}
+}
+
+func TestCachedDiscoverySearchDataReturnsLoadingThenCachesAsync(t *testing.T) {
+	s := newServerForTest(t)
+
+	originalBuilder := buildDiscoverySearchDataFn
+	buildDiscoverySearchDataFn = func(ctx context.Context, _ *Server, _ *searchUI) map[string]any {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(35 * time.Millisecond):
+			return map[string]any{
+				"IsDiscovery": true,
+				"TrendingNow": []searchItem{{}},
+			}
+		}
+	}
+	t.Cleanup(func() { buildDiscoverySearchDataFn = originalBuilder })
+
+	shortCtx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+
+	data := s.cachedDiscoverySearchData(shortCtx, &searchUI{})
+	if loading, _ := data["DiscoveryLoading"].(bool); !loading {
+		t.Fatalf("expected loading payload on cold timeout, got %+v", data)
+	}
+
+	deadline := time.Now().Add(900 * time.Millisecond)
+	for {
+		cached := s.loadDiscoverySearchData()
+		if cached != nil {
+			trending, _ := cached["TrendingNow"].([]searchItem)
+			if len(trending) == 1 {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected async discovery cache warmup to finish, cache=%+v", s.loadDiscoverySearchData())
+		}
+		time.Sleep(15 * time.Millisecond)
+	}
+}
+
+func TestCachedDiscoverySearchDataServesStaleWhileRefreshing(t *testing.T) {
+	s := newServerForTest(t)
+	s.discoveryCache = map[string]any{
+		"IsDiscovery": true,
+		"DiscoveryCategories": []discoveryCategory{{
+			Name:  "stale",
+			Items: []searchItem{{}},
+		}},
+	}
+	s.discoveryCacheAt = time.Now().Add(-discoveryCacheTTL - time.Minute).Unix()
+
+	originalBuilder := buildDiscoverySearchDataFn
+	buildDiscoverySearchDataFn = func(ctx context.Context, _ *Server, _ *searchUI) map[string]any {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-time.After(35 * time.Millisecond):
+			return map[string]any{
+				"IsDiscovery": true,
+				"DiscoveryCategories": []discoveryCategory{{
+					Name:  "fresh",
+					Items: []searchItem{{}},
+				}},
+			}
+		}
+	}
+	t.Cleanup(func() { buildDiscoverySearchDataFn = originalBuilder })
+
+	data := s.cachedDiscoverySearchData(context.Background(), &searchUI{})
+	categories, _ := data["DiscoveryCategories"].([]discoveryCategory)
+	if len(categories) == 0 || categories[0].Name != "stale" {
+		t.Fatalf("expected stale data to be served immediately, got %+v", data)
+	}
+
+	deadline := time.Now().Add(900 * time.Millisecond)
+	for {
+		cached := s.loadDiscoverySearchData()
+		if cached != nil {
+			updated, _ := cached["DiscoveryCategories"].([]discoveryCategory)
+			if len(updated) > 0 && updated[0].Name == "fresh" {
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("expected stale cache to be refreshed, cache=%+v", s.loadDiscoverySearchData())
+		}
+		time.Sleep(15 * time.Millisecond)
 	}
 }
