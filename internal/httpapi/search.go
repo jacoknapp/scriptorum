@@ -105,7 +105,12 @@ const (
 	discoveryTrendingSize = 8
 	discoveryCacheTTL     = 30 * time.Minute // cache discovery results longer to reduce OL API calls
 	discoveryFastBuildTTL = 1200 * time.Millisecond
-	discoveryBuildTTL     = 45 * time.Second // sequential category loading with rate limiting needs more time
+	// discoveryBuildTTL covers the full background refresh. With 4 categories
+	// loaded sequentially and each making up to ~50 OL API requests (rate-limited
+	// at 2 req/s), 45 s was far too short — Romance (3rd in sequence) would time
+	// out before receiving any results. 3 minutes gives all categories enough
+	// headroom even when the deeper fallback pages are needed.
+	discoveryBuildTTL = 3 * time.Minute
 )
 
 var buildDiscoverySearchDataFn = buildDiscoverySearchData
