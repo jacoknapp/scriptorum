@@ -23,8 +23,8 @@ type OpenLibrary struct {
 
 // olRateLimiter is a global token-bucket rate limiter shared across all
 // OpenLibrary client instances. OpenLibrary allows ~3 req/s for identified
-// User-Agents; we target 2 req/s to stay safely under the limit.
-var olRateLimiter = newTokenBucket(2, 4) // 2 tokens/sec, burst of 4
+// User-Agents; we target 2 req/s with no burst to stay safely under the limit.
+var olRateLimiter = newTokenBucket(2, 1) // 2 tokens/sec, no burst
 
 // TestDisableOLRateLimiter replaces the global rate limiter with a very
 // fast one so that tests using mocked HTTP transport are not throttled.
