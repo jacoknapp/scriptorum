@@ -718,6 +718,39 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 		}
 	}
 
+	// Keep MinYear strict; when a shelf is thin, pull deeper result pages instead.
+	if len(selected) < discoveryCategorySize {
+		for _, term := range query.Queries {
+			for page := 3; page <= 5; page++ {
+				books, err := ol.SearchWithLanguages(ctx, term, 24, page, languageCodes)
+				if err != nil || len(books) == 0 {
+					break
+				}
+				appendCandidates(books)
+				selected = selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache)
+				if len(selected) >= discoveryCategorySize {
+					return selected
+				}
+			}
+		}
+	}
+
+	if len(selected) < discoveryCategorySize {
+		for _, term := range discoveryRecentFallbackQueries(query) {
+			for page := 2; page <= 3; page++ {
+				books, err := ol.SearchWithLanguages(ctx, term, 24, page, languageCodes)
+				if err != nil || len(books) == 0 {
+					break
+				}
+				appendCandidates(books)
+				selected = selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache)
+				if len(selected) >= discoveryCategorySize {
+					return selected
+				}
+			}
+		}
+	}
+
 	return selected
 }
 
