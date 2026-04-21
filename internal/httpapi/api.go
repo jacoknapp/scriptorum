@@ -1169,7 +1169,7 @@ func (s *Server) apiRetryRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Must have a stored selection payload
 	if len(req.ReadarrReq) == 0 {
-		http.Error(w, "request has no stored selection payload", 400)
+		http.Error(w, "The originally selected book could not be matched to the backend system.", 400)
 		return
 	}
 
@@ -1216,7 +1216,7 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 
 	// Require an exact selection payload saved at request-time
 	if len(req.ReadarrReq) == 0 {
-		_ = s.db.UpdateRequestStatus(ctx, id, "error", "request has no stored selection payload; please re-request from search", username, nil, nil)
+		_ = s.db.UpdateRequestStatus(ctx, id, "error", "The originally selected book could not be matched to the backend system.", username, nil, nil)
 		return
 	}
 

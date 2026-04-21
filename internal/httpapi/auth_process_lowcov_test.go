@@ -26,7 +26,7 @@ func TestProcessApprovalStoredPayloadErrors(t *testing.T) {
 		Title:  "Missing Payload",
 		Format: "ebook",
 	}, "admin")
-	if resMissing == nil || resMissing.Error == nil || !strings.Contains(resMissing.Error.Error(), "stored selection payload") {
+	if resMissing == nil || resMissing.Error == nil || !strings.Contains(resMissing.Error.Error(), "could not be matched to the backend system") {
 		t.Fatalf("expected missing payload error, got %+v", resMissing)
 	}
 

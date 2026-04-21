@@ -233,7 +233,7 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 
 	// Require an exact selection payload saved at request-time
 	if len(req.ReadarrReq) == 0 {
-		return &ApprovalResult{Status: "", Error: fmt.Errorf("request has no stored selection payload")}
+		return &ApprovalResult{Status: "", Error: fmt.Errorf("the originally selected book could not be matched to the backend system")}
 	}
 
 	var cand map[string]any
