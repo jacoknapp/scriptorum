@@ -140,17 +140,50 @@ func (ol *OpenLibrary) SearchWithLanguages(ctx context.Context, q string, limit,
 		u += "&page=" + strconv.Itoa(page)
 	}
 	languageCodes = normalizeOpenLibraryLanguageCodes(languageCodes)
-	if len(languageCodes) > 0 {
-		for _, code := range languageCodes {
-			u += "&language=" + url.QueryEscape(code)
+	if len(languageCodes) == 0 {
+		var out OLResp
+		if err := ol.getJSON(ctx, u, "search", &out); err != nil {
+			return nil, err
+		}
+		return olDocsToBookItems(out.Docs, nil), nil
+	}
+
+	// OR semantics across selected languages: query each language separately
+	// and merge unique results. Sending repeated language params in one request
+	// may be interpreted as overly strict by upstream search.
+	merged := make([]BookItem, 0, limit*len(languageCodes))
+	seen := make(map[string]struct{}, limit*len(languageCodes))
+	for _, code := range languageCodes {
+		var out OLResp
+		lu := u + "&language=" + url.QueryEscape(code)
+		if err := ol.getJSON(ctx, lu, "search", &out); err != nil {
+			return nil, err
+		}
+		for _, item := range olDocsToBookItems(out.Docs, languageCodes) {
+			key := strings.TrimSpace(item.OpenLibraryWorkKey)
+			if key == "" {
+				if len(item.Authors) > 0 {
+					key = strings.ToLower(strings.TrimSpace(item.Title)) + "::" + strings.ToLower(strings.TrimSpace(item.Authors[0]))
+				} else {
+					key = strings.ToLower(strings.TrimSpace(item.Title))
+				}
+			}
+			if key == "" {
+				continue
+			}
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			merged = append(merged, item)
 		}
 	}
-	var out OLResp
-	if err := ol.getJSON(ctx, u, "search", &out); err != nil {
-		return nil, err
-	}
-	var items []BookItem
-	for _, d := range out.Docs {
+	return merged, nil
+}
+
+func olDocsToBookItems(docs []OLDoc, languageCodes []string) []BookItem {
+	items := make([]BookItem, 0, len(docs))
+	for _, d := range docs {
 		if !openLibraryDocLanguageAllowed(d.Language, languageCodes) {
 			continue
 		}
@@ -169,7 +202,7 @@ func (ol *OpenLibrary) SearchWithLanguages(ctx context.Context, q string, limit,
 			CoverMedium:           cover,
 		})
 	}
-	return items, nil
+	return items
 }
 
 func normalizeOpenLibraryLanguageCodes(languageCodes []string) []string {

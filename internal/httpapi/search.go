@@ -751,6 +751,23 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 		}
 	}
 
+	// Final fallback: use subject-based API for any configured SubjectFallbacks.
+	// SubjectWorks results don't carry year data (FirstPublishYear == 0), so they
+	// benefit from the unknown-year pass-through in pickDiscoveryBooks.
+	if len(selected) < discoveryCategorySize && ol != nil {
+		for _, subject := range query.SubjectFallbacks {
+			books, err := ol.SubjectWorks(ctx, subject, 40)
+			if err != nil || len(books) == 0 {
+				continue
+			}
+			appendCandidates(books)
+			selected = selectDiscoveryBooks(ctx, ol, candidates, query.MinYear, discoveryCategorySize, detailsCache)
+			if len(selected) >= discoveryCategorySize {
+				return selected
+			}
+		}
+	}
+
 	return selected
 }
 
@@ -839,7 +856,9 @@ func pickDiscoveryBooks(books []providers.BookItem, minYear, limit int) []provid
 	if minYear > 0 {
 		recent := make([]providers.BookItem, 0, len(candidates))
 		for _, book := range candidates {
-			if book.FirstPublishYear >= minYear {
+			// Allow books with no year data (FirstPublishYear == 0) through the filter;
+			// we only want to exclude books we know are older than minYear.
+			if book.FirstPublishYear == 0 || book.FirstPublishYear >= minYear {
 				recent = append(recent, book)
 			}
 		}

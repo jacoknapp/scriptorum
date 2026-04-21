@@ -59,8 +59,11 @@ func TestLoadDiscoveryCategoriesFallsBackToSubjects(t *testing.T) {
 	if len(categories) == 0 {
 		t.Fatalf("expected fallback categories, got none")
 	}
-	if categories[0].Name != "Fantasy Spotlight" {
-		t.Fatalf("expected subject fallback category, got %+v", categories[0])
+	// With SubjectFallbacks now wired into gatherDiscoveryCategoryBooks, the
+	// "fantasy" subject fills the "Fantasy Hits" category directly — the
+	// "Fantasy Spotlight" sentinel path is no longer reached.
+	if categories[0].Name != "Fantasy Hits" {
+		t.Fatalf("expected Fantasy Hits category via subject fallback, got %+v", categories[0])
 	}
 	if len(categories[0].Items) == 0 || categories[0].Items[0].Title != "Fallback Fantasy" {
 		t.Fatalf("expected fallback item, got %+v", categories[0].Items)

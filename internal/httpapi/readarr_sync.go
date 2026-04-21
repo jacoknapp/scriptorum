@@ -22,7 +22,7 @@ type readarrSyncSummary struct {
 }
 
 const (
-	readarrAutoSyncInterval     = 30 * time.Minute
+	readarrAutoSyncInterval     = 15 * time.Minute
 	readarrAutoSyncStartupDelay = 45 * time.Second
 	readarrAutoSyncTimeout      = 10 * time.Minute
 )
@@ -143,7 +143,7 @@ func (s *Server) readarrSyncView() readarrSyncViewData {
 	state := s.readarrSyncSnapshot()
 	view := readarrSyncViewData{
 		AutoInterval:    "Auto 30m",
-		ScheduleNote:    "Automatic sync runs every 30 minutes and shortly after startup.",
+		ScheduleNote:    "Automatic sync runs every 15 minutes and shortly after startup.",
 		LastRunLabel:    "No sync has run yet.",
 		LastResultLabel: "Manual sync is available any time.",
 		LastResultClass: "text-slate-400",

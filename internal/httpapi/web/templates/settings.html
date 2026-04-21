@@ -20,13 +20,17 @@
 				<div class="text-sm text-slate-400 mt-1">Base URL used for notification links and redirects. Should match your external domain.</div>
 			</div>
 			<div class="border border-white/10 rounded p-3 mt-3">
-				<label class="block text-sm font-medium text-slate-200 mb-2">Discovery Shelf Languages</label>
-				<div class="text-sm text-slate-400 mb-2">Use Ctrl/Cmd + click to choose multiple languages. If none are selected, English is used.</div>
-				<select name="discovery_languages" multiple size="10" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full">
+				<label class="block text-sm font-medium text-slate-200 mb-1">Discovery Shelf Languages</label>
+				<div class="text-sm text-slate-400 mb-2">Choose which languages appear on your discovery shelves. If none are selected, English is used.</div>
+				<div class="border border-white/10 rounded bg-night-900 overflow-y-auto max-h-48 divide-y divide-white/5">
 					{{ range .DiscoveryLanguageOptions }}
-					<option value="{{ .Code }}" {{ if index $.DiscoveryLanguageSelection .Code }}selected{{ end }}>{{ .Label }} ({{ .Code }})</option>
+					<label class="flex items-center gap-3 px-3 py-2 hover:bg-white/5 cursor-pointer select-none">
+						<input type="checkbox" name="discovery_languages" value="{{ .Code }}" class="accent-indigo-500 w-4 h-4 flex-shrink-0" {{ if index $.DiscoveryLanguageSelection .Code }}checked{{ end }}>
+						<span class="text-slate-100 text-sm">{{ .Label }}</span>
+						<span class="ml-auto text-xs text-slate-500 font-mono">{{ .Code }}</span>
+					</label>
 					{{ end }}
-				</select>
+				</div>
 			</div>
 			</section>
 

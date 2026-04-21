@@ -250,6 +250,7 @@ func TestGatherDiscoveryCategoryBooksUsesLanguageFilters(t *testing.T) {
 	restore := providers.TestDisableOLRateLimiter()
 	t.Cleanup(restore)
 
+	seenLangs := map[string]bool{}
 	prevTransport := http.DefaultTransport
 	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Host != "openlibrary.org" {
@@ -258,9 +259,10 @@ func TestGatherDiscoveryCategoryBooksUsesLanguageFilters(t *testing.T) {
 		switch {
 		case r.URL.Path == "/search.json":
 			langs := r.URL.Query()["language"]
-			if len(langs) != 2 || langs[0] != "eng" || langs[1] != "spa" {
+			if len(langs) != 1 || (langs[0] != "eng" && langs[0] != "spa") {
 				t.Fatalf("unexpected language filters: %+v", langs)
 			}
+			seenLangs[langs[0]] = true
 			return &http.Response{
 				StatusCode: http.StatusOK,
 				Body:       io.NopCloser(strings.NewReader(`{"docs":[{"title":"Language Filtered","author_name":["A"],"first_publish_year":2024,"cover_i":1,"key":"/works/OL-LANG","language":["eng"]}]}`)),
@@ -285,6 +287,9 @@ func TestGatherDiscoveryCategoryBooksUsesLanguageFilters(t *testing.T) {
 	}, []string{"spa", "eng"})
 	if len(got) == 0 || got[0].Title != "Language Filtered" {
 		t.Fatalf("expected language-filtered discovery books, got %+v", got)
+	}
+	if !seenLangs["eng"] || !seenLangs["spa"] {
+		t.Fatalf("expected both language requests to occur, seen=%+v", seenLangs)
 	}
 }
 
