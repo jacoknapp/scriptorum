@@ -147,8 +147,9 @@ func TestBackfillOpenLibraryDiscoveryMetadataRequiresDescription(t *testing.T) {
 
 	got := backfillOpenLibraryDiscoveryMetadata(context.Background(), providers.NewOpenLibrary(), books, 3)
 	if len(got) != 2 {
-		t.Fatalf("expected only described books to remain, got %+v", got)
-	}
+// A book with only a cover (no description) must be filtered out
+t.Fatalf("expected only books with descriptions to remain, got %+v", got)
+}
 	if got[0].Title != "Needs Description" || got[0].Description != "A real description." {
 		t.Fatalf("expected first item to be backfilled, got %+v", got[0])
 	}
@@ -177,7 +178,7 @@ func TestGatherDiscoveryCategoryBooksReplacesBlockedCandidates(t *testing.T) {
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Body: io.NopCloser(strings.NewReader(`{"docs":[
-						{"title":"Blocked Pick","author_name":["A"],"first_publish_year":2024,"cover_i":1,"key":"/works/OL-BLOCKED"},
+						{"title":"Blocked Pick Cookbook","author_name":["A"],"first_publish_year":2024,"cover_i":1,"key":"/works/OL-BLOCKED"},
 						{"title":"Pick 2","author_name":["B"],"first_publish_year":2024,"cover_i":2,"key":"/works/OL-2"},
 						{"title":"Pick 3","author_name":["C"],"first_publish_year":2024,"cover_i":3,"key":"/works/OL-3"},
 						{"title":"Pick 4","author_name":["D"],"first_publish_year":2024,"cover_i":4,"key":"/works/OL-4"},
@@ -230,7 +231,7 @@ func TestGatherDiscoveryCategoryBooksReplacesBlockedCandidates(t *testing.T) {
 		t.Fatalf("expected full shelf of %d, got %d: %+v", discoveryCategorySize, len(got), got)
 	}
 	for _, book := range got {
-		if book.Title == "Blocked Pick" {
+		if book.Title == "Blocked Pick Cookbook" {
 			t.Fatalf("expected blocked book to be replaced: %+v", got)
 		}
 	}

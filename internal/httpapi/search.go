@@ -689,9 +689,12 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 		}
 	}
 
+	// Fetch 3 pages × 30 results per query to give a wide candidate pool before
+	// applying the description+cover filter, which is especially important for
+	// Romance where OL coverage is thinner.
 	for _, term := range query.Queries {
-		for page := 1; page <= 2; page++ {
-			books, err := ol.SearchWithLanguages(ctx, term, 18, page, languageCodes)
+		for page := 1; page <= 3; page++ {
+			books, err := ol.SearchWithLanguages(ctx, term, 30, page, languageCodes)
 			if err != nil || len(books) == 0 {
 				break
 			}
@@ -706,7 +709,7 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 
 	if len(selected) < discoveryCategorySize {
 		for _, term := range discoveryRecentFallbackQueries(query) {
-			books, err := ol.SearchWithLanguages(ctx, term, 18, 1, languageCodes)
+			books, err := ol.SearchWithLanguages(ctx, term, 30, 1, languageCodes)
 			if err != nil || len(books) == 0 {
 				continue
 			}
@@ -721,8 +724,8 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 	// Keep MinYear strict; when a shelf is thin, pull deeper result pages instead.
 	if len(selected) < discoveryCategorySize {
 		for _, term := range query.Queries {
-			for page := 3; page <= 5; page++ {
-				books, err := ol.SearchWithLanguages(ctx, term, 24, page, languageCodes)
+			for page := 4; page <= 7; page++ {
+				books, err := ol.SearchWithLanguages(ctx, term, 50, page, languageCodes)
 				if err != nil || len(books) == 0 {
 					break
 				}
@@ -737,8 +740,8 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 
 	if len(selected) < discoveryCategorySize {
 		for _, term := range discoveryRecentFallbackQueries(query) {
-			for page := 2; page <= 3; page++ {
-				books, err := ol.SearchWithLanguages(ctx, term, 24, page, languageCodes)
+			for page := 2; page <= 4; page++ {
+				books, err := ol.SearchWithLanguages(ctx, term, 50, page, languageCodes)
 				if err != nil || len(books) == 0 {
 					break
 				}
@@ -756,7 +759,7 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 	// benefit from the unknown-year pass-through in pickDiscoveryBooks.
 	if len(selected) < discoveryCategorySize && ol != nil {
 		for _, subject := range query.SubjectFallbacks {
-			books, err := ol.SubjectWorks(ctx, subject, 40)
+			books, err := ol.SubjectWorks(ctx, subject, 100)
 			if err != nil || len(books) == 0 {
 				continue
 			}
