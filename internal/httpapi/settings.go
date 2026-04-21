@@ -7,9 +7,65 @@ import (
 	"strconv"
 	"strings"
 
+	"gitea.knapp/jacoknapp/scriptorum/internal/config"
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 	"github.com/go-chi/chi/v5"
 )
+
+type discoveryLanguageOption struct {
+	Code  string
+	Label string
+}
+
+var discoveryLanguageOptions = []discoveryLanguageOption{
+	{Code: "eng", Label: "English"},
+	{Code: "spa", Label: "Spanish"},
+	{Code: "fre", Label: "French"},
+	{Code: "ger", Label: "German"},
+	{Code: "ita", Label: "Italian"},
+	{Code: "por", Label: "Portuguese"},
+	{Code: "dut", Label: "Dutch"},
+	{Code: "swe", Label: "Swedish"},
+	{Code: "nor", Label: "Norwegian"},
+	{Code: "dan", Label: "Danish"},
+	{Code: "fin", Label: "Finnish"},
+	{Code: "pol", Label: "Polish"},
+	{Code: "cze", Label: "Czech"},
+	{Code: "hun", Label: "Hungarian"},
+	{Code: "rum", Label: "Romanian"},
+	{Code: "bul", Label: "Bulgarian"},
+	{Code: "gre", Label: "Greek"},
+	{Code: "rus", Label: "Russian"},
+	{Code: "ukr", Label: "Ukrainian"},
+	{Code: "ara", Label: "Arabic"},
+	{Code: "heb", Label: "Hebrew"},
+	{Code: "hin", Label: "Hindi"},
+	{Code: "ben", Label: "Bengali"},
+	{Code: "tam", Label: "Tamil"},
+	{Code: "tel", Label: "Telugu"},
+	{Code: "mal", Label: "Malayalam"},
+	{Code: "mar", Label: "Marathi"},
+	{Code: "guj", Label: "Gujarati"},
+	{Code: "pan", Label: "Punjabi"},
+	{Code: "urd", Label: "Urdu"},
+	{Code: "tur", Label: "Turkish"},
+	{Code: "per", Label: "Persian"},
+	{Code: "chi", Label: "Chinese"},
+	{Code: "jpn", Label: "Japanese"},
+	{Code: "kor", Label: "Korean"},
+	{Code: "tha", Label: "Thai"},
+	{Code: "vie", Label: "Vietnamese"},
+	{Code: "ind", Label: "Indonesian"},
+}
+
+func discoveryLanguageSelectedMap(codes []string) map[string]bool {
+	codes = config.NormalizeDiscoveryLanguages(codes)
+	out := make(map[string]bool, len(codes))
+	for _, code := range codes {
+		out[code] = true
+	}
+	return out
+}
 
 func (s *Server) mountSettings(r chi.Router) {
 	funcMap := template.FuncMap{
@@ -33,12 +89,15 @@ type settingsUI struct{ tpl *template.Template }
 
 func (u *settingsUI) handleSettings(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		cfg := s.settings.Get()
 		data := map[string]any{
-			"Cfg":         s.settings.Get(),
-			"UserName":    s.userName(r),
-			"IsAdmin":     true,
-			"CSRFToken":   s.getCSRFToken(r),
-			"ReadarrSync": s.readarrSyncView(),
+			"Cfg":                        cfg,
+			"UserName":                   s.userName(r),
+			"IsAdmin":                    true,
+			"CSRFToken":                  s.getCSRFToken(r),
+			"ReadarrSync":                s.readarrSyncView(),
+			"DiscoveryLanguageOptions":   discoveryLanguageOptions,
+			"DiscoveryLanguageSelection": discoveryLanguageSelectedMap(cfg.Discovery.Languages),
 		}
 		_ = u.tpl.ExecuteTemplate(w, "settings.html", data)
 	}
@@ -98,6 +157,7 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 		cur.OAuth.Scopes = parseCSV(r.FormValue("oauth_scopes"))
 		cur.OAuth.UsernameClaim = strings.TrimSpace(r.FormValue("oauth_username_claim"))
 		cur.OAuth.AutoCreateUsers = r.FormValue("oauth_autocreate") == "on"
+		cur.Discovery.Languages = config.NormalizeDiscoveryLanguages(r.Form["discovery_languages"])
 		_ = s.settings.Update(&cur)
 		// Propagate debug flag to provider packages that use package-level Debug variables
 		providers.Debug = cur.Debug

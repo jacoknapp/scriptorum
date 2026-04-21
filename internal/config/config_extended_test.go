@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -326,5 +327,39 @@ func TestOAuthConfig(t *testing.T) {
 
 	if cfg.OAuth.UsernameClaim != "preferred_username" {
 		t.Errorf("Expected username claim, got %s", cfg.OAuth.UsernameClaim)
+	}
+}
+
+func TestLoadConfigDefaultsDiscoveryLanguagesToEnglish(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "discovery_default_test.yaml")
+
+	configContent := `debug: false
+http:
+  listen: :8080
+db:
+  path: /tmp/test.db
+`
+
+	err := os.WriteFile(configPath, []byte(configContent), 0644)
+	if err != nil {
+		t.Fatalf("Failed to write config: %v", err)
+	}
+
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Failed to load config: %v", err)
+	}
+
+	if !reflect.DeepEqual(cfg.Discovery.Languages, []string{"eng"}) {
+		t.Fatalf("expected default discovery language [eng], got %+v", cfg.Discovery.Languages)
+	}
+}
+
+func TestNormalizeDiscoveryLanguages(t *testing.T) {
+	got := NormalizeDiscoveryLanguages([]string{"en", " SPA ", "unknown", "eng", "spa"})
+	want := []string{"eng", "spa"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("NormalizeDiscoveryLanguages = %+v, want %+v", got, want)
 	}
 }

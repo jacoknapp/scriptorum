@@ -1,5 +1,7 @@
 http:
   listen: ":8080"
+discovery:
+  languages: ["eng"]
 db:
   path: "/data/scriptorum.db"
 setup:

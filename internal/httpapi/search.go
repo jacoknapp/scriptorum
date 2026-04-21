@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"gitea.knapp/jacoknapp/scriptorum/internal/config"
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 	"gitea.knapp/jacoknapp/scriptorum/internal/util"
 	"github.com/go-chi/chi/v5"
@@ -102,9 +103,9 @@ type discoveryQuery struct {
 const (
 	discoveryCategorySize = 8
 	discoveryTrendingSize = 8
-	discoveryCacheTTL     = 30 * time.Minute  // cache discovery results longer to reduce OL API calls
+	discoveryCacheTTL     = 30 * time.Minute // cache discovery results longer to reduce OL API calls
 	discoveryFastBuildTTL = 1200 * time.Millisecond
-	discoveryBuildTTL     = 45 * time.Second  // sequential category loading with rate limiting needs more time
+	discoveryBuildTTL     = 45 * time.Second // sequential category loading with rate limiting needs more time
 )
 
 var buildDiscoverySearchDataFn = buildDiscoverySearchData
@@ -408,6 +409,10 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 func buildDiscoverySearchData(ctx context.Context, s *Server, u *searchUI) map[string]any {
 	var trending []searchItem
 	var categories []discoveryCategory
+	languages := config.DefaultDiscoveryLanguages()
+	if cfg := s.settings.Get(); cfg != nil {
+		languages = config.NormalizeDiscoveryLanguages(cfg.Discovery.Languages)
+	}
 	var wg sync.WaitGroup
 	wg.Add(2)
 	go func() {
@@ -416,7 +421,7 @@ func buildDiscoverySearchData(ctx context.Context, s *Server, u *searchUI) map[s
 	}()
 	go func() {
 		defer wg.Done()
-		categories = u.loadDiscoveryCategories(ctx)
+		categories = u.loadDiscoveryCategories(ctx, languages...)
 	}()
 	wg.Wait()
 
@@ -591,14 +596,15 @@ func (u *searchUI) loadTrendingBooks(ctx context.Context) []searchItem {
 	return items
 }
 
-func (u *searchUI) loadDiscoveryCategories(ctx context.Context) []discoveryCategory {
+func (u *searchUI) loadDiscoveryCategories(ctx context.Context, languageCodes ...string) []discoveryCategory {
 	ol := providers.NewOpenLibrary()
 	queries := defaultDiscoveryQueriesFn()
 	categories := make([]discoveryCategory, 0, len(queries))
+	languageCodes = config.NormalizeDiscoveryLanguages(languageCodes)
 
 	// Load categories sequentially to respect rate limits (don't burst with parallel goroutines)
 	for _, query := range queries {
-		books := gatherDiscoveryCategoryBooks(ctx, ol, query)
+		books := gatherDiscoveryCategoryBooks(ctx, ol, query, languageCodes)
 		if len(books) == 0 {
 			continue
 		}
@@ -665,7 +671,7 @@ func buildOpenLibraryDetailsPayload(book providers.BookItem) string {
 	return string(raw)
 }
 
-func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary, query discoveryQuery) []providers.BookItem {
+func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary, query discoveryQuery, languageCodes []string) []providers.BookItem {
 	candidates := make([]providers.BookItem, 0, discoveryCategorySize*3)
 	seen := make(map[string]struct{}, discoveryCategorySize*3)
 	detailsCache := make(map[string]*providers.OpenLibraryWorkDetails, discoveryCategorySize*4)
@@ -685,7 +691,7 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 
 	for _, term := range query.Queries {
 		for page := 1; page <= 2; page++ {
-			books, err := ol.Search(ctx, term, 18, page)
+			books, err := ol.SearchWithLanguages(ctx, term, 18, page, languageCodes)
 			if err != nil || len(books) == 0 {
 				break
 			}
@@ -700,7 +706,7 @@ func gatherDiscoveryCategoryBooks(ctx context.Context, ol *providers.OpenLibrary
 
 	if len(selected) < discoveryCategorySize {
 		for _, term := range discoveryRecentFallbackQueries(query) {
-			books, err := ol.Search(ctx, term, 18, 1)
+			books, err := ol.SearchWithLanguages(ctx, term, 18, 1, languageCodes)
 			if err != nil || len(books) == 0 {
 				continue
 			}
@@ -868,7 +874,7 @@ func backfillOpenLibraryWorkCovers(ctx context.Context, ol *providers.OpenLibrar
 	}
 
 	results := make(chan coverResult, len(books))
-	sem := make(chan struct{}, 2)  // Reduced from 4 to avoid excessive concurrent requests
+	sem := make(chan struct{}, 2) // Reduced from 4 to avoid excessive concurrent requests
 	var wg sync.WaitGroup
 
 	for i, book := range books {

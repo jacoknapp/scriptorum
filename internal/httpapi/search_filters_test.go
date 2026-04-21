@@ -225,7 +225,7 @@ func TestGatherDiscoveryCategoryBooksReplacesBlockedCandidates(t *testing.T) {
 	got := gatherDiscoveryCategoryBooks(context.Background(), providers.NewOpenLibrary(), discoveryQuery{
 		Queries: []string{"primary", "backup"},
 		MinYear: 2020,
-	})
+	}, nil)
 	if len(got) != discoveryCategorySize {
 		t.Fatalf("expected full shelf of %d, got %d: %+v", discoveryCategorySize, len(got), got)
 	}
@@ -243,6 +243,48 @@ func TestGatherDiscoveryCategoryBooksReplacesBlockedCandidates(t *testing.T) {
 	}
 	if !foundReplacement {
 		t.Fatalf("expected replacement pick to fill the shelf: %+v", got)
+	}
+}
+
+func TestGatherDiscoveryCategoryBooksUsesLanguageFilters(t *testing.T) {
+	restore := providers.TestDisableOLRateLimiter()
+	t.Cleanup(restore)
+
+	prevTransport := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "openlibrary.org" {
+			return prevTransport.RoundTrip(r)
+		}
+		switch {
+		case r.URL.Path == "/search.json":
+			langs := r.URL.Query()["language"]
+			if len(langs) != 2 || langs[0] != "eng" || langs[1] != "spa" {
+				t.Fatalf("unexpected language filters: %+v", langs)
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"docs":[{"title":"Language Filtered","author_name":["A"],"first_publish_year":2024,"cover_i":1,"key":"/works/OL-LANG","language":["eng"]}]}`)),
+				Header:     make(http.Header),
+			}, nil
+		case r.URL.Path == "/works/OL-LANG.json":
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"description":"A usable description.","covers":[1002]}`)),
+				Header:     make(http.Header),
+			}, nil
+		default:
+			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
+			return nil, nil
+		}
+	})
+	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+
+	got := gatherDiscoveryCategoryBooks(context.Background(), providers.NewOpenLibrary(), discoveryQuery{
+		Queries: []string{"primary"},
+		MinYear: 2020,
+	}, []string{"spa", "eng"})
+	if len(got) == 0 || got[0].Title != "Language Filtered" {
+		t.Fatalf("expected language-filtered discovery books, got %+v", got)
 	}
 }
 

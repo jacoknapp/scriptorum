@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -254,22 +255,23 @@ func TestSettingsSaveParsesFields(t *testing.T) {
 	r := s.Router()
 
 	form := url.Values{
-		"debug":               {"on"},
-		"server_url":          {"https://scriptorum.example"},
-		"ra_ebooks_base":      {"https://ebooks.example"},
-		"ra_ebooks_key":       {"ebooks-key"},
-		"ra_ebooks_qp":        {"5"},
-		"ra_audio_base":       {"https://audio.example"},
-		"ra_audio_key":        {"audio-key"},
-		"ra_audio_qp":         {"7"},
-		"oauth_enabled":       {"true"},
-		"oauth_issuer":        {"https://issuer.example"},
-		"oauth_client_id":     {"client-id"},
-		"oauth_client_secret": {"secret"},
-		"oauth_redirect":      {"https://scriptorum.example/oauth/callback"},
-		"oauth_scopes":        {"openid, email, profile"},
+		"debug":                {"on"},
+		"server_url":           {"https://scriptorum.example"},
+		"discovery_languages":  {"eng", "spa"},
+		"ra_ebooks_base":       {"https://ebooks.example"},
+		"ra_ebooks_key":        {"ebooks-key"},
+		"ra_ebooks_qp":         {"5"},
+		"ra_audio_base":        {"https://audio.example"},
+		"ra_audio_key":         {"audio-key"},
+		"ra_audio_qp":          {"7"},
+		"oauth_enabled":        {"true"},
+		"oauth_issuer":         {"https://issuer.example"},
+		"oauth_client_id":      {"client-id"},
+		"oauth_client_secret":  {"secret"},
+		"oauth_redirect":       {"https://scriptorum.example/oauth/callback"},
+		"oauth_scopes":         {"openid, email, profile"},
 		"oauth_username_claim": {"preferred_username"},
-		"oauth_autocreate":    {"on"},
+		"oauth_autocreate":     {"on"},
 	}
 	req := httptest.NewRequest(http.MethodPost, "/settings/save", strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -283,6 +285,9 @@ func TestSettingsSaveParsesFields(t *testing.T) {
 	cfg := s.settings.Get()
 	if !cfg.Debug || cfg.Readarr.Ebooks.DefaultQualityProfileID != 5 || cfg.Readarr.Audiobooks.DefaultQualityProfileID != 7 {
 		t.Fatalf("unexpected saved quality settings: %+v", cfg.Readarr)
+	}
+	if !reflect.DeepEqual(cfg.Discovery.Languages, []string{"eng", "spa"}) {
+		t.Fatalf("unexpected discovery language settings: %+v", cfg.Discovery.Languages)
 	}
 	if !cfg.OAuth.Enabled || cfg.OAuth.ClientSecret != "secret" || len(cfg.OAuth.Scopes) != 3 || !cfg.OAuth.AutoCreateUsers {
 		t.Fatalf("unexpected saved oauth settings: %+v", cfg.OAuth)

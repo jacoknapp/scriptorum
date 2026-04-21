@@ -44,6 +44,27 @@ func TestEndpointSearchPage1OmitsPageParam(t *testing.T) {
 	_, _ = ol.Search(context.Background(), "x", 10, 1)
 }
 
+func TestEndpointSearchWithLanguagesAddsLanguageParams(t *testing.T) {
+	ol := NewOpenLibrary()
+	ol.cl.Transport = rtFunc(func(r *http.Request) (*http.Response, error) {
+		langs := r.URL.Query()["language"]
+		if len(langs) != 2 {
+			t.Fatalf("language params = %+v, want 2 entries", langs)
+		}
+		if langs[0] != "eng" || langs[1] != "spa" {
+			t.Fatalf("language params = %+v, want [eng spa]", langs)
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"docs":[{"title":"A","language":["eng"]},{"title":"B","language":["ger"]},{"title":"C"}]}`)), Header: make(http.Header)}, nil
+	})
+	items, err := ol.SearchWithLanguages(context.Background(), "x", 10, 1, []string{"spa", "eng"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items (eng + unknown), got %d", len(items))
+	}
+}
+
 // TestEndpointTrendingURLFormat validates the trending endpoint:
 // /trending/{period}.json?limit={limit}
 // Valid periods per OL source: now, daily, weekly, monthly, yearly, forever

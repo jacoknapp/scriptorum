@@ -2,14 +2,97 @@ package config
 
 import (
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+var discoveryLanguageAliases = map[string]string{
+	"en":  "eng",
+	"eng": "eng",
+	"es":  "spa",
+	"spa": "spa",
+	"fr":  "fre",
+	"fre": "fre",
+	"de":  "ger",
+	"ger": "ger",
+	"it":  "ita",
+	"ita": "ita",
+	"pt":  "por",
+	"por": "por",
+	"nl":  "dut",
+	"dut": "dut",
+	"sv":  "swe",
+	"swe": "swe",
+	"no":  "nor",
+	"nor": "nor",
+	"da":  "dan",
+	"dan": "dan",
+	"fi":  "fin",
+	"fin": "fin",
+	"pl":  "pol",
+	"pol": "pol",
+	"cs":  "cze",
+	"cze": "cze",
+	"hu":  "hun",
+	"hun": "hun",
+	"ro":  "rum",
+	"rum": "rum",
+	"bg":  "bul",
+	"bul": "bul",
+	"el":  "gre",
+	"gre": "gre",
+	"ru":  "rus",
+	"rus": "rus",
+	"uk":  "ukr",
+	"ukr": "ukr",
+	"ar":  "ara",
+	"ara": "ara",
+	"he":  "heb",
+	"heb": "heb",
+	"hi":  "hin",
+	"hin": "hin",
+	"bn":  "ben",
+	"ben": "ben",
+	"ta":  "tam",
+	"tam": "tam",
+	"te":  "tel",
+	"tel": "tel",
+	"ml":  "mal",
+	"mal": "mal",
+	"mr":  "mar",
+	"mar": "mar",
+	"gu":  "guj",
+	"guj": "guj",
+	"pa":  "pan",
+	"pan": "pan",
+	"ur":  "urd",
+	"urd": "urd",
+	"tr":  "tur",
+	"tur": "tur",
+	"fa":  "per",
+	"per": "per",
+	"zh":  "chi",
+	"chi": "chi",
+	"ja":  "jpn",
+	"jpn": "jpn",
+	"ko":  "kor",
+	"kor": "kor",
+	"th":  "tha",
+	"tha": "tha",
+	"vi":  "vie",
+	"vie": "vie",
+	"id":  "ind",
+	"ind": "ind",
+}
+
 type Config struct {
 	Debug     bool   `yaml:"debug"`
 	ServerURL string `yaml:"server_url"`
-	HTTP      struct {
+	Discovery struct {
+		Languages []string `yaml:"languages"`
+	} `yaml:"discovery"`
+	HTTP struct {
 		Listen string `yaml:"listen"`
 	} `yaml:"http"`
 	DB struct {
@@ -125,7 +208,39 @@ func Load(path string) (*Config, error) {
 	if len(cfg.Admins.Usernames) == 0 && len(cfg.Admins.Emails) > 0 {
 		cfg.Admins.Usernames = append(cfg.Admins.Usernames, cfg.Admins.Emails...)
 	}
+	cfg.Discovery.Languages = NormalizeDiscoveryLanguages(cfg.Discovery.Languages)
 	return &cfg, nil
+}
+
+func DefaultDiscoveryLanguages() []string {
+	return []string{"eng"}
+}
+
+func NormalizeDiscoveryLanguages(input []string) []string {
+	if len(input) == 0 {
+		return DefaultDiscoveryLanguages()
+	}
+	seen := make(map[string]struct{}, len(input))
+	out := make([]string, 0, len(input))
+	for _, raw := range input {
+		code := strings.ToLower(strings.TrimSpace(raw))
+		if code == "" {
+			continue
+		}
+		canonical, ok := discoveryLanguageAliases[code]
+		if !ok {
+			continue
+		}
+		if _, ok := seen[canonical]; ok {
+			continue
+		}
+		seen[canonical] = struct{}{}
+		out = append(out, canonical)
+	}
+	if len(out) == 0 {
+		return DefaultDiscoveryLanguages()
+	}
+	return out
 }
 
 func Save(path string, cfg *Config) error {

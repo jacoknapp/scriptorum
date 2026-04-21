@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,6 +46,7 @@ type OLDoc struct {
 	Title            string   `json:"title"`
 	AuthorName       []string `json:"author_name"`
 	ISBN             []string `json:"isbn"` // OL returns mixed ISBN-10 and ISBN-13 values in a single field
+	Language         []string `json:"language"`
 	CoverId          int      `json:"cover_i"`
 	CoverEditionKey  string   `json:"cover_edition_key"`
 	FirstPublishYear int      `json:"first_publish_year"`
@@ -120,6 +122,10 @@ type BookItem struct {
 }
 
 func (ol *OpenLibrary) Search(ctx context.Context, q string, limit, page int) ([]BookItem, error) {
+	return ol.SearchWithLanguages(ctx, q, limit, page, nil)
+}
+
+func (ol *OpenLibrary) SearchWithLanguages(ctx context.Context, q string, limit, page int, languageCodes []string) ([]BookItem, error) {
 	if q == "" {
 		return nil, nil
 	}
@@ -133,12 +139,21 @@ func (ol *OpenLibrary) Search(ctx context.Context, q string, limit, page int) ([
 	if page > 1 {
 		u += "&page=" + strconv.Itoa(page)
 	}
+	languageCodes = normalizeOpenLibraryLanguageCodes(languageCodes)
+	if len(languageCodes) > 0 {
+		for _, code := range languageCodes {
+			u += "&language=" + url.QueryEscape(code)
+		}
+	}
 	var out OLResp
 	if err := ol.getJSON(ctx, u, "search", &out); err != nil {
 		return nil, err
 	}
 	var items []BookItem
 	for _, d := range out.Docs {
+		if !openLibraryDocLanguageAllowed(d.Language, languageCodes) {
+			continue
+		}
 		// OL search returns all ISBNs in a single "isbn" field; split by length
 		i10, i13 := splitISBNs(d.ISBN)
 		cover := openLibraryCoverURL(d.CoverId, d.CoverEditionKey)
@@ -155,6 +170,54 @@ func (ol *OpenLibrary) Search(ctx context.Context, q string, limit, page int) ([
 		})
 	}
 	return items, nil
+}
+
+func normalizeOpenLibraryLanguageCodes(languageCodes []string) []string {
+	if len(languageCodes) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(languageCodes))
+	out := make([]string, 0, len(languageCodes))
+	for _, raw := range languageCodes {
+		code := strings.ToLower(strings.TrimSpace(raw))
+		if code == "" {
+			continue
+		}
+		if _, ok := seen[code]; ok {
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	sort.Strings(out)
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func openLibraryDocLanguageAllowed(docLanguages, allowed []string) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	if len(docLanguages) == 0 {
+		// Keep items with unknown metadata instead of dropping discovery quality too aggressively.
+		return true
+	}
+	allowedSet := make(map[string]struct{}, len(allowed))
+	for _, code := range allowed {
+		allowedSet[strings.ToLower(strings.TrimSpace(code))] = struct{}{}
+	}
+	for _, raw := range docLanguages {
+		code := strings.ToLower(strings.TrimSpace(raw))
+		if code == "" {
+			continue
+		}
+		if _, ok := allowedSet[code]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (ol *OpenLibrary) TrendingWorks(ctx context.Context, period string, limit int) ([]BookItem, error) {

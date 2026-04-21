@@ -19,6 +19,18 @@
 				<input name="server_url" placeholder="http://example.com:8080" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.ServerURL }}">
 				<div class="text-sm text-slate-400 mt-1">Base URL used for notification links and redirects. Should match your external domain.</div>
 			</div>
+			<div class="border border-white/10 rounded p-3 mt-3">
+				<label class="block text-sm font-medium text-slate-200 mb-2">Discovery Shelf Languages</label>
+				<div class="text-sm text-slate-400 mb-2">Select one or more languages for discovery shelf search results. If none are selected, English is used.</div>
+				<div class="grid grid-cols-2 md:grid-cols-3 gap-2">
+					{{ range .DiscoveryLanguageOptions }}
+					<label class="inline-flex items-center gap-2 text-sm text-slate-100">
+						<input type="checkbox" name="discovery_languages" value="{{ .Code }}" {{ if index $.DiscoveryLanguageSelection .Code }}checked{{ end }}>
+						<span>{{ .Label }}</span>
+					</label>
+					{{ end }}
+				</div>
+			</div>
 			</section>
 
 			<section class="mb-6">
