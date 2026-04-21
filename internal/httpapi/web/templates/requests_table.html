@@ -3,11 +3,11 @@
 <table class="min-w-full text-sm hidden md:table table-fixed">
 	<thead class="bg-night-800/80">
 		<tr>
-			<th class="text-left px-4 py-2 w-2/5">Title</th>
+			<th class="text-center px-4 py-2 w-2/5">Title</th>
 			<th class="text-center px-4 py-2 w-1/6">Requester</th>
 			<th class="text-center px-4 py-2 w-1/12">Format</th>
 			<th class="text-center px-4 py-2 w-[10rem]">Status</th>
-			<th class="text-right px-4 py-2 w-[22rem]">Actions</th>
+			<th class="text-center px-4 py-2 w-[22rem]">Actions</th>
 		</tr>
 	</thead>
 	<tbody class="divide-y divide-white/5">
@@ -32,38 +32,38 @@
 					</span>
 				</div>
 				{{ if eq .Status "error" }}
-				<div class="text-xs text-slate-400 max-w-xs truncate" title="{{ .StatusReason }}">{{ .StatusReason }}</div>
+				<div class="mt-2 text-xs text-slate-400 max-w-xs whitespace-normal break-words text-center" title="{{ .StatusReason }}">{{ .StatusReason }}</div>
 				{{ end }}
 			</td>
 			<td class="px-4 py-3 align-middle text-right">
 				{{ if $.IsAdmin }}
-				<div class="flex flex-wrap items-center justify-end gap-3 min-w-0">
+				<div class="flex flex-wrap items-center justify-center md:justify-end gap-2 min-w-0">
 					{{ if eq .Status "pending" }}
 					<form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="this" hx-swap="none" class="js-approve-form">
-						<button class="inline-flex min-w-[9.5rem] items-center justify-center px-4 py-2.5 text-center text-sm font-medium rounded-md {{ if not .HasReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-500 whitespace-nowrap" data-label-default="Approve" data-label-working="Approving..." {{ if not .HasReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
+						<button class="inline-flex h-9 min-w-[7rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-md {{ if not .HasReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-500 whitespace-nowrap" data-label-default="Approve" data-label-working="Approving..." {{ if not .HasReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
 					</form>
 					{{ if not .HasReadarrReq }}
 					<form hx-post="/api/v1/requests/{{ .ID }}/hydrate" hx-target="#req-table" hx-swap="innerHTML"
 						  hx-get="/ui/requests/table" hx-trigger="after-request" hx-target="#req-table" hx-swap="innerHTML">
-						<button class="inline-flex min-w-[9.5rem] items-center justify-center px-4 py-2.5 text-center text-sm font-medium rounded-md bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" title="Attempt to attach a selection payload from Readarr">Attach</button>
+						<button class="inline-flex h-9 min-w-[7rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-md bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" title="Attempt to attach a selection payload from Readarr">Attach</button>
 					</form>
 					{{ end }}
 					<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest tr" hx-swap="none">
-						<button class="inline-flex min-w-[9.5rem] items-center justify-center px-4 py-2.5 text-center text-sm font-medium rounded-md bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30 hover:bg-amber-900/50 whitespace-nowrap">Decline</button>
+						<button class="inline-flex h-9 min-w-[7rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-md bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30 hover:bg-amber-900/50 whitespace-nowrap">Decline</button>
 					</form>
 					{{ end }}
 					{{ if and (not .ExternalStatus) (eq .Status "approved") }}
 					<form hx-post="/api/v1/requests/{{ .ID }}/retry" hx-target="this" hx-swap="none" class="js-request-action-form">
-						<button class="inline-flex min-w-[9.5rem] items-center justify-center px-4 py-2.5 text-center text-sm font-medium rounded-md bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" data-label-default="Retry" data-label-working="Retrying..." data-success-message="Request retried successfully." data-failure-message="Retry failed." title="Retry processing of this approved request">Retry</button>
+						<button class="inline-flex h-9 min-w-[7rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-md bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" data-label-default="Retry" data-label-working="Retrying..." data-success-message="Request retried successfully." data-failure-message="Retry failed." title="Retry processing of this approved request">Retry</button>
 					</form>
 					{{ else if and (not .ExternalStatus) (eq .Status "queued") }}
 					<form hx-post="/api/v1/requests/{{ .ID }}/retry" hx-target="this" hx-swap="none" class="js-request-action-form">
-						<button class="inline-flex min-w-[9.5rem] items-center justify-center px-4 py-2.5 text-center text-sm font-medium rounded-md bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" data-label-default="Retry" data-label-working="Retrying..." data-success-message="Request retried successfully." data-failure-message="Retry failed." title="Retry processing of this approved request">Retry</button>
+						<button class="inline-flex h-9 min-w-[7rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-md bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" data-label-default="Retry" data-label-working="Retrying..." data-success-message="Request retried successfully." data-failure-message="Retry failed." title="Retry processing of this approved request">Retry</button>
 					</form>
 					{{ end }}
 					<form hx-delete="/api/v1/requests/{{ .ID }}" hx-target="closest tr" hx-swap="delete"
 						  hx-confirm="Are you sure you want to permanently delete this request?">
-						<button class="inline-flex min-w-[9.5rem] items-center justify-center px-4 py-2.5 text-center text-sm font-medium rounded-md bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30 hover:bg-rose-900/50 whitespace-nowrap">Delete</button>
+						<button class="inline-flex h-9 min-w-[7rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-md bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30 hover:bg-rose-900/50 whitespace-nowrap">Delete</button>
 					</form>
 				</div>
 				{{ else }}
@@ -103,30 +103,30 @@
 		{{ if eq .Status "error" }}
 		<div class="mt-2 text-center text-xs text-slate-400">{{ .StatusReason }}</div>
 		{{ end }}
-		<div class="mt-4 flex flex-wrap justify-end gap-3">
+		<div class="mt-4 flex flex-wrap justify-center sm:justify-end gap-2">
 			{{ if $.IsAdmin }}
 			{{ if eq .Status "pending" }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/approve" hx-target="this" hx-swap="none" class="js-approve-form">
-				<button class="inline-flex min-w-[9.5rem] items-center justify-center px-4 py-2.5 text-center text-sm font-medium rounded-md {{ if not .HasReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-500 whitespace-nowrap" data-label-default="Approve" data-label-working="Approving..." {{ if not .HasReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
+				<button class="inline-flex h-9 min-w-[7rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-md {{ if not .HasReadarrReq }}opacity-60 cursor-not-allowed {{ end }} bg-royal-600 text-white hover:bg-royal-500 whitespace-nowrap" data-label-default="Approve" data-label-working="Approving..." {{ if not .HasReadarrReq }}disabled title="Missing selection payload; re-create the request from Search"{{ end }}>Approve</button>
 			</form>
 			{{ if not .HasReadarrReq }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/hydrate" hx-target="#req-table" hx-swap="innerHTML"
 				  hx-get="/ui/requests/table" hx-trigger="after-request" hx-target="#req-table" hx-swap="innerHTML">
-				<button class="inline-flex min-w-[9.5rem] items-center justify-center px-4 py-2.5 text-center text-sm font-medium rounded-md bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap">Attach selection</button>
+				<button class="inline-flex h-9 min-w-[7rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-md bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap">Attach</button>
 			</form>
 			{{ end }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest div.rounded-xl" hx-swap="none">
-				<button class="inline-flex min-w-[9.5rem] items-center justify-center px-4 py-2.5 text-center text-sm font-medium rounded-md bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30 hover:bg-amber-900/50 whitespace-nowrap">Decline</button>
+				<button class="inline-flex h-9 min-w-[7rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-md bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30 hover:bg-amber-900/50 whitespace-nowrap">Decline</button>
 			</form>
 			{{ end }}
 			{{ if and (not .ExternalStatus) (or (eq .Status "approved") (eq .Status "queued")) }}
 			<form hx-post="/api/v1/requests/{{ .ID }}/retry" hx-target="this" hx-swap="none" class="js-request-action-form">
-				<button class="inline-flex min-w-[9.5rem] items-center justify-center px-4 py-2.5 text-center text-sm font-medium rounded-md bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" data-label-default="Retry" data-label-working="Retrying..." data-success-message="Request retried successfully." data-failure-message="Retry failed.">Retry</button>
+				<button class="inline-flex h-9 min-w-[7rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-md bg-amber-600 text-white hover:bg-amber-500 whitespace-nowrap" data-label-default="Retry" data-label-working="Retrying..." data-success-message="Request retried successfully." data-failure-message="Retry failed.">Retry</button>
 			</form>
 			{{ end }}
 			<form hx-delete="/api/v1/requests/{{ .ID }}" hx-target="closest div.rounded-xl" hx-swap="delete"
 				  hx-confirm="Are you sure you want to permanently delete this request?">
-				<button class="inline-flex min-w-[9.5rem] items-center justify-center px-4 py-2.5 text-center text-sm font-medium rounded-md bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30 hover:bg-rose-900/50 whitespace-nowrap">Delete</button>
+				<button class="inline-flex h-9 min-w-[7rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-md bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30 hover:bg-rose-900/50 whitespace-nowrap">Delete</button>
 			</form>
 			{{ else }}
 			<span class="text-slate-500">-</span>
