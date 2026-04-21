@@ -30,8 +30,9 @@ func TestLoadDiscoveryCategoriesFallsBackToSubjects(t *testing.T) {
 		case r.URL.Path == "/subjects/fantasy.json":
 			return &http.Response{
 				StatusCode: http.StatusOK,
+				// first_publish_year must be recent (>= minYear) to pass the strict year filter
 				Body: io.NopCloser(strings.NewReader(`{"works":[
-					{"title":"Fallback Fantasy","authors":[{"name":"A"}],"cover_id":12345,"key":"/works/OL-FALLBACK-1"}
+					{"title":"Fallback Fantasy","authors":[{"name":"A"}],"cover_id":12345,"key":"/works/OL-FALLBACK-1","first_publish_year":2020}
 				]}`)),
 				Header: make(http.Header),
 			}, nil

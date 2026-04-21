@@ -74,11 +74,12 @@ type OLSubjectAuthor struct {
 }
 
 type OLSubjectWork struct {
-	Title           string            `json:"title"`
-	Authors         []OLSubjectAuthor `json:"authors"`
-	CoverID         int               `json:"cover_id"`
-	CoverEditionKey string            `json:"cover_edition_key"`
-	Key             string            `json:"key"`
+	Title            string            `json:"title"`
+	Authors          []OLSubjectAuthor `json:"authors"`
+	CoverID          int               `json:"cover_id"`
+	CoverEditionKey  string            `json:"cover_edition_key"`
+	Key              string            `json:"key"`
+	FirstPublishYear int               `json:"first_publish_year"`
 }
 
 type OLSubjectResp struct {
@@ -309,6 +310,7 @@ func (ol *OpenLibrary) SubjectWorks(ctx context.Context, subject string, limit i
 		items = append(items, BookItem{
 			Title:                 w.Title,
 			Authors:               authors,
+			FirstPublishYear:      w.FirstPublishYear,
 			OpenLibraryWorkKey:    w.Key,
 			OpenLibraryEditionKey: w.CoverEditionKey,
 			CoverSmall:            cover,
