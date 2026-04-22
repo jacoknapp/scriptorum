@@ -425,7 +425,7 @@
 			if (normalized === 'error') return 'bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30';
 			return 'bg-night-700 text-slate-200 ring-1 ring-white/10';
 		}
-		function renderRequestStatusBadge(status){
+		function renderRequestStatusBadge(status, compact){
 			var normalized = normalizeRequestState(status);
 			var dotClass = 'bg-slate-400';
 			if (normalized === 'queued') dotClass = 'bg-emerald-400';
@@ -433,7 +433,9 @@
 			else if (normalized === 'approved') dotClass = 'bg-royal-300';
 			else if (normalized === 'declined' || normalized === 'error') dotClass = 'bg-rose-400';
 			else if (normalized === 'pending') dotClass = 'bg-amber-300';
-			return '<span class="inline-flex items-center justify-center gap-1 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ' + requestStatusBadgeClass(status) + '"><span class="w-1.5 h-1.5 rounded-full shrink-0 ' + dotClass + '"></span>' + requestStatusLabel(status) + '</span>';
+			// compact mode uses tighter padding to match small inline contexts (e.g. modal status row)
+			var sizeClass = compact ? 'px-2 py-1 text-xs' : 'px-3 py-1 text-xs';
+			return '<span class="inline-flex items-center justify-center gap-1 ' + sizeClass + ' rounded-full font-medium whitespace-nowrap ' + requestStatusBadgeClass(status) + '"><span class="w-1.5 h-1.5 rounded-full shrink-0 ' + dotClass + '"></span>' + requestStatusLabel(status) + '</span>';
 		}
 		function availabilityBadgeClass(state){
 			var normalized = normalizeRequestState(state);
@@ -447,20 +449,22 @@
 			if (!normalized) return '';
 			return requestFormatLabel(format) + ' ' + titleCaseRequestState(normalized);
 		}
-		function renderAvailabilityBadge(format, state){
+		function renderAvailabilityBadge(format, state, compact){
 			var label = availabilityLabel(format, state);
 			if (!label) return '';
-			return '<span class="inline-flex items-center justify-center gap-1 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ' + availabilityBadgeClass(state) + '">' + label + '</span>';
+			// compact mode uses tighter padding to match small inline contexts (e.g. modal status row)
+			var sizeClass = compact ? 'px-2 py-1 text-xs' : 'px-3 py-1 text-xs';
+			return '<span class="inline-flex items-center justify-center gap-1 ' + sizeClass + ' rounded-full font-medium whitespace-nowrap ' + availabilityBadgeClass(state) + '">' + label + '</span>';
 		}
 		function hasLibraryStatus(externalStatus){
 			var normalized = normalizeRequestState(externalStatus);
 			return normalized === 'available' || normalized === 'monitored' || normalized === 'grabbed';
 		}
-		function renderEffectiveRequestBadge(format, status, externalStatus){
+		function renderEffectiveRequestBadge(format, status, externalStatus, compact){
 			if (hasLibraryStatus(externalStatus)) {
-				return renderAvailabilityBadge(format, externalStatus);
+				return renderAvailabilityBadge(format, externalStatus, compact);
 			}
-			return renderRequestStatusBadge(status);
+			return renderRequestStatusBadge(status, compact);
 		}
 		function isLibraryAvailabilityState(state){
 			var normalized = normalizeRequestState(state);
@@ -806,7 +810,7 @@
 							<strong>Requested by:</strong> <span id="book-modal-requester"></span>
 						</div>
 						<div class="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5">
-							<span>Status:</span> <span id="book-modal-status" class="[&>span]:px-2 [&>span]:py-0.5 [&>span]:text-[10px]"></span>
+							<span>Status:</span> <span id="book-modal-status"></span>
 						</div>
 					</div>
 				</div>
@@ -988,7 +992,8 @@
 							var statusText = data.status || data.Status || 'pending';
 							var externalStatus = data.externalStatus || data.ExternalStatus || '';
 							var format = data.format || data.Format || 'ebook';
-							status.innerHTML = renderEffectiveRequestBadge(format, statusText, externalStatus);
+							// render compact pill to match the small modal status row
+						status.innerHTML = renderEffectiveRequestBadge(format, statusText, externalStatus, true);
 						}
 					} else {
 						requestInfo.classList.add('hidden');
