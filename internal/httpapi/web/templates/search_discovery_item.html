@@ -23,7 +23,7 @@
   </div>
 
   {{ if or .EbookState .AudiobookState }}
-  <div class="mt-3 flex flex-wrap justify-end gap-2 text-xs">
+  <div class="mt-3 flex flex-wrap justify-center gap-2 text-xs">
     {{ if .EbookState }}
     <span class="inline-flex items-center justify-center whitespace-nowrap rounded-full px-3 py-1 leading-none {{ if eq .EbookState "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .EbookState "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .EbookState "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-slate-800 text-slate-200 ring-1 ring-white/10{{ end }}">eBook {{ .EbookState }}</span>
     {{ end }}
