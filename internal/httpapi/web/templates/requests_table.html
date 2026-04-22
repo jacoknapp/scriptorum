@@ -25,8 +25,8 @@
 			</td>
 			<td class="px-4 py-3 align-middle text-center">{{ .RequesterEmail }}</td>
 			<td class="px-4 py-3 align-middle text-center">{{ if eq .Format "ebook" }}eBook{{ else if eq .Format "audiobook" }}Audiobook{{ else }}{{ .Format }}{{ end }}</td>
-			<td class="px-4 py-3 flex flex-col items-center justify-center">
-				<div class="flex flex-col items-center justify-center gap-2 w-full">
+			<td class="px-4 py-3 align-middle text-center">
+				<div class="inline-flex flex-col items-center gap-2">
 					<span class="inline-flex w-[9rem] justify-center px-3 py-1.5 rounded-full text-center text-xs font-medium whitespace-nowrap overflow-hidden {{ if eq .ExternalStatus "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .ExternalStatus "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .ExternalStatus "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else if eq .Status "queued" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .Status "pending" }}bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .Status "processing" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else if eq .Status "approved" }}bg-royal-900/40 text-royal-100 ring-1 ring-royal-500/30{{ else if eq .Status "declined" }}bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30{{ else if eq .Status "error" }}bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30{{ else }}bg-night-700 text-slate-200 ring-1 ring-white/10{{ end }}">
 						{{ if eq .ExternalStatus "available" }}Available{{ else if eq .ExternalStatus "monitored" }}Monitored{{ else if eq .ExternalStatus "grabbed" }}Grabbed{{ else if eq .Status "queued" }}Requested{{ else if eq .Status "processing" }}Approving{{ else if eq .Status "pending" }}Pending{{ else if eq .Status "approved" }}Approved{{ else if eq .Status "error" }}Needs Attention{{ else }}{{ .Status }}{{ end }}
 					</span>
