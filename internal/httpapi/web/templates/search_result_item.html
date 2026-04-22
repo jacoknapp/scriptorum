@@ -4,7 +4,7 @@
   <div class="col-span-2 md:col-span-2 flex gap-2 items-start" data-open-book="1" role="button" tabindex="0" style="cursor:pointer;">
     <!-- Use placeholder if no cover; clicking opens details modal -->
     <img data-search-cover src="{{ if .CoverMedium }}{{ .CoverMedium }}{{ else }}/static/placeholder-cover.svg{{ end }}"
-      class="w-16 h-24 object-cover rounded-lg border border-white/10 bg-night-900"
+      class="w-20 h-36 object-contain rounded-lg border border-white/10 bg-night-900 shrink-0"
       loading="lazy"
       decoding="async"
       onerror="this.onerror=null; this.src='/static/placeholder-cover.svg'; if (window.scriptorumRecoverSearchCover) { window.scriptorumRecoverSearchCover(this); }">
@@ -12,19 +12,19 @@
     <div class="min-w-0 pl-2 md:pl-0">
       <div class="font-medium leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">{{ .Title }}</div>
       <div class="text-sm text-slate-400 whitespace-normal break-words">{{ truncateChars (authorsText .Authors) 72 }}</div>
-      <div class="text-xs text-slate-400">
-        {{ if .ISBN13 }}ISBN-13: {{ .ISBN13 }}{{ end }}
-        {{ if and .ISBN13 .ISBN10 }}, {{ end }}
-        {{ if .ISBN10 }}ISBN-10: {{ .ISBN10 }}{{ end }}
-        {{ if .ASIN }}{{ if or .ISBN13 .ISBN10 }}, {{ end }}ASIN: {{ .ASIN }}{{ end }}
-      </div>
-      <div class="mt-2 flex flex-wrap gap-2 text-xs">
+      <div class="mt-2 flex gap-2 text-xs">
         {{ if .EbookState }}
         <span class="inline-flex items-center justify-center whitespace-nowrap rounded-full px-3 py-1 leading-none {{ if eq .EbookState "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .EbookState "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .EbookState "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-slate-800 text-slate-200 ring-1 ring-white/10{{ end }}">eBook {{ .EbookState }}</span>
         {{ end }}
         {{ if .AudiobookState }}
         <span class="inline-flex items-center justify-center whitespace-nowrap rounded-full px-3 py-1 leading-none {{ if eq .AudiobookState "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .AudiobookState "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .AudiobookState "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else }}bg-slate-800 text-slate-200 ring-1 ring-white/10{{ end }}">Audiobook {{ .AudiobookState }}</span>
         {{ end }}
+      </div>
+      <div class="mt-1.5 text-xs text-slate-400">
+        {{ if .ISBN13 }}ISBN-13: {{ .ISBN13 }}{{ end }}
+        {{ if and .ISBN13 .ISBN10 }}, {{ end }}
+        {{ if .ISBN10 }}ISBN-10: {{ .ISBN10 }}{{ end }}
+        {{ if .ASIN }}{{ if or .ISBN13 .ISBN10 }}, {{ end }}ASIN: {{ .ASIN }}{{ end }}
       </div>
       <!-- Source label removed: do not display which instance returned the result -->
     </div>
