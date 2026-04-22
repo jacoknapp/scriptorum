@@ -433,7 +433,7 @@
 			else if (normalized === 'approved') dotClass = 'bg-royal-300';
 			else if (normalized === 'declined' || normalized === 'error') dotClass = 'bg-rose-400';
 			else if (normalized === 'pending') dotClass = 'bg-amber-300';
-			return '<span class="inline-flex w-[9rem] items-center justify-center gap-1 px-3 py-1 rounded-full text-xs font-medium ' + requestStatusBadgeClass(status) + '"><span class="w-1.5 h-1.5 rounded-full ' + dotClass + '"></span>' + requestStatusLabel(status) + '</span>';
+			return '<span class="inline-flex items-center justify-center gap-1 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ' + requestStatusBadgeClass(status) + '"><span class="w-1.5 h-1.5 rounded-full shrink-0 ' + dotClass + '"></span>' + requestStatusLabel(status) + '</span>';
 		}
 		function availabilityBadgeClass(state){
 			var normalized = normalizeRequestState(state);
@@ -450,7 +450,7 @@
 		function renderAvailabilityBadge(format, state){
 			var label = availabilityLabel(format, state);
 			if (!label) return '';
-			return '<span class="inline-flex w-[9rem] items-center justify-center gap-1 px-3 py-1 rounded-full text-xs font-medium ' + availabilityBadgeClass(state) + '">' + label + '</span>';
+			return '<span class="inline-flex items-center justify-center gap-1 px-3 py-1 rounded-full text-xs font-medium whitespace-nowrap ' + availabilityBadgeClass(state) + '">' + label + '</span>';
 		}
 		function hasLibraryStatus(externalStatus){
 			var normalized = normalizeRequestState(externalStatus);
