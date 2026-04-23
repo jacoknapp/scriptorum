@@ -20,6 +20,17 @@ func (s *Server) tryCompleteApprovalFromCatalogMatch(ctx context.Context, req *d
 		return false, err
 	}
 
+	if err := s.completeRequestFromCatalogMatch(ctx, req, match, inst, username, reasonSuffix, notify); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Server) completeRequestFromCatalogMatch(ctx context.Context, req *db.Request, match *db.ReadarrBook, inst providers.ReadarrInstance, username, reasonSuffix string, notify bool) error {
+	if match == nil {
+		return sql.ErrNoRows
+	}
+
 	externalStatus := match.Availability()
 	reason := "already in Readarr" + reasonSuffix
 
@@ -46,7 +57,7 @@ func (s *Server) tryCompleteApprovalFromCatalogMatch(ctx context.Context, req *d
 	if notify {
 		s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
 	}
-	return true, nil
+	return nil
 }
 
 func readarrStateFromResponse(body []byte) (int64, string) {

@@ -87,7 +87,7 @@ func (s *Server) runAutomaticReadarrSync(parent context.Context) {
 	}
 	ctx, cancel := context.WithTimeout(ctxOrBackground(parent), readarrAutoSyncTimeout)
 	defer cancel()
-	if _, err := s.runReadarrSync(ctx, "all", "automatic"); err != nil {
+	if _, err := s.runReadarrSync(ctx, "all", "automatic", "system"); err != nil {
 		if errors.Is(err, errReadarrSyncInProgress) || errors.Is(err, context.Canceled) {
 			return
 		}
@@ -97,14 +97,14 @@ func (s *Server) runAutomaticReadarrSync(parent context.Context) {
 	}
 }
 
-func (s *Server) runReadarrSync(ctx context.Context, requestedKind, trigger string) ([]readarrSyncSummary, error) {
+func (s *Server) runReadarrSync(ctx context.Context, requestedKind, trigger, actor string) ([]readarrSyncSummary, error) {
 	if !s.readarrSyncMu.TryLock() {
 		return nil, errReadarrSyncInProgress
 	}
 	s.markReadarrSyncStart(trigger)
 	defer s.readarrSyncMu.Unlock()
 
-	summaries, err := s.syncReadarrCatalog(ctxOrBackground(ctx), requestedKind)
+	summaries, err := s.syncReadarrCatalog(ctxOrBackground(ctx), requestedKind, actor)
 	s.markReadarrSyncComplete(trigger, summaries, err)
 	return summaries, err
 }
@@ -179,7 +179,11 @@ func (s *Server) readarrSyncView() readarrSyncViewData {
 func (s *Server) apiReadarrSync() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		kind := strings.TrimSpace(r.URL.Query().Get("kind"))
-		summaries, err := s.runReadarrSync(r.Context(), kind, "manual")
+		actor := "system"
+		if u, ok := r.Context().Value(ctxUser).(*session); ok && strings.TrimSpace(u.Username) != "" {
+			actor = u.Username
+		}
+		summaries, err := s.runReadarrSync(r.Context(), kind, "manual", actor)
 		if err != nil {
 			if errors.Is(err, errReadarrSyncInProgress) {
 				http.Error(w, "readarr sync already in progress", http.StatusConflict)
@@ -195,7 +199,10 @@ func (s *Server) apiReadarrSync() http.HandlerFunc {
 	}
 }
 
-func (s *Server) syncReadarrCatalog(ctx context.Context, requestedKind string) ([]readarrSyncSummary, error) {
+func (s *Server) syncReadarrCatalog(ctx context.Context, requestedKind, actor string) ([]readarrSyncSummary, error) {
+	if strings.TrimSpace(actor) == "" {
+		actor = "system"
+	}
 	kinds := []string{"ebook", "audiobook"}
 	if requestedKind != "" && requestedKind != "all" {
 		kinds = []string{normalizeSyncKind(requestedKind)}
@@ -235,7 +242,7 @@ func (s *Server) syncReadarrCatalog(ctx context.Context, requestedKind string) (
 			return nil, fmt.Errorf("%s import failed: %w", kind, err)
 		}
 		s.clearCatalogMatchCache()
-		reconciled, matched, err := s.reconcileRequestsAgainstCatalog(ctx, kind)
+		reconciled, matched, err := s.reconcileRequestsAgainstCatalog(ctx, kind, inst, actor)
 		if err != nil {
 			return nil, fmt.Errorf("%s reconcile failed: %w", kind, err)
 		}
@@ -278,10 +285,21 @@ func formatReadarrSyncSummary(summaries []readarrSyncSummary) string {
 	return strings.Join(parts, " | ")
 }
 
-func (s *Server) reconcileRequestsAgainstCatalog(ctx context.Context, kind string) (int, int, error) {
+func formatReadarrSyncMatchReason(kind, availability string) string {
+	availability = strings.TrimSpace(availability)
+	if availability == "" {
+		return fmt.Sprintf("Readarr sync: found in %s library", kind)
+	}
+	return fmt.Sprintf("Readarr sync: %s in %s library", availability, kind)
+}
+
+func (s *Server) reconcileRequestsAgainstCatalog(ctx context.Context, kind string, inst providers.ReadarrInstance, actor string) (int, int, error) {
 	requests, err := s.db.ListRequests(ctx, "", 1000)
 	if err != nil {
 		return 0, 0, err
+	}
+	if strings.TrimSpace(actor) == "" {
+		actor = "system"
 	}
 	reconciled := 0
 	matched := 0
@@ -293,7 +311,13 @@ func (s *Server) reconcileRequestsAgainstCatalog(ctx context.Context, kind strin
 		if err == nil && match != nil {
 			matched++
 			reconciled++
-			reason := fmt.Sprintf("Readarr sync: %s in %s library", match.Availability(), kind)
+			if strings.ToLower(strings.TrimSpace(req.Status)) != "declined" {
+				if err := s.completeRequestFromCatalogMatch(ctx, &req, match, inst, actor, "", false); err != nil {
+					return reconciled, matched, err
+				}
+				continue
+			}
+			reason := formatReadarrSyncMatchReason(kind, match.Availability())
 			if err := s.db.UpdateRequestExternalStatus(ctx, req.ID, match.Availability(), match.ReadarrID, reason); err != nil {
 				return reconciled, matched, err
 			}
