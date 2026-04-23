@@ -433,8 +433,8 @@
 			else if (normalized === 'approved') dotClass = 'bg-royal-300';
 			else if (normalized === 'declined' || normalized === 'error') dotClass = 'bg-rose-400';
 			else if (normalized === 'pending') dotClass = 'bg-amber-300';
-			// compact mode uses tighter padding to match small inline contexts (e.g. modal status row)
-			var sizeClass = compact ? 'px-2 py-1 text-xs' : 'px-3 py-1 text-xs';
+			// compact mode matches the smaller 11px metadata rows used in the book modal
+			var sizeClass = compact ? 'px-1.5 py-0.5 text-[11px] leading-none' : 'px-3 py-1 text-xs';
 			return '<span class="inline-flex items-center justify-center gap-1 ' + sizeClass + ' rounded-full font-medium whitespace-nowrap ' + requestStatusBadgeClass(status) + '"><span class="w-1.5 h-1.5 rounded-full shrink-0 ' + dotClass + '"></span>' + requestStatusLabel(status) + '</span>';
 		}
 		function availabilityBadgeClass(state){
@@ -452,8 +452,8 @@
 		function renderAvailabilityBadge(format, state, compact){
 			var label = availabilityLabel(format, state);
 			if (!label) return '';
-			// compact mode uses tighter padding to match small inline contexts (e.g. modal status row)
-			var sizeClass = compact ? 'px-2 py-1 text-xs' : 'px-3 py-1 text-xs';
+			// compact mode matches the smaller 11px metadata rows used in the book modal
+			var sizeClass = compact ? 'px-1.5 py-0.5 text-[11px] leading-none' : 'px-3 py-1 text-xs';
 			return '<span class="inline-flex items-center justify-center gap-1 ' + sizeClass + ' rounded-full font-medium whitespace-nowrap ' + availabilityBadgeClass(state) + '">' + label + '</span>';
 		}
 		function hasLibraryStatus(externalStatus){
