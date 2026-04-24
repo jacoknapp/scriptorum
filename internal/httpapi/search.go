@@ -588,12 +588,37 @@ func (s *Server) loadDiscoverySearchData() map[string]any {
 
 func (u *searchUI) loadTrendingBooks(ctx context.Context) []searchItem {
 	ol := providers.NewOpenLibrary()
-	books, err := ol.TrendingWorks(ctx, "weekly", 24)
-	if err != nil || len(books) == 0 {
+	const (
+		trendingInitialLimit = 24
+		trendingStepLimit    = 24
+		trendingMaxLimit     = 120
+	)
+
+	detailsCache := make(map[string]*providers.OpenLibraryWorkDetails, discoveryTrendingSize*4)
+	books := []providers.BookItem{}
+	for limit := trendingInitialLimit; limit <= trendingMaxLimit; limit += trendingStepLimit {
+		fetched, err := ol.TrendingWorks(ctx, "weekly", limit)
+		if err != nil || len(fetched) == 0 {
+			if len(books) == 0 {
+				return nil
+			}
+			break
+		}
+
+		ranked := pickDiscoveryBooks(fetched, 2010, len(fetched))
+		books = backfillOpenLibraryDiscoveryMetadataWithCache(ctx, ol, ranked, discoveryTrendingSize, detailsCache)
+		if len(books) >= discoveryTrendingSize {
+			break
+		}
+		// If OL returned fewer than requested, there is no deeper range to fetch.
+		if len(fetched) < limit {
+			break
+		}
+	}
+
+	if len(books) == 0 {
 		return nil
 	}
-	books = pickDiscoveryBooks(books, 2010, len(books))
-	books = backfillOpenLibraryDiscoveryMetadata(ctx, ol, books, discoveryTrendingSize)
 	items := make([]searchItem, 0, len(books))
 	for _, book := range books {
 		items = append(items, openLibrarySearchItem(book, "Trending pick"))

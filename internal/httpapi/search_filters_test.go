@@ -2,9 +2,11 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -147,9 +149,9 @@ func TestBackfillOpenLibraryDiscoveryMetadataRequiresDescription(t *testing.T) {
 
 	got := backfillOpenLibraryDiscoveryMetadata(context.Background(), providers.NewOpenLibrary(), books, 3)
 	if len(got) != 2 {
-// A book with only a cover (no description) must be filtered out
-t.Fatalf("expected only books with descriptions to remain, got %+v", got)
-}
+		// A book with only a cover (no description) must be filtered out
+		t.Fatalf("expected only books with descriptions to remain, got %+v", got)
+	}
 	if got[0].Title != "Needs Description" || got[0].Description != "A real description." {
 		t.Fatalf("expected first item to be backfilled, got %+v", got[0])
 	}
@@ -161,6 +163,79 @@ t.Fatalf("expected only books with descriptions to remain, got %+v", got)
 	}
 }
 
+func TestLoadTrendingBooksFetchesDeeperWhenFilteredCountTooLow(t *testing.T) {
+	restore := providers.TestDisableOLRateLimiter()
+	t.Cleanup(restore)
+
+	callCountByLimit := map[int]int{}
+	prevTransport := http.DefaultTransport
+	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Host != "openlibrary.org" {
+			return prevTransport.RoundTrip(r)
+		}
+
+		switch {
+		case r.URL.Path == "/trending/weekly.json":
+			limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+			callCountByLimit[limit]++
+
+			works := make([]string, 0, limit)
+			if limit <= 24 {
+				// First fetch: only 7 books survive the year>=2010 filter.
+				for i := 1; i <= 7; i++ {
+					works = append(works, fmt.Sprintf(`{"title":"Recent %d","author_name":["A"],"first_publish_year":2024,"cover_i":%d,"key":"/works/OL-R-%d"}`,
+						i, i, i))
+				}
+				for i := 8; i <= 24; i++ {
+					works = append(works, fmt.Sprintf(`{"title":"Old %d","author_name":["B"],"first_publish_year":2000,"cover_i":%d,"key":"/works/OL-O-%d"}`,
+						i, i, i))
+				}
+			} else {
+				// Deeper fetch includes one more recent candidate so we can fill 8.
+				for i := 1; i <= 8; i++ {
+					works = append(works, fmt.Sprintf(`{"title":"Recent %d","author_name":["A"],"first_publish_year":2024,"cover_i":%d,"key":"/works/OL-R-%d"}`,
+						i, i, i))
+				}
+				for i := 9; i <= limit; i++ {
+					works = append(works, fmt.Sprintf(`{"title":"Old %d","author_name":["B"],"first_publish_year":2000,"cover_i":%d,"key":"/works/OL-O-%d"}`,
+						i, i, i))
+				}
+			}
+
+			body := `{"works":[` + strings.Join(works, ",") + `]}`
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(body)),
+				Header:     make(http.Header),
+			}, nil
+
+		case strings.HasPrefix(r.URL.Path, "/works/OL-R-") && strings.HasSuffix(r.URL.Path, ".json"):
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader(`{"description":"Has metadata.","covers":[4242]}`)),
+				Header:     make(http.Header),
+			}, nil
+
+		default:
+			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
+			return nil, nil
+		}
+	})
+	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+
+	u := &searchUI{}
+	got := u.loadTrendingBooks(context.Background())
+
+	if len(got) != discoveryTrendingSize {
+		t.Fatalf("expected %d trending items after deeper fetch, got %d", discoveryTrendingSize, len(got))
+	}
+	if callCountByLimit[24] == 0 {
+		t.Fatalf("expected initial trending call with limit=24")
+	}
+	if callCountByLimit[48] == 0 {
+		t.Fatalf("expected deeper trending call with limit=48 when first batch was short")
+	}
+}
 func TestGatherDiscoveryCategoryBooksReplacesBlockedCandidates(t *testing.T) {
 	// Disable the rate limiter since HTTP transport is mocked and instant
 	restore := providers.TestDisableOLRateLimiter()
