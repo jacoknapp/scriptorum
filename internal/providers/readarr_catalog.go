@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
 )
 
 type ReadarrStatistics struct {
@@ -21,27 +20,22 @@ type CatalogBook struct {
 }
 
 func (r *Readarr) ListBooks(ctx context.Context) ([]CatalogBook, error) {
-	u := r.inst.BaseURL + "/api/v1/book?apikey=" + url.QueryEscape(r.inst.APIKey)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
+	req, u, err := r.newRequest(ctx, http.MethodGet, "/api/v1/book", nil, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := r.cl.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, readarrTransportError(u, r.inst.APIKey, err)
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read response body: %s", sanitizeReadarrText(err.Error(), r.inst.APIKey))
 	}
 	if resp.StatusCode >= 400 {
-		bodyStr := string(body)
-		if len(bodyStr) > 200 {
-			bodyStr = bodyStr[:200] + "..."
-		}
-		return nil, fmt.Errorf("list books failed (HTTP %s): %s", resp.Status, bodyStr)
+		return nil, readarrHTTPError("list books failed", u, r.inst.APIKey, resp, body)
 	}
 
 	var out []CatalogBook

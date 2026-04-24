@@ -262,6 +262,7 @@ func TestReadarrPingLookupUsesCorrectEndpoint(t *testing.T) {
 func TestReadarrLookupByTermUsesCorrectEndpoint(t *testing.T) {
 	var capturedURL string
 	var capturedQuery string
+	var capturedHeader string
 
 	readarr := NewReadarrWithDB(ReadarrInstance{
 		BaseURL: "http://test-readarr:8787",
@@ -271,6 +272,7 @@ func TestReadarrLookupByTermUsesCorrectEndpoint(t *testing.T) {
 	readarr.cl.Transport = rtFunc(func(req *http.Request) (*http.Response, error) {
 		capturedURL = req.URL.Path
 		capturedQuery = req.URL.RawQuery
+		capturedHeader = req.Header.Get("X-Api-Key")
 		return &http.Response{
 			StatusCode: 200,
 			Body:       io.NopCloser(strings.NewReader("[]")),
@@ -289,6 +291,12 @@ func TestReadarrLookupByTermUsesCorrectEndpoint(t *testing.T) {
 
 	if !strings.Contains(capturedQuery, "term=test+query") {
 		t.Errorf("Expected query to contain search term, got %s", capturedQuery)
+	}
+	if strings.Contains(capturedQuery, "apikey=") {
+		t.Errorf("Expected query to omit api key, got %s", capturedQuery)
+	}
+	if capturedHeader != "test-key" {
+		t.Errorf("Expected X-Api-Key header to be set, got %q", capturedHeader)
 	}
 }
 

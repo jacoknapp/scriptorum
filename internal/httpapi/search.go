@@ -1103,18 +1103,10 @@ func (s *Server) serveReadarrCover() http.HandlerFunc {
 			return
 		}
 		// Restrict this proxy endpoint to configured Readarr hosts only to
-		// avoid acting as an open proxy. Also determine whether we should
-		// skip TLS verification for that configured host.
-		cfg := s.settings.Get()
-		if cfg == nil {
-			http.Error(w, "cover proxy disabled", http.StatusForbidden)
-			return
-		}
-		ebookHost := urlHost(cfg.Readarr.Ebooks.BaseURL)
-		audioHost := urlHost(cfg.Readarr.Audiobooks.BaseURL)
-
-		// Only allow fetching from one of the configured Readarr hosts
-		if !strings.EqualFold(ru.Host, ebookHost) && !strings.EqualFold(ru.Host, audioHost) {
+		// avoid acting as an open proxy. Also determine which configured
+		// instance should supply auth and TLS behavior for this cover fetch.
+		inst, ok := s.readarrInstanceForRemoteCoverURL(remote)
+		if !ok {
 			http.Error(w, "host not permitted", http.StatusForbidden)
 			return
 		}
@@ -1122,19 +1114,26 @@ func (s *Server) serveReadarrCover() http.HandlerFunc {
 		// Build HTTP client; if this URL targets a configured Readarr host that has
 		// InsecureSkipVerify enabled, use a client that skips TLS verification.
 		client := &http.Client{Timeout: 12 * time.Second}
-		wantsInsecure := false
-		if strings.EqualFold(ru.Host, ebookHost) && cfg.Readarr.Ebooks.InsecureSkipVerify {
-			wantsInsecure = true
-		}
-		if strings.EqualFold(ru.Host, audioHost) && cfg.Readarr.Audiobooks.InsecureSkipVerify {
-			wantsInsecure = true
-		}
-		if wantsInsecure && ru.Scheme == "https" {
+		if inst.InsecureSkipVerify && ru.Scheme == "https" {
 			tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
 			client = &http.Client{Timeout: 12 * time.Second, Transport: tr}
 		}
-		// fetch remote fresh on every call
-		resp, err := client.Get(remote)
+
+		// Fetch remote fresh on every call. Some Readarr installations protect
+		// MediaCover with the same API key as the JSON API, so forward the
+		// matching instance key here too.
+		req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, remote, nil)
+		if err != nil {
+			http.Error(w, "invalid url", http.StatusBadRequest)
+			return
+		}
+		if key := strings.TrimSpace(inst.APIKey); key != "" {
+			req.Header.Set("X-Api-Key", key)
+		}
+		req.Header.Set("User-Agent", "Scriptorum/1.0")
+		req.Header.Set("Accept", "image/*,*/*;q=0.8")
+
+		resp, err := client.Do(req)
 		if err != nil {
 			http.Error(w, "fetch error", http.StatusBadGateway)
 			return
@@ -1163,6 +1162,44 @@ func (s *Server) serveReadarrCover() http.HandlerFunc {
 		lr := io.LimitReader(resp.Body, maxCoverBytes)
 		_, _ = io.Copy(w, lr)
 	}
+}
+
+func (s *Server) readarrInstanceForRemoteCoverURL(remote string) (providers.ReadarrInstance, bool) {
+	ru, err := url.Parse(strings.TrimSpace(remote))
+	if err != nil || ru == nil || ru.Host == "" {
+		return providers.ReadarrInstance{}, false
+	}
+
+	candidates := make([]providers.ReadarrInstance, 0, 2)
+	if inst, ok := s.readarrInstanceForFormat("ebook"); ok {
+		candidates = append(candidates, inst)
+	}
+	if inst, ok := s.readarrInstanceForFormat("audiobook"); ok {
+		candidates = append(candidates, inst)
+	}
+
+	bestIdx := -1
+	bestScore := -1
+	remotePath := strings.ToLower(strings.TrimRight(strings.TrimSpace(ru.Path), "/"))
+	for i, inst := range candidates {
+		base, baseErr := url.Parse(strings.TrimSpace(inst.BaseURL))
+		if baseErr != nil || base == nil || !strings.EqualFold(base.Host, ru.Host) {
+			continue
+		}
+		score := 10
+		basePath := strings.ToLower(strings.TrimRight(strings.TrimSpace(base.Path), "/"))
+		if basePath != "" && basePath != "/" && (remotePath == basePath || strings.HasPrefix(remotePath, basePath+"/")) {
+			score += len(basePath)
+		}
+		if score > bestScore {
+			bestScore = score
+			bestIdx = i
+		}
+	}
+	if bestIdx < 0 {
+		return providers.ReadarrInstance{}, false
+	}
+	return candidates[bestIdx], true
 }
 
 // urlHost extracts host from a base URL string, tolerant of trailing slashes.

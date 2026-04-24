@@ -2,6 +2,7 @@ package providers
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -23,5 +24,22 @@ func TestReadarrPingLookupStatusError(t *testing.T) {
 	})
 	if err := r.PingLookup(context.Background()); err == nil {
 		t.Fatalf("expected status error")
+	}
+}
+
+func TestReadarrPingLookupRedactsAPIKeyOnTransportError(t *testing.T) {
+	r := NewReadarrWithDB(ReadarrInstance{BaseURL: "http://r", APIKey: "supersecret"}, nil)
+	r.cl.Transport = rtFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, fmt.Errorf(`Get "http://r/api/v1/book/lookup?term=test&apikey=supersecret": tls: failed`)
+	})
+	err := r.PingLookup(context.Background())
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+	if strings.Contains(err.Error(), "supersecret") {
+		t.Fatalf("expected api key to be redacted, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "apikey=***") {
+		t.Fatalf("expected redacted url in error, got %q", err.Error())
 	}
 }

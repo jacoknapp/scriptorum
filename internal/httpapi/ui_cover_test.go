@@ -37,6 +37,42 @@ func TestNormalizeRequestCoverRewritesReadarrMediaHost(t *testing.T) {
 	}
 }
 
+func TestNormalizeRequestCoverPreservesReadarrBasePathWhenRebasing(t *testing.T) {
+	s := makeTestServer(t)
+	configureReadarrForCoverTests(t, s, "https://readarr.example.internal/readarr")
+
+	got := s.normalizeRequestCover("ebook", "http://localhost:8787/MediaCover/12.jpg?lastWrite=123")
+	if !strings.HasPrefix(got, "/ui/readarr-cover?u=") {
+		t.Fatalf("expected proxied cover URL, got %q", got)
+	}
+
+	q, err := url.ParseQuery(strings.TrimPrefix(got, "/ui/readarr-cover?"))
+	if err != nil {
+		t.Fatalf("parse proxy query: %v", err)
+	}
+	if q.Get("u") != "https://readarr.example.internal/readarr/MediaCover/12.jpg?lastWrite=123" {
+		t.Fatalf("unexpected rewritten cover URL with base path: %q", q.Get("u"))
+	}
+}
+
+func TestNormalizeRequestCoverAddsReadarrBasePathForSameHostMediaURL(t *testing.T) {
+	s := makeTestServer(t)
+	configureReadarrForCoverTests(t, s, "https://readarr.example.internal/readarr")
+
+	got := s.normalizeRequestCover("ebook", "https://readarr.example.internal/MediaCover/12.jpg?lastWrite=123")
+	if !strings.HasPrefix(got, "/ui/readarr-cover?u=") {
+		t.Fatalf("expected proxied cover URL, got %q", got)
+	}
+
+	q, err := url.ParseQuery(strings.TrimPrefix(got, "/ui/readarr-cover?"))
+	if err != nil {
+		t.Fatalf("parse proxy query: %v", err)
+	}
+	if q.Get("u") != "https://readarr.example.internal/readarr/MediaCover/12.jpg?lastWrite=123" {
+		t.Fatalf("unexpected same-host cover URL with base path: %q", q.Get("u"))
+	}
+}
+
 func TestNormalizeRequestCoverKeepsExternalCover(t *testing.T) {
 	s := makeTestServer(t)
 	configureReadarrForCoverTests(t, s, "https://readarr.example.internal")

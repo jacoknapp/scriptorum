@@ -155,7 +155,7 @@ jobs:
           else
             LATEST_TAG=$(git tag --list 'v*.*.*' | sort -V | tail -n 1)
             if [[ -z "${LATEST_TAG}" ]]; then
-              VERSION="1.0.0"
+              VERSION="2.0.0"
             else
               BASE_VERSION="${LATEST_TAG#v}"
               IFS='.' read -r MAJOR MINOR PATCH <<< "${BASE_VERSION}"

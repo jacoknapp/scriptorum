@@ -531,25 +531,57 @@ func normalize(i ReadarrInstance) ReadarrInstance {
 	return i
 }
 
-func (r *Readarr) PingLookup(ctx context.Context) error {
-	// Include apikey in query to be resilient to proxies that strip X-Api-Key
-	u := r.inst.BaseURL + readarrLookupEndpoint + "?term=" + url.QueryEscape("test") + "&apikey=" + url.QueryEscape(r.inst.APIKey)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
+func (r *Readarr) requestURL(path string, query url.Values) string {
+	u := r.inst.BaseURL + path
+	if len(query) == 0 {
+		return u
+	}
+	encoded := query.Encode()
+	if encoded == "" {
+		return u
+	}
+	if strings.Contains(u, "?") {
+		return u + "&" + encoded
+	}
+	return u + "?" + encoded
+}
+
+func (r *Readarr) newRequest(ctx context.Context, method, path string, query url.Values, body io.Reader) (*http.Request, string, error) {
+	u := r.requestURL(path, query)
+	req, err := http.NewRequestWithContext(ctx, method, u, body)
+	if err != nil {
+		return nil, u, err
+	}
+	if strings.TrimSpace(r.inst.APIKey) != "" {
+		req.Header.Set("X-Api-Key", r.inst.APIKey)
+	}
 	req.Header.Set("User-Agent", "Scriptorum/1.0")
 	req.Header.Set("Accept", "application/json")
-	resp, err := r.cl.Do(req)
+	return req, u, nil
+}
+
+func (r *Readarr) newJSONRequest(ctx context.Context, method, path string, query url.Values, body io.Reader) (*http.Request, string, error) {
+	req, u, err := r.newRequest(ctx, method, path, query, body)
+	if err != nil {
+		return nil, u, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	return req, u, nil
+}
+
+func (r *Readarr) PingLookup(ctx context.Context) error {
+	req, u, err := r.newRequest(ctx, http.MethodGet, readarrLookupEndpoint, url.Values{"term": {"test"}}, nil)
 	if err != nil {
 		return err
+	}
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return readarrTransportError(u, r.inst.APIKey, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		bodyStr := string(body)
-		if len(bodyStr) > 200 {
-			bodyStr = bodyStr[:200] + "..."
-		}
-		return fmt.Errorf("HTTP %s: %s", resp.Status, bodyStr)
+		return readarrHTTPError("lookup ping failed", u, r.inst.APIKey, resp, body)
 	}
 	return nil
 }
@@ -569,11 +601,10 @@ func (r *Readarr) LookupForeignAuthorIDString(ctx context.Context, name string) 
 	if name == "" {
 		return ""
 	}
-	u := r.inst.BaseURL + "/api/v1/author/lookup?term=" + url.QueryEscape(name) + "&apikey=" + url.QueryEscape(r.inst.APIKey)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
+	req, _, err := r.newRequest(ctx, http.MethodGet, "/api/v1/author/lookup", url.Values{"term": {name}}, nil)
+	if err != nil {
+		return ""
+	}
 	resp, err := r.cl.Do(req)
 	if err != nil {
 		return ""
@@ -608,19 +639,18 @@ func (r *Readarr) GetAuthorByID(ctx context.Context, id int) (map[string]any, er
 	if id <= 0 {
 		return nil, fmt.Errorf("invalid author id")
 	}
-	u := fmt.Sprintf("%s/api/v1/author/%d?apikey=%s", r.inst.BaseURL, id, url.QueryEscape(r.inst.APIKey))
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
-	resp, err := r.cl.Do(req)
+	req, u, err := r.newRequest(ctx, http.MethodGet, fmt.Sprintf("/api/v1/author/%d", id), nil, nil)
 	if err != nil {
 		return nil, err
+	}
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return nil, readarrTransportError(u, r.inst.APIKey, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("HTTP %s: %s", resp.Status, strings.TrimSpace(string(body)))
+		return nil, readarrHTTPError("get author failed", u, r.inst.APIKey, resp, body)
 	}
 	body, _ := io.ReadAll(resp.Body)
 	var out map[string]any
@@ -652,32 +682,18 @@ func (r *Readarr) AddBook(ctx context.Context, candidate Candidate, opts AddOpts
 			payload = b
 		}
 	}
-	// Include apikey in query to be resilient to proxies that strip X-Api-Key
-	u := r.inst.BaseURL + readarrAddEndpoint
-	// Ensure includeAllAuthorBooks=false so Readarr doesn't return unrelated author books
-	if strings.Contains(u, "?") {
-		u += "&includeAllAuthorBooks=false&apikey=" + url.QueryEscape(r.inst.APIKey)
-	} else {
-		u += "?includeAllAuthorBooks=false&apikey=" + url.QueryEscape(r.inst.APIKey)
-	}
-	req, _ := http.NewRequestWithContext(ctx, readarrAddMethod, u, bytes.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
-	resp, err := r.cl.Do(req)
+	req, u, err := r.newJSONRequest(ctx, readarrAddMethod, readarrAddEndpoint, url.Values{"includeAllAuthorBooks": {"false"}}, bytes.NewReader(payload))
 	if err != nil {
 		return payload, nil, err
+	}
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return payload, nil, readarrTransportError(u, r.inst.APIKey, err)
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		bodyStr := string(respBody)
-		if len(bodyStr) > 200 {
-			bodyStr = bodyStr[:200] + "..."
-		}
-		safeURL := redactAPIKey(u)
-		return payload, respBody, fmt.Errorf("add book failed (HTTP %s) to %s: %s", resp.Status, safeURL, bodyStr)
+		return payload, respBody, readarrHTTPError("add book failed", u, r.inst.APIKey, resp, respBody)
 	}
 	return payload, respBody, nil
 }
@@ -697,151 +713,99 @@ func (r *Readarr) AddBookRaw(ctx context.Context, raw json.RawMessage) ([]byte, 
 		}
 	}
 
-	u := r.inst.BaseURL + readarrAddEndpoint
-	if strings.Contains(u, "?") {
-		u += "&apikey=" + url.QueryEscape(r.inst.APIKey)
-	} else {
-		u += "?apikey=" + url.QueryEscape(r.inst.APIKey)
-	}
-	req, _ := http.NewRequestWithContext(ctx, readarrAddMethod, u, bytes.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
-	resp, err := r.cl.Do(req)
+	req, u, err := r.newJSONRequest(ctx, readarrAddMethod, readarrAddEndpoint, nil, bytes.NewReader(payload))
 	if err != nil {
 		return payload, nil, err
+	}
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return payload, nil, readarrTransportError(u, r.inst.APIKey, err)
 	}
 	defer resp.Body.Close()
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		bodyStr := string(respBody)
-		if len(bodyStr) > 200 {
-			bodyStr = bodyStr[:200] + "..."
-		}
-		safeURL := redactAPIKey(u)
-		return payload, respBody, fmt.Errorf("add book (raw) failed (HTTP %s) to %s: %s", resp.Status, safeURL, bodyStr)
+		return payload, respBody, readarrHTTPError("add book (raw) failed", u, r.inst.APIKey, resp, respBody)
 	}
 	return payload, respBody, nil
 }
 
-// GetBookByAddPayload performs a GET request to the AddEndpoint using the same
-// payload that would be sent for creation. Some Readarr setups respond with the
-// existing book when the payload matches an already-added entity. Returns the
-// Readarr book id when found and the raw response body.
+// GetBookByAddPayload resolves a matching catalog book for the payload that would
+// be sent for creation. Readarr's catalog endpoint does not accept the add payload
+// directly, so we list the current books and match by foreign ids or title data.
 func (r *Readarr) GetBookByAddPayload(ctx context.Context, payload []byte) (int, []byte, error) {
-	u := r.inst.BaseURL + readarrAddEndpoint
-	// Ensure includeAllAuthorBooks=false so Readarr doesn't return unrelated author books
-	if strings.Contains(u, "?") {
-		u += "&includeAllAuthorBooks=false&apikey=" + url.QueryEscape(r.inst.APIKey)
-	} else {
-		u += "?includeAllAuthorBooks=false&apikey=" + url.QueryEscape(r.inst.APIKey)
-	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, bytes.NewReader(payload))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
-	resp, err := r.cl.Do(req)
+	matchQuery, err := decodeAddPayloadMatch(payload)
 	if err != nil {
 		return 0, nil, err
 	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode >= 400 {
-		safeURL := redactAPIKey(u)
-		bodyStr := string(body)
-		if len(bodyStr) > 200 {
-			bodyStr = bodyStr[:200] + "..."
-		}
-		// If debug enabled, print the full body for diagnostics
-		if Debug {
-			fmt.Printf("DEBUG: GetBookByAddPayload HTTP %s body: %s\n", resp.Status, string(body))
-		}
-		return 0, body, fmt.Errorf("lookup existing book failed (HTTP %s) from %s: %s", resp.Status, safeURL, bodyStr)
+	books, err := r.ListBooks(ctx)
+	if err != nil {
+		return 0, nil, err
 	}
-	// Try object first
-	var obj map[string]any
-	if err := json.Unmarshal(body, &obj); err == nil && len(obj) > 0 {
-		if idv, ok := obj["id"]; ok {
-			switch v := idv.(type) {
-			case float64:
-				return int(v), body, nil
-			case int:
-				return v, body, nil
-			case int64:
-				return int(v), body, nil
+	for _, book := range books {
+		if addPayloadMatchesCatalogBook(matchQuery, book) {
+			body, err := json.Marshal(book)
+			if err != nil {
+				return book.ID, nil, nil
 			}
+			return book.ID, body, nil
 		}
 	}
-
-	// Fallback: array of objects. Prefer the element that matches the original payload's
-	// foreignBookId or foreignEditionId to avoid returning unrelated author books.
-	var arr []map[string]any
-	if err := json.Unmarshal(body, &arr); err == nil && len(arr) > 0 {
-		// Attempt to parse the original payload for foreign ids to match against
-		var pmap map[string]any
-		_ = json.Unmarshal(payload, &pmap)
-		fb := strings.TrimSpace(fmt.Sprint(pmap["foreignBookId"]))
-		fe := strings.TrimSpace(fmt.Sprint(pmap["foreignEditionId"]))
-
-		// helper to extract id from an element
-		getID := func(m map[string]any) (int, bool) {
-			if idv, ok := m["id"]; ok {
-				switch v := idv.(type) {
-				case float64:
-					return int(v), true
-				case int:
-					return v, true
-				case int64:
-					return int(v), true
-				case string:
-					if i, e := strconv.Atoi(strings.TrimSpace(v)); e == nil {
-						return i, true
-					}
-				}
-			}
-			return 0, false
-		}
-
-		// Try to find a matching element by foreignBookId or foreignEditionId
-		for _, it := range arr {
-			if fb != "" {
-				if v := strings.TrimSpace(fmt.Sprint(it["foreignBookId"])); v != "" && v == fb {
-					if id, ok := getID(it); ok {
-						return id, body, nil
-					}
-				}
-			}
-			if fe != "" {
-				if v := strings.TrimSpace(fmt.Sprint(it["foreignEditionId"])); v != "" && v == fe {
-					if id, ok := getID(it); ok {
-						return id, body, nil
-					}
-				}
-			}
-		}
-
-		// If no match but only one result, accept it
-		if len(arr) == 1 {
-			if id, ok := getID(arr[0]); ok {
-				return id, body, nil
-			}
-		}
-
-		// As a last resort, pick the first element and log debug so operator can inspect
-		if id, ok := getID(arr[0]); ok {
-			if Debug {
-				fmt.Printf("DEBUG: GetBookByAddPayload: multiple books returned; no foreign id match, picking first id=%d\n", id)
-			}
-			return id, body, nil
-		}
-	}
-	// Debug: print returned body when no id parsed
 	if Debug {
-		fmt.Printf("DEBUG: GetBookByAddPayload: could not extract id from response body: %s\n", string(body))
+		fmt.Printf("DEBUG: GetBookByAddPayload: no catalog match found for payload: %s\n", string(payload))
 	}
-	return 0, body, fmt.Errorf("existing book id not found in response")
+	return 0, nil, fmt.Errorf("existing book id not found in catalog")
+}
+
+type addPayloadMatch struct {
+	ForeignBookID    string
+	ForeignEditionID string
+	Title            string
+	AuthorTitle      string
+}
+
+func decodeAddPayloadMatch(payload []byte) (addPayloadMatch, error) {
+	var raw map[string]any
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return addPayloadMatch{}, err
+	}
+	return addPayloadMatch{
+		ForeignBookID:    readarrStringValue(raw, "foreignBookId"),
+		ForeignEditionID: readarrStringValue(raw, "foreignEditionId"),
+		Title:            readarrStringValue(raw, "title"),
+		AuthorTitle:      readarrStringValue(raw, "authorTitle"),
+	}, nil
+}
+
+func readarrStringValue(raw map[string]any, key string) string {
+	v, ok := raw[key]
+	if !ok || v == nil {
+		return ""
+	}
+	return strings.TrimSpace(fmt.Sprint(v))
+}
+
+func addPayloadMatchesCatalogBook(match addPayloadMatch, book CatalogBook) bool {
+	if match.ForeignBookID != "" && strings.EqualFold(strings.TrimSpace(book.ForeignBookId), match.ForeignBookID) {
+		return true
+	}
+	if match.ForeignEditionID != "" {
+		if strings.EqualFold(strings.TrimSpace(book.ForeignEditionId), match.ForeignEditionID) {
+			return true
+		}
+		for _, rawEdition := range book.Editions {
+			edition, ok := rawEdition.(map[string]any)
+			if !ok {
+				continue
+			}
+			if strings.EqualFold(strings.TrimSpace(fmt.Sprint(edition["foreignEditionId"])), match.ForeignEditionID) {
+				return true
+			}
+		}
+	}
+	if match.Title != "" && strings.EqualFold(strings.TrimSpace(book.Title), match.Title) {
+		return match.AuthorTitle == "" || strings.EqualFold(strings.TrimSpace(book.AuthorTitle), match.AuthorTitle)
+	}
+	return false
 }
 
 // MonitorBooks sends a PUT to /api/v1/book/monitor with the provided readarr ids
@@ -850,36 +814,24 @@ func (r *Readarr) MonitorBooks(ctx context.Context, ids []int, monitored bool) (
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("no ids provided")
 	}
-	u := r.inst.BaseURL + "/api/v1/book/monitor"
-	if strings.Contains(u, "?") {
-		u += "&apikey=" + url.QueryEscape(r.inst.APIKey)
-	} else {
-		u += "?apikey=" + url.QueryEscape(r.inst.APIKey)
-	}
 	// build payload
 	payload := map[string]any{
 		"bookIds":   ids,
 		"monitored": monitored,
 	}
 	b, _ := json.Marshal(payload)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodPut, u, bytes.NewReader(b))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
-	resp, err := r.cl.Do(req)
+	req, u, err := r.newJSONRequest(ctx, http.MethodPut, "/api/v1/book/monitor", nil, bytes.NewReader(b))
 	if err != nil {
 		return nil, err
+	}
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return nil, readarrTransportError(u, r.inst.APIKey, err)
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode >= 400 {
-		safeURL := redactAPIKey(u)
-		bodyStr := string(body)
-		if len(bodyStr) > 200 {
-			bodyStr = bodyStr[:200] + "..."
-		}
-		return body, fmt.Errorf("monitor update failed (HTTP %s) to %s: %s", resp.Status, safeURL, bodyStr)
+		return body, readarrHTTPError("monitor update failed", u, r.inst.APIKey, resp, body)
 	}
 	return body, nil
 }
@@ -896,30 +848,24 @@ func (r *Readarr) LookupByTerm(ctx context.Context, term string) ([]LookupBook, 
 		}
 	}
 
-	// Include apikey in query to be resilient to proxies that strip X-Api-Key
-	u := r.inst.BaseURL + readarrLookupEndpoint + "?term=" + url.QueryEscape(term) + "&apikey=" + url.QueryEscape(r.inst.APIKey)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
+	req, u, err := r.newRequest(ctx, http.MethodGet, readarrLookupEndpoint, url.Values{"term": {term}}, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	resp, err := r.cl.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, readarrTransportError(u, r.inst.APIKey, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		bodyStr := string(body)
-		if len(bodyStr) > 200 {
-			bodyStr = bodyStr[:200] + "..."
-		}
-		return nil, fmt.Errorf("HTTP %s (ct=%s): %s", resp.Status, resp.Header.Get("Content-Type"), bodyStr)
+		return nil, readarrHTTPError("lookup failed", u, r.inst.APIKey, resp, body)
 	}
 	// Read the entire response body first
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %v", err)
+		return nil, fmt.Errorf("failed to read response body: %s", sanitizeReadarrText(err.Error(), r.inst.APIKey))
 	}
 
 	// Try to decode as JSON
@@ -964,11 +910,10 @@ func (r *Readarr) GetBookDetails(ctx context.Context, bookID int) (map[string]in
 	}
 
 	for _, endpoint := range endpoints {
-		u := r.inst.BaseURL + endpoint + "?apikey=" + url.QueryEscape(r.inst.APIKey)
-		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-		req.Header.Set("X-Api-Key", r.inst.APIKey)
-		req.Header.Set("User-Agent", "Scriptorum/1.0")
-		req.Header.Set("Accept", "application/json")
+		req, _, err := r.newRequest(ctx, http.MethodGet, endpoint, nil, nil)
+		if err != nil {
+			continue
+		}
 
 		resp, err := r.cl.Do(req)
 		if err != nil {
@@ -1020,28 +965,23 @@ func (r *Readarr) FindAuthorIDByName(ctx context.Context, name string) (int, err
 	}
 
 	// Use the author lookup endpoint
-	u := r.inst.BaseURL + "/api/v1/author/lookup?term=" + url.QueryEscape(name) + "&apikey=" + url.QueryEscape(r.inst.APIKey)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
+	req, u, err := r.newRequest(ctx, http.MethodGet, "/api/v1/author/lookup", url.Values{"term": {name}}, nil)
+	if err != nil {
+		return 0, err
+	}
 
 	resp, err := r.cl.Do(req)
 	if err != nil {
-		return 0, err
+		return 0, readarrTransportError(u, r.inst.APIKey, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		bodyStr := string(body)
-		if len(bodyStr) > 200 {
-			bodyStr = bodyStr[:200] + "..."
-		}
-		return 0, fmt.Errorf("HTTP %s (ct=%s): %s", resp.Status, resp.Header.Get("Content-Type"), bodyStr)
+		return 0, readarrHTTPError("author lookup failed", u, r.inst.APIKey, resp, body)
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("failed to read response body: %s", sanitizeReadarrText(err.Error(), r.inst.APIKey))
 	}
 	var arr []map[string]any
 	if err := json.Unmarshal(body, &arr); err != nil {
@@ -1107,21 +1047,47 @@ func redactAPIKey(u string) string {
 	return u
 }
 
+func sanitizeReadarrText(text, apiKey string) string {
+	text = strings.TrimSpace(redactAPIKey(text))
+	if apiKey == "" {
+		return text
+	}
+	text = strings.ReplaceAll(text, apiKey, "***")
+	if escaped := url.QueryEscape(apiKey); escaped != "" && escaped != apiKey {
+		text = strings.ReplaceAll(text, escaped, "***")
+	}
+	return text
+}
+
+func readarrTransportError(u, apiKey string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("request to %s failed: %s", redactAPIKey(u), sanitizeReadarrText(err.Error(), apiKey))
+}
+
+func readarrHTTPError(prefix, u, apiKey string, resp *http.Response, body []byte) error {
+	bodyStr := sanitizeReadarrText(string(body), apiKey)
+	if len(bodyStr) > 200 {
+		bodyStr = bodyStr[:200] + "..."
+	}
+	return fmt.Errorf("%s (HTTP %s) from %s: %s", prefix, resp.Status, redactAPIKey(u), bodyStr)
+}
+
 // fetchQualityProfiles queries Readarr for quality profiles and returns a map[id->name]
 func (r *Readarr) fetchQualityProfiles(ctx context.Context) (map[int]string, error) {
-	u := r.inst.BaseURL + "/api/v1/qualityprofile" + "?apikey=" + url.QueryEscape(r.inst.APIKey)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
-	resp, err := r.cl.Do(req)
+	req, u, err := r.newRequest(ctx, http.MethodGet, "/api/v1/qualityprofile", nil, nil)
 	if err != nil {
 		return nil, err
+	}
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return nil, readarrTransportError(u, r.inst.APIKey, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("HTTP %s: %s", resp.Status, string(body))
+		return nil, readarrHTTPError("quality profile lookup failed", u, r.inst.APIKey, resp, body)
 	}
 	body, _ := io.ReadAll(resp.Body)
 	var arr []map[string]any
@@ -1157,14 +1123,13 @@ func (r *Readarr) fetchQualityProfiles(ctx context.Context) (map[int]string, err
 // fetchQualityProfileByID queries Readarr for a single quality profile by id.
 // Returns (name, found, error). If Readarr returns 404 the profile is not found and found=false.
 func (r *Readarr) fetchQualityProfileByID(ctx context.Context, id int) (string, bool, error) {
-	u := strings.TrimRight(r.inst.BaseURL, "/") + fmt.Sprintf("%s/qualityprofile/%d?apikey=%s", apiVersionPrefix, id, url.QueryEscape(r.inst.APIKey))
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
-	resp, err := r.cl.Do(req)
+	req, u, err := r.newRequest(ctx, http.MethodGet, fmt.Sprintf("%s/qualityprofile/%d", apiVersionPrefix, id), nil, nil)
 	if err != nil {
 		return "", false, err
+	}
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return "", false, readarrTransportError(u, r.inst.APIKey, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
@@ -1172,7 +1137,7 @@ func (r *Readarr) fetchQualityProfileByID(ctx context.Context, id int) (string, 
 	}
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return "", false, fmt.Errorf("HTTP %s: %s", resp.Status, string(body))
+		return "", false, readarrHTTPError("quality profile lookup failed", u, r.inst.APIKey, resp, body)
 	}
 	body, _ := io.ReadAll(resp.Body)
 	var obj map[string]any
@@ -1203,19 +1168,18 @@ func (r *Readarr) GetQualityProfilesByID(ctx context.Context) (map[int]string, e
 
 // fetchRootFolders queries Readarr for root folders and returns a slice of paths
 func (r *Readarr) fetchRootFolders(ctx context.Context) ([]string, error) {
-	u := r.inst.BaseURL + "/api/v1/rootfolder" + "?apikey=" + url.QueryEscape(r.inst.APIKey)
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	req.Header.Set("X-Api-Key", r.inst.APIKey)
-	req.Header.Set("User-Agent", "Scriptorum/1.0")
-	req.Header.Set("Accept", "application/json")
-	resp, err := r.cl.Do(req)
+	req, u, err := r.newRequest(ctx, http.MethodGet, "/api/v1/rootfolder", nil, nil)
 	if err != nil {
 		return nil, err
+	}
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return nil, readarrTransportError(u, r.inst.APIKey, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("HTTP %s: %s", resp.Status, string(body))
+		return nil, readarrHTTPError("root folder lookup failed", u, r.inst.APIKey, resp, body)
 	}
 	body, _ := io.ReadAll(resp.Body)
 	var arr []map[string]any

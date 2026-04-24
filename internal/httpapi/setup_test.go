@@ -88,20 +88,92 @@ func TestReadarrProbeUsesFormValues(t *testing.T) {
 	ts := httptest.NewServer(s.Router())
 	defer ts.Close()
 
-	// Send a request including form values via query (htmx does this for GET+hx-include)
 	vals := url.Values{}
 	vals.Set("ra_ebooks_base", "https://invalid-readarr.local")
 	vals.Set("ra_ebooks_key", "not-a-real-key")
-	url := ts.URL + "/setup/test/readarr?tag=ebooks&" + vals.Encode()
-	resp, err := http.Get(url)
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/setup/test/readarr?tag=ebooks", strings.NewReader(vals.Encode()))
 	if err != nil {
-		t.Fatalf("GET /setup/test/readarr: %v", err)
+		t.Fatalf("build POST /setup/test/readarr: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", ts.URL)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /setup/test/readarr: %v", err)
 	}
 	defer resp.Body.Close()
 	bb2, _ := io.ReadAll(resp.Body)
 	body := string(bb2)
-	// We expect an Error probe (since the host/key will not succeed)
-	if !strings.Contains(body, "Error:") {
-		t.Fatalf("expected Error probe, got: %s", body)
+	if !strings.Contains(body, "Could not connect to Readarr.") {
+		t.Fatalf("expected friendly probe, got: %s", body)
+	}
+	if strings.Contains(body, "not-a-real-key") {
+		t.Fatalf("expected probe to avoid echoing the api key, got: %s", body)
+	}
+}
+
+func TestSetupReadarrStepDoesNotRenderSavedAPIKeys(t *testing.T) {
+	s := makeTestServer(t)
+	cfg := s.settings.Get()
+	cfg.Readarr.Ebooks.BaseURL = "https://ebooks.example"
+	cfg.Readarr.Ebooks.APIKey = "ebooks-secret"
+	cfg.Readarr.Audiobooks.BaseURL = "https://audio.example"
+	cfg.Readarr.Audiobooks.APIKey = "audio-secret"
+	if err := s.settings.Update(cfg); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	ts := httptest.NewServer(s.Router())
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/setup/step/3")
+	if err != nil {
+		t.Fatalf("GET /setup/step/3: %v", err)
+	}
+	defer resp.Body.Close()
+	bodyBytes, _ := io.ReadAll(resp.Body)
+	body := string(bodyBytes)
+	if strings.Contains(body, "ebooks-secret") || strings.Contains(body, "audio-secret") {
+		t.Fatalf("expected setup step to avoid rendering api keys, got %q", body)
+	}
+}
+
+func TestSetupSavePreservesExistingReadarrAPIKeysWhenBlank(t *testing.T) {
+	s := makeTestServer(t)
+	cfg := s.settings.Get()
+	cfg.Readarr.Ebooks.BaseURL = "https://ebooks.example"
+	cfg.Readarr.Ebooks.APIKey = "ebooks-existing"
+	cfg.Readarr.Audiobooks.BaseURL = "https://audio.example"
+	cfg.Readarr.Audiobooks.APIKey = "audio-existing"
+	if err := s.settings.Update(cfg); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	ts := httptest.NewServer(s.Router())
+	defer ts.Close()
+
+	vals := url.Values{
+		"ra_ebooks_base": {"https://ebooks.example"},
+		"ra_audio_base":  {"https://audio.example"},
+	}
+	req, err := http.NewRequest(http.MethodPost, ts.URL+"/setup/save", strings.NewReader(vals.Encode()))
+	if err != nil {
+		t.Fatalf("build POST /setup/save: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", ts.URL)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("POST /setup/save: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		t.Fatalf("unexpected save status=%d body=%s", resp.StatusCode, string(bodyBytes))
+	}
+
+	got := s.settings.Get()
+	if got.Readarr.Ebooks.APIKey != "ebooks-existing" || got.Readarr.Audiobooks.APIKey != "audio-existing" {
+		t.Fatalf("expected existing api keys to be preserved, got %+v", got.Readarr)
 	}
 }

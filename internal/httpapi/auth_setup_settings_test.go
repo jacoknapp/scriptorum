@@ -293,3 +293,61 @@ func TestSettingsSaveParsesFields(t *testing.T) {
 		t.Fatalf("unexpected saved oauth settings: %+v", cfg.OAuth)
 	}
 }
+
+func TestSettingsSavePreservesExistingReadarrAPIKeysWhenBlank(t *testing.T) {
+	s := newServerForTest(t)
+	r := s.Router()
+
+	cfg := s.settings.Get()
+	cfg.Readarr.Ebooks.BaseURL = "https://ebooks.example"
+	cfg.Readarr.Ebooks.APIKey = "ebooks-existing"
+	cfg.Readarr.Audiobooks.BaseURL = "https://audio.example"
+	cfg.Readarr.Audiobooks.APIKey = "audio-existing"
+	if err := s.settings.Update(cfg); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	form := url.Values{
+		"ra_ebooks_base": {"https://ebooks.example"},
+		"ra_audio_base":  {"https://audio.example"},
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings/save", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(makeCookie(t, s, "admin", true))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("settings save code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	got := s.settings.Get()
+	if got.Readarr.Ebooks.APIKey != "ebooks-existing" || got.Readarr.Audiobooks.APIKey != "audio-existing" {
+		t.Fatalf("expected existing api keys to be preserved, got %+v", got.Readarr)
+	}
+}
+
+func TestSettingsPageDoesNotRenderReadarrAPIKeys(t *testing.T) {
+	s := newServerForTest(t)
+	r := s.Router()
+
+	cfg := s.settings.Get()
+	cfg.Readarr.Ebooks.BaseURL = "https://ebooks.example"
+	cfg.Readarr.Ebooks.APIKey = "ebooks-secret"
+	cfg.Readarr.Audiobooks.BaseURL = "https://audio.example"
+	cfg.Readarr.Audiobooks.APIKey = "audio-secret"
+	if err := s.settings.Update(cfg); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/settings", nil)
+	req.AddCookie(makeCookie(t, s, "admin", true))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("settings page code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if strings.Contains(body, "ebooks-secret") || strings.Contains(body, "audio-secret") {
+		t.Fatalf("expected settings page to keep api keys out of html, got %q", body)
+	}
+}

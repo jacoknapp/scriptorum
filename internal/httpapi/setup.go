@@ -32,6 +32,7 @@ func (s *Server) mountSetup(r chi.Router) {
 		rr.Get("/can-advance/{n}", u.handleCanAdvance(s))
 		rr.Get("/test/oauth", u.handleTestOAuth(s))
 		rr.Get("/test/readarr", u.handleTestReadarr(s))
+		rr.Post("/test/readarr", u.handleTestReadarr(s))
 		rr.Get("/step/{n}", u.handleStep(s))
 	})
 }
@@ -50,6 +51,10 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		cur := *s.settings.Get()
+		ebooksBase := strings.TrimSpace(r.FormValue("ra_ebooks_base"))
+		ebooksKey := preserveSecretField(cur.Readarr.Ebooks.APIKey, ebooksBase, r.FormValue("ra_ebooks_key"))
+		audioBase := strings.TrimSpace(r.FormValue("ra_audio_base"))
+		audioKey := preserveSecretField(cur.Readarr.Audiobooks.APIKey, audioBase, r.FormValue("ra_audio_key"))
 		// General settings
 		cur.ServerURL = strings.TrimSpace(r.FormValue("server_url"))
 		// Ensure we have a config salt for password hashing
@@ -100,11 +105,11 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 			}
 		}
 		cur.OAuth.AutoCreateUsers = r.FormValue("oauth_auto_create") == "on"
-		cur.Readarr.Ebooks.BaseURL = r.FormValue("ra_ebooks_base")
-		cur.Readarr.Ebooks.APIKey = r.FormValue("ra_ebooks_key")
+		cur.Readarr.Ebooks.BaseURL = ebooksBase
+		cur.Readarr.Ebooks.APIKey = ebooksKey
 		cur.Readarr.Ebooks.InsecureSkipVerify = r.FormValue("ra_ebooks_insecure") == "on"
-		cur.Readarr.Audiobooks.BaseURL = r.FormValue("ra_audio_base")
-		cur.Readarr.Audiobooks.APIKey = r.FormValue("ra_audio_key")
+		cur.Readarr.Audiobooks.BaseURL = audioBase
+		cur.Readarr.Audiobooks.APIKey = audioKey
 		cur.Readarr.Audiobooks.InsecureSkipVerify = r.FormValue("ra_audio_insecure") == "on"
 		_ = s.settings.Update(&cur)
 		// Reinitialize OIDC with the (potentially) updated OAuth settings so /oauth/login works immediately
@@ -198,32 +203,34 @@ func (u *setupUI) handleTestOAuth(s *Server) http.HandlerFunc {
 func (u *setupUI) handleTestReadarr(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		tag := r.URL.Query().Get("tag")
-		// Prefer values included from the form via hx-include
 		_ = r.ParseForm()
 		var inst providers.ReadarrInstance
 		if tag == "ebooks" {
-			base := strings.TrimSpace(r.FormValue("ra_ebooks_base"))
-			key := strings.TrimSpace(r.FormValue("ra_ebooks_key"))
-			insecure := r.FormValue("ra_ebooks_insecure") == "on"
-			if base == "" || key == "" {
-				// fall back to saved settings
+			if _, ok := r.Form["ra_ebooks_base"]; ok {
+				submittedBase := strings.TrimSpace(r.FormValue("ra_ebooks_base"))
+				existing := s.settings.Get().Readarr.Ebooks
+				inst = providers.ReadarrInstance{
+					BaseURL:            submittedBase,
+					APIKey:             preserveSecretField(existing.APIKey, submittedBase, r.FormValue("ra_ebooks_key")),
+					InsecureSkipVerify: readarrTruthy(r.FormValue("ra_ebooks_insecure")),
+				}
+			} else {
 				c := s.settings.Get().Readarr.Ebooks
-				base = defaultIf(base, c.BaseURL)
-				key = defaultIf(key, c.APIKey)
-				insecure = insecure || c.InsecureSkipVerify
+				inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, InsecureSkipVerify: c.InsecureSkipVerify}
 			}
-			inst = providers.ReadarrInstance{BaseURL: base, APIKey: key, InsecureSkipVerify: insecure}
 		} else {
-			base := strings.TrimSpace(r.FormValue("ra_audio_base"))
-			key := strings.TrimSpace(r.FormValue("ra_audio_key"))
-			insecure := r.FormValue("ra_audio_insecure") == "on"
-			if base == "" || key == "" {
+			if _, ok := r.Form["ra_audio_base"]; ok {
+				submittedBase := strings.TrimSpace(r.FormValue("ra_audio_base"))
+				existing := s.settings.Get().Readarr.Audiobooks
+				inst = providers.ReadarrInstance{
+					BaseURL:            submittedBase,
+					APIKey:             preserveSecretField(existing.APIKey, submittedBase, r.FormValue("ra_audio_key")),
+					InsecureSkipVerify: readarrTruthy(r.FormValue("ra_audio_insecure")),
+				}
+			} else {
 				c := s.settings.Get().Readarr.Audiobooks
-				base = defaultIf(base, c.BaseURL)
-				key = defaultIf(key, c.APIKey)
-				insecure = insecure || c.InsecureSkipVerify
+				inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, InsecureSkipVerify: c.InsecureSkipVerify}
 			}
-			inst = providers.ReadarrInstance{BaseURL: base, APIKey: key, InsecureSkipVerify: insecure}
 		}
 		ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 		ctx, cancel := context.WithTimeout(r.Context(), 6*time.Second)
@@ -236,7 +243,7 @@ func (u *setupUI) handleTestReadarr(s *Server) http.HandlerFunc {
 			stepFlags["raudio"] = ok
 		}
 		w.Header().Set("HX-Trigger", "setup-saved")
-		writeProbeHTML(w, ok, errString(err))
+		writeProbeHTML(w, ok, readarrProbeMessage(err))
 	}
 }
 
@@ -251,9 +258,9 @@ func writeProbeHTML(w http.ResponseWriter, ok bool, errMsg string) {
 		return
 	}
 	if errMsg == "" {
-		errMsg = "failed"
+		errMsg = "Could not complete the check."
 	}
-	w.Write([]byte(`<span class="text-red-700">Error: ` + template.HTMLEscapeString(errMsg) + `</span>`))
+	w.Write([]byte(`<span class="text-red-700">` + template.HTMLEscapeString(errMsg) + `</span>`))
 }
 func errString(err error) string {
 	if err == nil {

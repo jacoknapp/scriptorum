@@ -79,6 +79,7 @@ func (s *Server) mountSettings(r chi.Router) {
 		rt.Get("/settings", u.handleSettings(s))
 		rt.Post("/settings/save", u.handleSettingsSave(s))
 		rt.Get("/api/readarr/profiles", s.apiReadarrProfiles())
+		rt.Post("/api/readarr/profiles", s.apiReadarrProfiles())
 		rt.Post("/api/readarr/sync", s.apiReadarrSync())
 		// Debug endpoint for admins to inspect runtime Readarr settings (API keys redacted)
 		rt.Get("/api/readarr/debug", s.apiReadarrDebug())
@@ -107,14 +108,18 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		cur := *s.settings.Get()
+		ebooksBase := strings.TrimSpace(r.FormValue("ra_ebooks_base"))
+		ebooksKey := preserveSecretField(cur.Readarr.Ebooks.APIKey, ebooksBase, r.FormValue("ra_ebooks_key"))
+		audioBase := strings.TrimSpace(r.FormValue("ra_audio_base"))
+		audioKey := preserveSecretField(cur.Readarr.Audiobooks.APIKey, audioBase, r.FormValue("ra_audio_key"))
 		// General
 		cur.Debug = (r.FormValue("debug") == "on")
 		cur.ServerURL = strings.TrimSpace(r.FormValue("server_url"))
-		cur.Readarr.Ebooks.BaseURL = strings.TrimSpace(r.FormValue("ra_ebooks_base"))
-		cur.Readarr.Ebooks.APIKey = strings.TrimSpace(r.FormValue("ra_ebooks_key"))
+		cur.Readarr.Ebooks.BaseURL = ebooksBase
+		cur.Readarr.Ebooks.APIKey = ebooksKey
 		cur.Readarr.Ebooks.InsecureSkipVerify = (r.FormValue("ra_ebooks_insecure") == "on")
-		cur.Readarr.Audiobooks.BaseURL = strings.TrimSpace(r.FormValue("ra_audio_base"))
-		cur.Readarr.Audiobooks.APIKey = strings.TrimSpace(r.FormValue("ra_audio_key"))
+		cur.Readarr.Audiobooks.BaseURL = audioBase
+		cur.Readarr.Audiobooks.APIKey = audioKey
 		cur.Readarr.Audiobooks.InsecureSkipVerify = (r.FormValue("ra_audio_insecure") == "on")
 		// Save quality profile selections
 		if v := strings.TrimSpace(r.FormValue("ra_ebooks_qp")); v != "" {
@@ -168,36 +173,78 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 
 // OAuth settings are handled as part of the main settings form (/settings/save).
 
+func readarrTruthy(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "1", "true", "on", "yes":
+		return true
+	default:
+		return false
+	}
+}
+
+func preserveSecretField(existing, submittedBase, submittedSecret string) string {
+	secret := strings.TrimSpace(submittedSecret)
+	if secret != "" || strings.TrimSpace(submittedBase) == "" {
+		return secret
+	}
+	return existing
+}
+
+func readarrProbeMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	switch {
+	case strings.Contains(msg, "401"), strings.Contains(msg, "403"),
+		strings.Contains(msg, "unauthorized"), strings.Contains(msg, "forbidden"),
+		strings.Contains(msg, "api key"):
+		return "Could not connect to Readarr. Check the API key."
+	case strings.Contains(msg, "x509"), strings.Contains(msg, "tls"),
+		strings.Contains(msg, "certificate"), strings.Contains(msg, "handshake"):
+		return "Could not connect to Readarr. Check the certificate or enable Skip TLS verification if you trust it."
+	case strings.Contains(msg, "404"), strings.Contains(msg, "no such host"),
+		strings.Contains(msg, "connection refused"), strings.Contains(msg, "timeout"),
+		strings.Contains(msg, "deadline exceeded"), strings.Contains(msg, "dial tcp"):
+		return "Could not connect to Readarr. Check the Base URL and that the server is reachable."
+	default:
+		return "Could not connect to Readarr. Check the Base URL, API key, and TLS setting."
+	}
+}
+
 // apiReadarrProfiles returns quality profiles for a given instance (ebooks|audiobooks)
 func (s *Server) apiReadarrProfiles() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		kind := r.URL.Query().Get("kind")
+		_ = r.ParseForm()
+		kind := r.FormValue("kind")
 		var inst providers.ReadarrInstance
 		cfg := s.settings.Get()
 		switch kind {
 		case "ebooks":
 			c := cfg.Readarr.Ebooks
 			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, InsecureSkipVerify: c.InsecureSkipVerify}
-			if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
-				http.Error(w, "readarr ebooks not configured", http.StatusBadRequest)
-				return
-			}
 		case "audiobooks":
 			c := cfg.Readarr.Audiobooks
 			inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, InsecureSkipVerify: c.InsecureSkipVerify}
-			if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
-				http.Error(w, "readarr audiobooks not configured", http.StatusBadRequest)
-				return
-			}
 		default:
 			http.Error(w, "missing kind", http.StatusBadRequest)
+			return
+		}
+		if readarrTruthy(r.FormValue("use_overrides")) {
+			submittedBase := strings.TrimSpace(r.FormValue("base_url"))
+			inst.BaseURL = submittedBase
+			inst.APIKey = preserveSecretField(inst.APIKey, submittedBase, r.FormValue("api_key"))
+			inst.InsecureSkipVerify = readarrTruthy(r.FormValue("insecure"))
+		}
+		if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+			http.Error(w, "Readarr is not fully configured yet. Add the Base URL and API key first.", http.StatusBadRequest)
 			return
 		}
 		ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 		// Use the by-id fetcher as requested
 		qps, err := ra.GetQualityProfilesByID(r.Context())
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadGateway)
+			http.Error(w, readarrProbeMessage(err), http.StatusBadGateway)
 			return
 		}
 		b, _ := json.Marshal(qps)

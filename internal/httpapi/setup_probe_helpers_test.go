@@ -64,8 +64,12 @@ func TestHandleTestReadarrUsesSavedSettings(t *testing.T) {
 	audioRec := httptest.NewRecorder()
 	ui.handleTestReadarr(s)(audioRec, audioReq)
 
-	if !strings.Contains(audioRec.Body.String(), "Error:") {
-		t.Fatalf("expected error body, got %q", audioRec.Body.String())
+	body := audioRec.Body.String()
+	if !strings.Contains(body, "Check the Base URL, API key, and TLS setting.") {
+		t.Fatalf("expected friendly error body, got %q", body)
+	}
+	if strings.Contains(body, "audio-key") || strings.Contains(body, "boom") {
+		t.Fatalf("expected error body to avoid sensitive details, got %q", body)
 	}
 	if stepFlags["raudio"] {
 		t.Fatal("expected audiobook step flag to be cleared on failure")

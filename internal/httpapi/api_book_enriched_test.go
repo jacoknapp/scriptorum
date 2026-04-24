@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -267,5 +268,72 @@ func TestBookEnrichedFillsMissingCoverFromOpenLibraryAndPersistsRequestCover(t *
 	}
 	if got := strings.TrimSpace(stored.CoverURL); got != wantCover {
 		t.Fatalf("expected stored cover %q, got %q", wantCover, got)
+	}
+}
+
+func TestBookEnrichedNormalizesReadarrMediaCoverForReaderModal(t *testing.T) {
+	readarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/readarr/api/v1/book/lookup":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`[{
+				"id": 42,
+				"title": "Project Hail Mary",
+				"author": {"name": "Andy Weir"},
+				"authors": [{"name": "Andy Weir"}],
+				"foreignBookId": "phm-42",
+				"images": [{"coverType":"cover","remoteUrl":"http://localhost:8787/MediaCover/12.jpg?lastWrite=123"}]
+			}]`))
+		case "/readarr/api/v1/book/42/overview":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"id": 42,
+				"title": "Project Hail Mary",
+				"overview": "A science mission gone sideways."
+			}`))
+		case "/readarr/api/v1/book/42":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"id": 42,
+				"title": "Project Hail Mary",
+				"description": "A science mission gone sideways."
+			}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer readarr.Close()
+
+	s := newServerForTest(t)
+	cfg := *s.settings.Get()
+	cfg.Readarr.Ebooks.BaseURL = readarr.URL + "/readarr"
+	cfg.Readarr.Ebooks.APIKey = "test-key"
+	if err := s.settings.Update(&cfg); err != nil {
+		t.Fatalf("update config: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{
+		"title":   "Project Hail Mary",
+		"authors": []string{"Andy Weir"},
+		"format":  "ebook",
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/book/enriched", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(makeCookie(t, s, "user", false))
+	rec := httptest.NewRecorder()
+
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	want := "/ui/readarr-cover?u=" + url.QueryEscape(readarr.URL+"/readarr/MediaCover/12.jpg?lastWrite=123")
+	if got := strings.TrimSpace(out["cover"].(string)); got != want {
+		t.Fatalf("unexpected normalized cover %q want %q", got, want)
 	}
 }

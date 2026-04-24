@@ -290,15 +290,11 @@ func (s *Server) normalizeRequestCover(format, cover string) string {
 	}
 	if ok && strings.HasPrefix(strings.TrimSpace(inst.BaseURL), "http") {
 		if parsed, err := url.Parse(cover); err == nil {
-			// Some Readarr payloads return absolute MediaCover URLs with localhost or
-			// container-only hosts. Rebase those paths onto the configured Readarr
-			// base URL so the proxy can fetch a reachable URL.
-			if parsed.IsAbs() && isReadarrMediaPath(parsed.Path) && !strings.EqualFold(parsed.Host, urlHost(inst.BaseURL)) {
-				if base, baseErr := url.Parse(strings.TrimSpace(inst.BaseURL)); baseErr == nil {
-					parsed.Scheme = base.Scheme
-					parsed.Host = base.Host
-					cover = parsed.String()
-				}
+			// Some Readarr payloads return absolute MediaCover URLs with localhost,
+			// container-only hosts, or without a reverse-proxy base path. Rebase
+			// those URLs onto the configured Readarr base before proxying them.
+			if parsed.IsAbs() && isReadarrMediaPath(parsed.Path) {
+				cover = rebaseReadarrMediaURL(inst.BaseURL, cover)
 			}
 			if reparsed, reparseErr := url.Parse(cover); reparseErr == nil && strings.EqualFold(reparsed.Host, urlHost(inst.BaseURL)) {
 				return "/ui/readarr-cover?u=" + url.QueryEscape(cover)
@@ -306,6 +302,36 @@ func (s *Server) normalizeRequestCover(format, cover string) string {
 		}
 	}
 	return cover
+}
+
+func rebaseReadarrMediaURL(baseURL, rawCover string) string {
+	base, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil || base == nil || base.Host == "" {
+		return rawCover
+	}
+	cover, err := url.Parse(strings.TrimSpace(rawCover))
+	if err != nil || cover == nil || !cover.IsAbs() || !isReadarrMediaPath(cover.Path) {
+		return rawCover
+	}
+
+	cover.Scheme = base.Scheme
+	cover.Host = base.Host
+	cover.Path = joinReadarrBasePath(base.Path, cover.Path)
+	cover.RawPath = ""
+	return cover.String()
+}
+
+func joinReadarrBasePath(basePath, mediaPath string) string {
+	basePath = strings.TrimSpace(basePath)
+	if basePath == "" || basePath == "/" {
+		return mediaPath
+	}
+	basePath = "/" + strings.Trim(strings.TrimSpace(basePath), "/")
+	mediaPath = "/" + strings.TrimLeft(strings.TrimSpace(mediaPath), "/")
+	if strings.EqualFold(mediaPath, basePath) || strings.HasPrefix(strings.ToLower(mediaPath), strings.ToLower(basePath+"/")) {
+		return mediaPath
+	}
+	return basePath + mediaPath
 }
 
 func isReadarrMediaPath(path string) bool {

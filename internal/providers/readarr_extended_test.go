@@ -36,12 +36,15 @@ func TestReadarrGetBookByAddPayloadVariants(t *testing.T) {
 			if req.Method != http.MethodGet {
 				t.Fatalf("method=%s", req.Method)
 			}
-			if req.URL.Path != "/api/v1/book" || !strings.Contains(req.URL.RawQuery, "apikey=secret") {
+			if req.URL.Path != "/api/v1/book" {
 				t.Fatalf("unexpected URL: %s", req.URL.String())
+			}
+			if got := req.Header.Get("X-Api-Key"); got != "secret" {
+				t.Fatalf("expected X-Api-Key header, got %q", got)
 			}
 			return &http.Response{
 				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(strings.NewReader("{\"id\":55}")),
+				Body:       io.NopCloser(strings.NewReader("[{\"id\":55,\"foreignBookId\":\"fb-1\"}]")),
 				Header:     make(http.Header),
 			}, nil
 		})

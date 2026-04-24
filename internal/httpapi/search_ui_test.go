@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"regexp"
 	"strings"
 	"testing"
@@ -310,6 +311,39 @@ func TestReadarrCoverSetsCacheHeaders(t *testing.T) {
 	}
 	if got := rec.Header().Get("Last-Modified"); got != "Mon, 02 Jan 2006 15:04:05 GMT" {
 		t.Fatalf("unexpected Last-Modified header %q", got)
+	}
+}
+
+func TestReadarrCoverUsesAPIKeyHeader(t *testing.T) {
+	readarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("X-Api-Key"); got != "test-key" {
+			http.Error(w, "missing api key", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte("cover-bytes"))
+	}))
+	defer readarr.Close()
+
+	s := newServerForTest(t)
+	cfg := s.settings.Get()
+	cfg.Readarr.Ebooks.BaseURL = readarr.URL
+	cfg.Readarr.Ebooks.APIKey = "test-key"
+	if err := s.settings.Update(cfg); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/ui/readarr-cover?u="+url.QueryEscape(readarr.URL+"/MediaCover/12.jpg"), nil)
+	req.AddCookie(makeCookie(t, s, "user", false))
+	rec := httptest.NewRecorder()
+
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := rec.Body.String(); got != "cover-bytes" {
+		t.Fatalf("unexpected cover body %q", got)
 	}
 }
 
