@@ -11,14 +11,14 @@ import (
 	"testing"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/db"
+	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 )
 
 func TestBookEnrichedFallsBackToOpenLibraryDetails(t *testing.T) {
-	prevTransport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "openlibrary.org" {
-			return prevTransport.RoundTrip(r)
-		}
+	restore := providers.TestDisableOLRateLimiter()
+	t.Cleanup(restore)
+
+	installOpenLibraryTestClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/works/OL21745884W.json" {
 			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
 		}
@@ -28,8 +28,7 @@ func TestBookEnrichedFallsBackToOpenLibraryDetails(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(body)),
 			Header:     make(http.Header),
 		}, nil
-	})
-	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+	}))
 
 	s := newServerForTest(t)
 	body, _ := json.Marshal(map[string]any{
@@ -67,6 +66,9 @@ func TestBookEnrichedFallsBackToOpenLibraryDetails(t *testing.T) {
 }
 
 func TestBookEnrichedSupplementsThinReadarrDetailsWithOpenLibrary(t *testing.T) {
+	restore := providers.TestDisableOLRateLimiter()
+	t.Cleanup(restore)
+
 	readarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/book/lookup":
@@ -98,11 +100,7 @@ func TestBookEnrichedSupplementsThinReadarrDetailsWithOpenLibrary(t *testing.T) 
 	}))
 	defer readarr.Close()
 
-	prevTransport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "openlibrary.org" {
-			return prevTransport.RoundTrip(r)
-		}
+	installOpenLibraryTestClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/works/OL21745884W.json" {
 			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
 		}
@@ -112,8 +110,7 @@ func TestBookEnrichedSupplementsThinReadarrDetailsWithOpenLibrary(t *testing.T) 
 			Body:       io.NopCloser(strings.NewReader(body)),
 			Header:     make(http.Header),
 		}, nil
-	})
-	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+	}))
 
 	s := newServerForTest(t)
 	cfg := *s.settings.Get()
@@ -159,6 +156,9 @@ func TestBookEnrichedSupplementsThinReadarrDetailsWithOpenLibrary(t *testing.T) 
 }
 
 func TestBookEnrichedFillsMissingCoverFromOpenLibraryAndPersistsRequestCover(t *testing.T) {
+	restore := providers.TestDisableOLRateLimiter()
+	t.Cleanup(restore)
+
 	readarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/api/v1/book/lookup":
@@ -190,11 +190,7 @@ func TestBookEnrichedFillsMissingCoverFromOpenLibraryAndPersistsRequestCover(t *
 	}))
 	defer readarr.Close()
 
-	prevTransport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "openlibrary.org" {
-			return prevTransport.RoundTrip(r)
-		}
+	installOpenLibraryTestClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
 		case "/search.json":
 			body := `{"docs":[{"title":"Sea of Tranquility","author_name":["Emily St. John Mandel"],"key":"/works/OL314159W"}]}`
@@ -214,8 +210,7 @@ func TestBookEnrichedFillsMissingCoverFromOpenLibraryAndPersistsRequestCover(t *
 			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
 			return nil, nil
 		}
-	})
-	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+	}))
 
 	s := newServerForTest(t)
 	cfg := *s.settings.Get()

@@ -71,11 +71,7 @@ func TestBackfillOpenLibraryWorkCoversUsesWorkDetails(t *testing.T) {
 	restore := providers.TestDisableOLRateLimiter()
 	t.Cleanup(restore)
 
-	prevTransport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "openlibrary.org" {
-			return prevTransport.RoundTrip(r)
-		}
+	installOpenLibraryTestClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		if r.URL.Path != "/works/OL1W.json" {
 			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
 		}
@@ -84,8 +80,7 @@ func TestBackfillOpenLibraryWorkCoversUsesWorkDetails(t *testing.T) {
 			Body:       io.NopCloser(strings.NewReader(`{"key":"/works/OL1W","title":"Funny Story","covers":[112233]}`)),
 			Header:     make(http.Header),
 		}, nil
-	})
-	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+	}))
 
 	books := []providers.BookItem{{
 		Title:              "Funny Story",
@@ -105,11 +100,7 @@ func TestBackfillOpenLibraryDiscoveryMetadataRequiresDescription(t *testing.T) {
 	restore := providers.TestDisableOLRateLimiter()
 	t.Cleanup(restore)
 
-	prevTransport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "openlibrary.org" {
-			return prevTransport.RoundTrip(r)
-		}
+	installOpenLibraryTestClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
 		case "/works/OL-DESC.json":
 			return &http.Response{
@@ -127,8 +118,7 @@ func TestBackfillOpenLibraryDiscoveryMetadataRequiresDescription(t *testing.T) {
 			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
 			return nil, nil
 		}
-	})
-	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+	}))
 
 	books := []providers.BookItem{
 		{
@@ -168,11 +158,7 @@ func TestLoadTrendingBooksFetchesDeeperWhenFilteredCountTooLow(t *testing.T) {
 	t.Cleanup(restore)
 
 	callCountByLimit := map[int]int{}
-	prevTransport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "openlibrary.org" {
-			return prevTransport.RoundTrip(r)
-		}
+	installOpenLibraryTestClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 
 		switch {
 		case r.URL.Path == "/trending/weekly.json":
@@ -220,8 +206,7 @@ func TestLoadTrendingBooksFetchesDeeperWhenFilteredCountTooLow(t *testing.T) {
 			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
 			return nil, nil
 		}
-	})
-	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+	}))
 
 	u := &searchUI{}
 	got := u.loadTrendingBooks(context.Background())
@@ -241,11 +226,7 @@ func TestGatherDiscoveryCategoryBooksReplacesBlockedCandidates(t *testing.T) {
 	restore := providers.TestDisableOLRateLimiter()
 	t.Cleanup(restore)
 
-	prevTransport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "openlibrary.org" {
-			return prevTransport.RoundTrip(r)
-		}
+	installOpenLibraryTestClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
 		case r.URL.Path == "/search.json":
 			switch r.URL.Query().Get("q") {
@@ -295,8 +276,7 @@ func TestGatherDiscoveryCategoryBooksReplacesBlockedCandidates(t *testing.T) {
 			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
 			return nil, nil
 		}
-	})
-	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+	}))
 
 	got := gatherDiscoveryCategoryBooks(context.Background(), providers.NewOpenLibrary(), discoveryQuery{
 		Queries: []string{"primary", "backup"},
@@ -327,11 +307,7 @@ func TestGatherDiscoveryCategoryBooksUsesLanguageFilters(t *testing.T) {
 	t.Cleanup(restore)
 
 	seenLangs := map[string]bool{}
-	prevTransport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "openlibrary.org" {
-			return prevTransport.RoundTrip(r)
-		}
+	installOpenLibraryTestClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
 		case r.URL.Path == "/search.json":
 			langs := r.URL.Query()["language"]
@@ -354,8 +330,7 @@ func TestGatherDiscoveryCategoryBooksUsesLanguageFilters(t *testing.T) {
 			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
 			return nil, nil
 		}
-	})
-	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+	}))
 
 	got := gatherDiscoveryCategoryBooks(context.Background(), providers.NewOpenLibrary(), discoveryQuery{
 		Queries: []string{"primary"},

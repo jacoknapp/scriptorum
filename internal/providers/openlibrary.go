@@ -26,6 +26,14 @@ type OpenLibrary struct {
 // User-Agents; we target 2 req/s with no burst to stay safely under the limit.
 var olRateLimiter = newTokenBucket(2, 1) // 2 tokens/sec, no burst
 
+var openLibraryClientFactoryMu sync.RWMutex
+
+func defaultOpenLibraryHTTPClient() *http.Client {
+	return &http.Client{Timeout: 10 * time.Second}
+}
+
+var openLibraryHTTPClientFactory = defaultOpenLibraryHTTPClient
+
 // TestDisableOLRateLimiter replaces the global rate limiter with a very
 // fast one so that tests using mocked HTTP transport are not throttled.
 // Call the returned function to restore the original limiter.
@@ -35,9 +43,29 @@ func TestDisableOLRateLimiter() func() {
 	return func() { olRateLimiter = orig }
 }
 
+// TestSetOpenLibraryHTTPClientFactory overrides the OpenLibrary HTTP client
+// factory and returns a restore function for tests.
+func TestSetOpenLibraryHTTPClientFactory(factory func() *http.Client) func() {
+	openLibraryClientFactoryMu.Lock()
+	prev := openLibraryHTTPClientFactory
+	if factory == nil {
+		factory = defaultOpenLibraryHTTPClient
+	}
+	openLibraryHTTPClientFactory = factory
+	openLibraryClientFactoryMu.Unlock()
+	return func() {
+		openLibraryClientFactoryMu.Lock()
+		openLibraryHTTPClientFactory = prev
+		openLibraryClientFactoryMu.Unlock()
+	}
+}
+
 func NewOpenLibrary() *OpenLibrary {
+	openLibraryClientFactoryMu.RLock()
+	clientFactory := openLibraryHTTPClientFactory
+	openLibraryClientFactoryMu.RUnlock()
 	return &OpenLibrary{
-		cl:      &http.Client{Timeout: 10 * time.Second},
+		cl:      clientFactory(),
 		baseURL: "https://openlibrary.org",
 	}
 }

@@ -483,6 +483,9 @@ func (s *Server) cachedDiscoverySearchData(ctx context.Context, u *searchUI) map
 }
 
 func (s *Server) triggerDiscoveryRefresh(u *searchUI) {
+	if s.disableDiscoveryAsync {
+		return
+	}
 	s.discoveryCacheMu.Lock()
 	if s.discoveryBuildInFlight {
 		s.discoveryCacheMu.Unlock()

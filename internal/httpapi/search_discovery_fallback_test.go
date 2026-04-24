@@ -15,11 +15,7 @@ func TestLoadDiscoveryCategoriesFallsBackToSubjects(t *testing.T) {
 	restore := providers.TestDisableOLRateLimiter()
 	t.Cleanup(restore)
 
-	prevTransport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "openlibrary.org" {
-			return prevTransport.RoundTrip(r)
-		}
+	installOpenLibraryTestClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch {
 		case r.URL.Path == "/search.json":
 			return &http.Response{
@@ -52,8 +48,7 @@ func TestLoadDiscoveryCategoriesFallsBackToSubjects(t *testing.T) {
 			t.Fatalf("unexpected Open Library request: %s", r.URL.String())
 			return nil, nil
 		}
-	})
-	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+	}))
 
 	ui := &searchUI{}
 	categories := ui.loadDiscoveryCategories(context.Background())

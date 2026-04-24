@@ -64,11 +64,7 @@ func installOpenLibraryDiscoveryTransport(t *testing.T) {
 	restore := providers.TestDisableOLRateLimiter()
 	t.Cleanup(restore)
 
-	prevTransport := http.DefaultTransport
-	http.DefaultTransport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.Host != "openlibrary.org" {
-			return prevTransport.RoundTrip(r)
-		}
+	installOpenLibraryTestClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
 
 		bodyByPath := map[string]string{
 			"/trending/weekly.json": `{"works":[
@@ -178,8 +174,7 @@ func installOpenLibraryDiscoveryTransport(t *testing.T) {
 		}
 		t.Fatalf("unexpected Open Library request: %s", r.URL.String())
 		return nil, nil
-	})
-	t.Cleanup(func() { http.DefaultTransport = prevTransport })
+	}))
 }
 
 func TestSearchPageServerRendersDiscoveryOnFirstLoad(t *testing.T) {
@@ -349,6 +344,7 @@ func TestReadarrCoverUsesAPIKeyHeader(t *testing.T) {
 
 func TestCachedDiscoverySearchDataReturnsLoadingThenCachesAsync(t *testing.T) {
 	s := newServerForTest(t)
+	s.disableDiscoveryAsync = false
 
 	originalBuilder := buildDiscoverySearchDataFn
 	originalProbe := discoveryProbeErrorFn
@@ -395,6 +391,7 @@ func TestCachedDiscoverySearchDataReturnsLoadingThenCachesAsync(t *testing.T) {
 
 func TestCachedDiscoverySearchDataServesStaleWhileRefreshing(t *testing.T) {
 	s := newServerForTest(t)
+	s.disableDiscoveryAsync = false
 	s.discoveryCache = map[string]any{
 		"IsDiscovery": true,
 		"DiscoveryCategories": []discoveryCategory{{

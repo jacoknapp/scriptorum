@@ -47,6 +47,7 @@ type Server struct {
 	readarrSyncState       readarrSyncRuntimeState
 	disableCSRF            bool // For testing purposes
 	disableDiscoveryWarmup bool // For testing purposes
+	disableDiscoveryAsync  bool // For testing purposes
 	approvalTokens         map[string]approvalTokenData
 	tokenMutex             sync.RWMutex
 }
