@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -36,6 +37,8 @@ func newServerForTest(t *testing.T) *Server {
 	s.disableCSRF = true // Disable CSRF for tests
 	s.disableDiscoveryWarmup = true
 	s.disableDiscoveryAsync = true
+	s.approvalQueueInterval = time.Millisecond
+	s.approvalQueueJitter = 0
 	return s
 }
 
@@ -199,10 +202,15 @@ func TestApproveRequestUsesCatalogMatchWithoutSubmittingDuplicate(t *testing.T) 
 
 func TestApproveAllSubmitsPendingRequestsToReadarr(t *testing.T) {
 	var addCalls atomic.Int32
+	var addCallTimesMu sync.Mutex
+	var addCallTimes []time.Time
 	readarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v1/book" && r.Method == http.MethodPost:
 			id := addCalls.Add(1)
+			addCallTimesMu.Lock()
+			addCallTimes = append(addCallTimes, time.Now())
+			addCallTimesMu.Unlock()
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"id":` + strconv.FormatInt(int64(100+id), 10) + `,"monitored":true,"statistics":{"bookFileCount":0}}`))
 		default:
@@ -212,6 +220,7 @@ func TestApproveAllSubmitsPendingRequestsToReadarr(t *testing.T) {
 	defer readarr.Close()
 
 	s := newServerForTest(t)
+	s.approvalQueueInterval = 75 * time.Millisecond
 	cfg := s.settings.Get()
 	cfg.Readarr.Ebooks.BaseURL = readarr.URL
 	cfg.Readarr.Ebooks.APIKey = "test-key"
@@ -262,6 +271,15 @@ func TestApproveAllSubmitsPendingRequestsToReadarr(t *testing.T) {
 		if allQueued {
 			if addCalls.Load() != 2 {
 				t.Fatalf("expected 2 add calls, got %d", addCalls.Load())
+			}
+			addCallTimesMu.Lock()
+			times := append([]time.Time(nil), addCallTimes...)
+			addCallTimesMu.Unlock()
+			if len(times) != 2 {
+				t.Fatalf("expected 2 recorded add call times, got %d", len(times))
+			}
+			if gap := times[1].Sub(times[0]); gap < 70*time.Millisecond {
+				t.Fatalf("expected Readarr submissions to be spaced by queue interval, gap=%s", gap)
 			}
 			for _, item := range items {
 				if item.MatchedReadarrID == 0 {

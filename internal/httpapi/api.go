@@ -1060,7 +1060,9 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Mark processing and start async approval using stored payload
 			_ = s.db.UpdateRequestStatus(r.Context(), id, "processing", "auto-approval in progress", u.Username, nil, nil)
-			go s.processAsyncApproval(id, req, inst, u.Username)
+			if err := s.enqueueAsyncApproval(id, req, inst, u.Username); err != nil {
+				_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", nil, nil)
+			}
 		}
 	} else {
 		// Send notification for new request (only when not auto-approved)
@@ -1137,12 +1139,16 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 	username := r.Context().Value(ctxUser).(*session).Username
 	_ = s.db.UpdateRequestStatus(r.Context(), id, "processing", "approval in progress", username, nil, nil)
 
+	// Process approval asynchronously through the Readarr submission queue.
+	if err := s.enqueueAsyncApproval(id, req, inst, username); err != nil {
+		_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", nil, nil)
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
 	// Send immediate response to unblock the UI
 	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 	writeJSON(w, map[string]string{"status": "processing"}, 200)
-
-	// Process approval asynchronously
-	go s.processAsyncApproval(id, req, inst, username)
 }
 
 // apiRetryRequest retries processing of an already-approved request by
@@ -1192,11 +1198,15 @@ func (s *Server) apiRetryRequest(w http.ResponseWriter, r *http.Request) {
 	// Update status to processing so UI reflects action immediately
 	_ = s.db.UpdateRequestStatus(r.Context(), id, "processing", "retrying approval", username, nil, nil)
 
+	// Re-run async approval using the stored request payload.
+	if err := s.enqueueAsyncApproval(id, req, inst, username); err != nil {
+		_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", nil, nil)
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
 	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 	writeJSON(w, map[string]string{"status": "processing"}, 200)
-
-	// Re-run async approval using the stored request payload
-	go s.processAsyncApproval(id, req, inst, username)
 }
 
 // processAsyncApproval handles the long-running approval process asynchronously
@@ -1571,7 +1581,11 @@ func (s *Server) apiApproveAllRequests(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("failed to approve request %d", req.ID), 500)
 			return
 		}
-		go s.processAsyncApproval(req.ID, &req, inst, username)
+		if err := s.enqueueAsyncApproval(req.ID, &req, inst, username); err != nil {
+			_ = s.db.UpdateRequestStatus(r.Context(), req.ID, "error", err.Error(), "system", nil, nil)
+			http.Error(w, fmt.Sprintf("failed to queue request %d: %v", req.ID, err), http.StatusServiceUnavailable)
+			return
+		}
 	}
 
 	w.Header().Set("HX-Trigger", `{"request:updated": {}}`)

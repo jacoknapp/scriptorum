@@ -45,6 +45,11 @@ type Server struct {
 	readarrSyncMu          sync.Mutex
 	readarrSyncStateMu     sync.RWMutex
 	readarrSyncState       readarrSyncRuntimeState
+	approvalQueueOnce      sync.Once
+	approvalQueue          chan approvalJob
+	approvalQueueInterval  time.Duration
+	approvalQueueJitter    time.Duration
+	approvalQueueMaxWait   time.Duration
 	disableCSRF            bool // For testing purposes
 	disableDiscoveryWarmup bool // For testing purposes
 	disableDiscoveryAsync  bool // For testing purposes
@@ -63,16 +68,23 @@ func NewServer(cfg *config.Config, database *db.DB, cfgPath string) *Server {
 		cfg.Auth.Salt = genSalt()
 		_ = config.Save(cfgPath, cfg)
 	}
+	approvalQueueInterval := 30 * time.Second
+	approvalQueueJitter := 15 * time.Second
+	approvalQueueMaxWait := 3 * time.Hour
 	s := &Server{
-		cfg:               cfg,
-		db:                database,
-		cfgPath:           cfgPath,
-		settings:          settings.New(cfgPath, cfg),
-		chi:               chi.NewRouter(),
-		csrf:              newCSRFManager(),
-		rateLimiter:       newRateLimiter(),
-		catalogMatchCache: make(map[string]catalogMatchCacheEntry),
-		approvalTokens:    make(map[string]approvalTokenData),
+		cfg:                   cfg,
+		db:                    database,
+		cfgPath:               cfgPath,
+		settings:              settings.New(cfgPath, cfg),
+		chi:                   chi.NewRouter(),
+		csrf:                  newCSRFManager(),
+		rateLimiter:           newRateLimiter(),
+		catalogMatchCache:     make(map[string]catalogMatchCacheEntry),
+		approvalTokens:        make(map[string]approvalTokenData),
+		approvalQueue:         make(chan approvalJob, approvalQueueCapacity(approvalQueueInterval, approvalQueueJitter, approvalQueueMaxWait)),
+		approvalQueueInterval: approvalQueueInterval,
+		approvalQueueJitter:   approvalQueueJitter,
+		approvalQueueMaxWait:  approvalQueueMaxWait,
 	}
 	_ = s.initOIDC()
 	return s

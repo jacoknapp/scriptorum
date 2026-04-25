@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+	"time"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/bootstrap"
 	"gitea.knapp/jacoknapp/scriptorum/internal/config"
@@ -33,6 +34,8 @@ func newServerForRetryTest(t *testing.T) *Server {
 	_ = config.Save(cfgPath, cfg)
 	s := NewServer(cfg, database, cfgPath)
 	s.disableCSRF = true
+	s.approvalQueueInterval = time.Millisecond
+	s.approvalQueueJitter = 0
 	return s
 }
 
