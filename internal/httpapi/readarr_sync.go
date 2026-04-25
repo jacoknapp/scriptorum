@@ -54,6 +54,7 @@ func (s *Server) StartBackgroundTasks(ctx context.Context) {
 		ctx = context.Background()
 	}
 	s.backgroundTasks.Do(func() {
+		go s.recoverProcessingApprovals(ctx)
 		go s.runReadarrSyncLoop(ctx, readarrAutoSyncStartupDelay, readarrAutoSyncInterval)
 	})
 }

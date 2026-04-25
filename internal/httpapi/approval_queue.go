@@ -34,6 +34,10 @@ func approvalQueueCapacity(interval, jitter, maxWait time.Duration) int {
 	return capacity
 }
 
+func (s *Server) approvalQueueMaxItems() int {
+	return cap(s.approvalQueue) + 1
+}
+
 func (s *Server) enqueueAsyncApproval(id int64, req *db.Request, inst providers.ReadarrInstance, username string) error {
 	s.approvalQueueOnce.Do(func() {
 		go s.runApprovalQueue()
