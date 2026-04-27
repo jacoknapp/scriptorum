@@ -34,11 +34,11 @@
 
         <div id="step-body" hx-get="/setup/step/1" hx-trigger="load" class="p-4" aria-live="polite">Loading setup step…</div>
 
-        <div class="flex items-center justify-between border-t border-white/5 p-3">
-          <button id="btn-prev" class="px-3 py-1.5 rounded-lg bg-night-900 text-royal-200 ring-1 ring-white/5 disabled:opacity-50" disabled>Previous</button>
-          <div class="flex items-center gap-3">
-            <span id="gate-note" class="text-sm text-slate-400" aria-live="polite">Please complete required fields and save this step before continuing.</span>
-            <button id="btn-next" class="px-4 py-2 rounded-lg bg-gradient-to-r from-royal-600 to-royal-500 text-white disabled:opacity-50" disabled>Next</button>
+        <div class="flex flex-col gap-3 border-t border-white/5 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <button id="btn-prev" class="self-start px-3 py-1.5 rounded-lg bg-night-900 text-royal-200 ring-1 ring-white/5 disabled:opacity-50 sm:self-auto" disabled>Previous</button>
+          <div class="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
+            <span id="gate-note" class="text-sm text-slate-400 sm:text-right" aria-live="polite">Please complete required fields and save this step before continuing.</span>
+            <button id="btn-next" class="self-end px-4 py-2 rounded-lg bg-gradient-to-r from-royal-600 to-royal-500 text-white disabled:opacity-50 sm:self-auto" disabled>Next</button>
           </div>
         </div>
       </div>
