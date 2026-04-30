@@ -255,14 +255,14 @@ ORDER BY id ASC`
 	return out, nil
 }
 
-// ListSearchableRequests returns requests that are eligible for a background
-// Readarr search retry: status is "queued" or "approved", matched_readarr_id is
-// set, and external_status is not "available".
+// ListSearchableRequests returns requests that are eligible for startup search
+// queue recovery: status is "queued", matched_readarr_id is set, and
+// external_status is not "available".
 func (d *DB) ListSearchableRequests(ctx context.Context) ([]Request, error) {
 	rows, err := d.sql.QueryContext(ctx, `
 SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, cover_url, readarr_request, readarr_response
 FROM requests
-WHERE status IN ('queued','approved')
+WHERE status = 'queued'
   AND matched_readarr_id > 0
   AND (external_status IS NULL OR LOWER(TRIM(external_status)) != 'available')
 ORDER BY id ASC`)

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
@@ -109,9 +110,20 @@ type searchDispatchJob struct {
 	username  string
 }
 
-// searchDispatchInterval controls how often the background worker sends batched
-// search commands to Readarr. Intentionally close to the approval queue interval.
-const searchDispatchInterval = 30 * time.Second
+// Search dispatch waits a randomized interval between ticks so repeated searches
+// don't bunch up on a strict cadence.
+const (
+	searchDispatchMinInterval = 30 * time.Second
+	searchDispatchMaxInterval = 90 * time.Second
+)
+
+func nextSearchDispatchInterval() time.Duration {
+	if searchDispatchMaxInterval <= searchDispatchMinInterval {
+		return searchDispatchMinInterval
+	}
+	rangeNanos := int64(searchDispatchMaxInterval - searchDispatchMinInterval)
+	return searchDispatchMinInterval + time.Duration(rand.Int63n(rangeNanos+1))
+}
 
 // reloadSearchQueue re-enqueues any requests that were in the "queued" state
 // when the server last shut down so they are not silently dropped. Runs once
@@ -146,20 +158,21 @@ func (s *Server) reloadSearchQueue(ctx context.Context) {
 	}
 }
 
-// runSearchDispatchLoop drains the searchDispatchQueue every ~30 seconds and
-// fires the accumulated SearchBooks commands to Readarr.
+// runSearchDispatchLoop drains the searchDispatchQueue on a randomized interval
+// between 30 seconds and 90 seconds and dispatches accumulated searches.
 func (s *Server) runSearchDispatchLoop(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	ticker := time.NewTicker(searchDispatchInterval)
-	defer ticker.Stop()
+	timer := time.NewTimer(nextSearchDispatchInterval())
+	defer timer.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-ticker.C:
+		case <-timer.C:
 			s.flushSearchDispatchQueue(ctx)
+			timer.Reset(nextSearchDispatchInterval())
 		}
 	}
 }
@@ -216,7 +229,7 @@ drained:
 				}
 				_ = s.db.UpdateRequestStatus(ctx, job.requestID, "error", fmt.Sprintf("search dispatch failed: %v", err), "system", nil, body)
 			} else {
-				reason := fmt.Sprintf("Readarr search queued for id %d", job.readarrID)
+				reason := fmt.Sprintf("Readarr search dispatched for id %d", job.readarrID)
 				_ = s.db.UpdateRequestStatus(ctx, job.requestID, "queued", reason, job.username, nil, body)
 			}
 		}

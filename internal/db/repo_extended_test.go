@@ -351,3 +351,71 @@ func TestReadarrCatalogRepositoryFlows(t *testing.T) {
 		t.Fatalf("Availability available = %q", got)
 	}
 }
+
+func TestListSearchableRequestsOnlyReturnsQueued(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	db := openMigratedDB(t)
+
+	queuedID, err := db.CreateRequest(ctx, &Request{
+		RequesterEmail:   "queued@example.com",
+		Title:            "Queued Search",
+		Format:           "ebook",
+		Status:           "queued",
+		ExternalStatus:   "monitored",
+		MatchedReadarrID: 201,
+	})
+	if err != nil {
+		t.Fatalf("CreateRequest queued: %v", err)
+	}
+
+	_, err = db.CreateRequest(ctx, &Request{
+		RequesterEmail:   "approved@example.com",
+		Title:            "Approved Only",
+		Format:           "ebook",
+		Status:           "approved",
+		ExternalStatus:   "monitored",
+		MatchedReadarrID: 202,
+	})
+	if err != nil {
+		t.Fatalf("CreateRequest approved: %v", err)
+	}
+
+	_, err = db.CreateRequest(ctx, &Request{
+		RequesterEmail:   "available@example.com",
+		Title:            "Already Available",
+		Format:           "ebook",
+		Status:           "queued",
+		ExternalStatus:   "available",
+		MatchedReadarrID: 203,
+	})
+	if err != nil {
+		t.Fatalf("CreateRequest available: %v", err)
+	}
+
+	_, err = db.CreateRequest(ctx, &Request{
+		RequesterEmail: "nomatch@example.com",
+		Title:          "No Match",
+		Format:         "ebook",
+		Status:         "queued",
+	})
+	if err != nil {
+		t.Fatalf("CreateRequest without match: %v", err)
+	}
+
+	items, err := db.ListSearchableRequests(ctx)
+	if err != nil {
+		t.Fatalf("ListSearchableRequests: %v", err)
+	}
+
+	if len(items) != 1 {
+		t.Fatalf("expected 1 searchable request, got %d", len(items))
+	}
+	if items[0].ID != queuedID {
+		t.Fatalf("expected queued request id %d, got %d", queuedID, items[0].ID)
+	}
+	if items[0].Status != "queued" {
+		t.Fatalf("expected queued status, got %q", items[0].Status)
+	}
+}

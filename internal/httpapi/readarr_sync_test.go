@@ -227,3 +227,12 @@ func TestReadarrSyncResolvesStaleErrorThroughCatalogMatch(t *testing.T) {
 		t.Fatalf("expected manual sync actor to be recorded as approver, got %q", got.ApproverEmail)
 	}
 }
+
+func TestNextSearchDispatchIntervalWithinRange(t *testing.T) {
+	for i := 0; i < 100; i++ {
+		got := nextSearchDispatchInterval()
+		if got < searchDispatchMinInterval || got > searchDispatchMaxInterval {
+			t.Fatalf("interval out of range: got=%v min=%v max=%v", got, searchDispatchMinInterval, searchDispatchMaxInterval)
+		}
+	}
+}

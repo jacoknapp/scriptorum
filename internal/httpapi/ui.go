@@ -157,6 +157,9 @@ type requestListItem struct {
 	// Readarr search for this request (cooldown elapsed, not yet available,
 	// and matched to a Readarr book).
 	SearchEligible bool
+	// SearchDispatchPending is true when a Search click has queued a dispatch
+	// job but the background worker has not sent it to Readarr yet.
+	SearchDispatchPending bool
 }
 
 func (s *Server) buildRequestListItems(ctx context.Context, items []db.Request) []requestListItem {
@@ -170,10 +173,12 @@ func (s *Server) buildRequestListItems(ctx context.Context, items []db.Request) 
 			!strings.EqualFold(strings.TrimSpace(item.ExternalStatus), "available") &&
 			item.MatchedReadarrID > 0 &&
 			(item.Status == "approved" || item.Status == "queued" || item.Status == "processing")
+		searchDispatchPending := item.Status == "queued" && strings.Contains(strings.ToLower(item.StatusReason), "dispatch pending")
 		out = append(out, requestListItem{
-			Request:        item,
-			Cover:          cover,
-			SearchEligible: searchEligible,
+			Request:               item,
+			Cover:                 cover,
+			SearchEligible:        searchEligible,
+			SearchDispatchPending: searchDispatchPending,
 		})
 	}
 	return out

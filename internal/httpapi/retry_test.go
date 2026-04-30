@@ -203,7 +203,7 @@ func TestSearchRequestQueuesReadarrBookSearch(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get request: %v", err)
 	}
-	if got.Status != "queued" || !strings.Contains(got.StatusReason, "Readarr search queued for id 55") {
+	if got.Status != "queued" || !strings.Contains(got.StatusReason, "Readarr search dispatched for id 55") {
 		t.Fatalf("unexpected request after search: status=%q reason=%q", got.Status, got.StatusReason)
 	}
 }
