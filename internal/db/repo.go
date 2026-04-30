@@ -255,6 +255,67 @@ ORDER BY id ASC`
 	return out, nil
 }
 
+// ListSearchableRequests returns requests that are eligible for a background
+// Readarr search retry: status is "queued" or "approved", matched_readarr_id is
+// set, and external_status is not "available".
+func (d *DB) ListSearchableRequests(ctx context.Context) ([]Request, error) {
+	rows, err := d.sql.QueryContext(ctx, `
+SELECT id, created_at, updated_at, requester_email, title, authors, isbn10, isbn13, format, status, status_reason, external_status, matched_readarr_id, approver_email, approved_at, cover_url, readarr_request, readarr_response
+FROM requests
+WHERE status IN ('queued','approved')
+  AND matched_readarr_id > 0
+  AND (external_status IS NULL OR LOWER(TRIM(external_status)) != 'available')
+ORDER BY id ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Request
+	for rows.Next() {
+		var rr Request
+		var created, updated, approved sql.NullString
+		var authorsStr sql.NullString
+		var approver sql.NullString
+		var externalStatus sql.NullString
+		var matchedReadarrID sql.NullInt64
+		var coverURL sql.NullString
+		var readarrReqStr, readarrRespStr sql.NullString
+		if err := rows.Scan(&rr.ID, &created, &updated, &rr.RequesterEmail, &rr.Title, &authorsStr, &rr.ISBN10, &rr.ISBN13, &rr.Format, &rr.Status, &rr.StatusReason, &externalStatus, &matchedReadarrID, &approver, &approved, &coverURL, &readarrReqStr, &readarrRespStr); err != nil {
+			return nil, err
+		}
+		if externalStatus.Valid {
+			rr.ExternalStatus = externalStatus.String
+		}
+		if matchedReadarrID.Valid {
+			rr.MatchedReadarrID = matchedReadarrID.Int64
+		}
+		if approver.Valid {
+			rr.ApproverEmail = approver.String
+		}
+		if coverURL.Valid {
+			rr.CoverURL = coverURL.String
+		}
+		if readarrReqStr.Valid {
+			rr.ReadarrReq = json.RawMessage([]byte(readarrReqStr.String))
+		}
+		if readarrRespStr.Valid {
+			rr.ReadarrResp = json.RawMessage([]byte(readarrRespStr.String))
+		}
+		rr.CreatedAt, _ = time.Parse(time.RFC3339Nano, created.String)
+		rr.UpdatedAt, _ = time.Parse(time.RFC3339Nano, updated.String)
+		if approved.Valid {
+			t, _ := time.Parse(time.RFC3339Nano, approved.String)
+			rr.ApprovedAt = &t
+		}
+		if authorsStr.Valid && authorsStr.String != "" {
+			_ = json.Unmarshal([]byte(authorsStr.String), &rr.Authors)
+		}
+		out = append(out, rr)
+	}
+	return out, nil
+}
+
 func (d *DB) ListRequestsPage(ctx context.Context, mine string, limit int) ([]Request, error) {
 	if limit <= 0 {
 		limit = 200

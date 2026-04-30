@@ -50,6 +50,10 @@ type Server struct {
 	approvalQueueInterval  time.Duration
 	approvalQueueJitter    time.Duration
 	approvalQueueMaxWait   time.Duration
+	// searchDispatchQueue holds pending Readarr search commands submitted via the
+	// Search button. A background worker drains and dispatches them every ~30 s.
+	searchDispatchQueue    chan searchDispatchJob
+	searchDispatchOnce     sync.Once
 	disableCSRF            bool // For testing purposes
 	disableDiscoveryWarmup bool // For testing purposes
 	disableDiscoveryAsync  bool // For testing purposes
@@ -85,6 +89,8 @@ func NewServer(cfg *config.Config, database *db.DB, cfgPath string) *Server {
 		approvalQueueInterval: approvalQueueInterval,
 		approvalQueueJitter:   approvalQueueJitter,
 		approvalQueueMaxWait:  approvalQueueMaxWait,
+		// Buffer up to 256 pending search dispatch jobs so button clicks never block.
+		searchDispatchQueue: make(chan searchDispatchJob, 256),
 	}
 	_ = s.initOIDC()
 	return s

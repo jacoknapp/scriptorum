@@ -188,6 +188,11 @@ func TestSearchRequestQueuesReadarrBookSearch(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("search code=%d body=%s", rec.Code, rec.Body.String())
 	}
+
+	// The API handler enqueues the job; flush the dispatch queue manually to
+	// simulate the background worker firing within the test.
+	s.flushSearchDispatchQueue(context.Background())
+
 	if gotMethod != http.MethodPost || gotPath != "/api/v1/command" {
 		t.Fatalf("unexpected readarr request %s %s", gotMethod, gotPath)
 	}

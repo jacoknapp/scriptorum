@@ -45,7 +45,7 @@ func (s *Server) mountAPI(r chi.Router) {
 		rr.Get("/", s.requireLogin(s.apiListRequests))
 		rr.Post("/{id}/approve", s.requireAdmin(s.apiApproveRequest))
 		rr.Post("/{id}/retry", s.requireAdmin(s.apiRetryRequest))
-		rr.Post("/{id}/search", s.requireAdmin(s.apiSearchRequest))
+		rr.Post("/{id}/search", s.requireLogin(s.apiSearchRequest))
 		rr.Post("/{id}/hydrate", s.requireAdmin(s.apiHydrateRequest))
 		rr.Post("/{id}/decline", s.requireAdmin(s.apiDeclineRequest))
 		rr.Delete("/{id}", s.requireAdmin(s.apiDeleteRequest))
@@ -1221,6 +1221,22 @@ func (s *Server) apiSearchRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", 404)
 		return
 	}
+
+	// Non-admin users may only search their own requests and only after the
+	// 30-minute cooldown has elapsed since the request was created.
+	u := r.Context().Value(ctxUser).(*session)
+	if !u.Admin {
+		if !strings.EqualFold(strings.ToLower(req.RequesterEmail), strings.ToLower(u.Username)) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if time.Since(req.CreatedAt) < searchCooldown {
+			remaining := time.Until(req.CreatedAt.Add(searchCooldown)).Round(time.Minute)
+			http.Error(w, fmt.Sprintf("search not yet available; try again in %v", remaining), http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	if strings.EqualFold(strings.TrimSpace(req.ExternalStatus), "available") {
 		http.Error(w, "request is already available", 400)
 		return
@@ -1253,19 +1269,23 @@ func (s *Server) apiSearchRequest(w http.ResponseWriter, r *http.Request) {
 		readarrID = match.ReadarrID
 	}
 
-	ra := providers.NewReadarrWithDB(inst, s.db.SQL())
-	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
-	defer cancel()
-	body, err := ra.SearchBooks(ctx, []int{int(readarrID)})
-	if err != nil {
-		_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", nil, body)
-		http.Error(w, err.Error(), http.StatusServiceUnavailable)
-		return
+	// Enqueue the search command; a background worker dispatches it to Readarr
+	// every ~30 seconds so button clicks are never blocked by network latency.
+	username := r.Context().Value(ctxUser).(*session).Username
+	job := searchDispatchJob{
+		requestID: id,
+		readarrID: int(readarrID),
+		format:    req.Format,
+		username:  username,
+	}
+	select {
+	case s.searchDispatchQueue <- job:
+	default:
+		// Queue is full — fall through and still accept the click; it will be retried.
 	}
 
-	username := r.Context().Value(ctxUser).(*session).Username
-	reason := fmt.Sprintf("Readarr search queued for id %d", readarrID)
-	_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", reason, username, nil, body)
+	reason := fmt.Sprintf("Readarr search queued for id %d (dispatch pending)", readarrID)
+	_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", reason, username, nil, nil)
 	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 	writeJSON(w, map[string]string{"status": "search queued"}, 200)
 }

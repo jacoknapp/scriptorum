@@ -56,6 +56,8 @@ func (s *Server) StartBackgroundTasks(ctx context.Context) {
 	s.backgroundTasks.Do(func() {
 		go s.recoverProcessingApprovals(ctx)
 		go s.runReadarrSyncLoop(ctx, readarrAutoSyncStartupDelay, readarrAutoSyncInterval)
+		go s.reloadSearchQueue(ctx)
+		go s.runSearchDispatchLoop(ctx)
 	})
 }
 
@@ -94,6 +96,129 @@ func (s *Server) runAutomaticReadarrSync(parent context.Context) {
 		}
 		if s.settings.Get().Debug {
 			fmt.Printf("DEBUG: automatic readarr sync failed: %v\n", err)
+		}
+	}
+}
+
+// searchDispatchJob is a pending Readarr search command enqueued by the Search
+// button handler and dispatched by the background worker.
+type searchDispatchJob struct {
+	requestID int64
+	readarrID int
+	format    string
+	username  string
+}
+
+// searchDispatchInterval controls how often the background worker sends batched
+// search commands to Readarr. Intentionally close to the approval queue interval.
+const searchDispatchInterval = 30 * time.Second
+
+// reloadSearchQueue re-enqueues any requests that were in the "queued" state
+// when the server last shut down so they are not silently dropped. Runs once
+// at startup before the dispatch loop begins.
+func (s *Server) reloadSearchQueue(ctx context.Context) {
+	pending, err := s.db.ListSearchableRequests(ctxOrBackground(ctx))
+	if err != nil {
+		if s.settings.Get().Debug {
+			fmt.Printf("DEBUG: reloadSearchQueue: list failed: %v\n", err)
+		}
+		return
+	}
+	for _, req := range pending {
+		if req.MatchedReadarrID <= 0 {
+			continue
+		}
+		job := searchDispatchJob{
+			requestID: req.ID,
+			readarrID: int(req.MatchedReadarrID),
+			format:    req.Format,
+			username:  "system",
+		}
+		select {
+		case s.searchDispatchQueue <- job:
+		default:
+			// Channel is full; the item stays in the DB as "queued" and will
+			// be flushed on the next normal tick.
+		}
+	}
+	if s.settings.Get().Debug && len(pending) > 0 {
+		fmt.Printf("DEBUG: reloadSearchQueue: re-enqueued %d pending search job(s)\n", len(pending))
+	}
+}
+
+// runSearchDispatchLoop drains the searchDispatchQueue every ~30 seconds and
+// fires the accumulated SearchBooks commands to Readarr.
+func (s *Server) runSearchDispatchLoop(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ticker := time.NewTicker(searchDispatchInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.flushSearchDispatchQueue(ctx)
+		}
+	}
+}
+
+// flushSearchDispatchQueue drains all jobs currently in the searchDispatchQueue
+// and sends a single batched SearchBooks request per Readarr instance.
+func (s *Server) flushSearchDispatchQueue(parent context.Context) {
+	// Drain all pending jobs without blocking if the queue is empty.
+	var jobs []searchDispatchJob
+	for {
+		select {
+		case job := <-s.searchDispatchQueue:
+			jobs = append(jobs, job)
+		default:
+			goto drained
+		}
+	}
+drained:
+	if len(jobs) == 0 {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(ctxOrBackground(parent), 20*time.Second)
+	defer cancel()
+
+	// Group by format so we hit the right Readarr instance.
+	byFormat := make(map[string][]searchDispatchJob)
+	for _, job := range jobs {
+		byFormat[job.format] = append(byFormat[job.format], job)
+	}
+
+	for format, formatJobs := range byFormat {
+		inst, ok := s.readarrInstanceForFormat(format)
+		if !ok {
+			continue
+		}
+		ra := providers.NewReadarrWithDB(inst, s.db.SQL())
+
+		// Deduplicate Readarr IDs so we don't fire duplicate searches.
+		seen := make(map[int]struct{}, len(formatJobs))
+		var ids []int
+		for _, job := range formatJobs {
+			if _, ok := seen[job.readarrID]; !ok {
+				seen[job.readarrID] = struct{}{}
+				ids = append(ids, job.readarrID)
+			}
+		}
+
+		body, err := ra.SearchBooks(ctx, ids)
+		for _, job := range formatJobs {
+			if err != nil {
+				if s.settings.Get().Debug {
+					fmt.Printf("DEBUG: search dispatch: SearchBooks failed for request %d: %v\n", job.requestID, err)
+				}
+				_ = s.db.UpdateRequestStatus(ctx, job.requestID, "error", fmt.Sprintf("search dispatch failed: %v", err), "system", nil, body)
+			} else {
+				reason := fmt.Sprintf("Readarr search queued for id %d", job.readarrID)
+				_ = s.db.UpdateRequestStatus(ctx, job.requestID, "queued", reason, job.username, nil, body)
+			}
 		}
 	}
 }

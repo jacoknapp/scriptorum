@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/db"
 	"gitea.knapp/jacoknapp/scriptorum/internal/util"
@@ -145,9 +146,17 @@ func (u *ui) handleRequestsTable(s *Server) http.HandlerFunc {
 	}
 }
 
+// searchCooldown is the minimum time a non-admin user must wait after
+// submitting a request before they are allowed to trigger a Readarr search.
+const searchCooldown = 30 * time.Minute
+
 type requestListItem struct {
 	db.Request
 	Cover string
+	// SearchEligible is true when a non-admin user is allowed to trigger a
+	// Readarr search for this request (cooldown elapsed, not yet available,
+	// and matched to a Readarr book).
+	SearchEligible bool
 }
 
 func (s *Server) buildRequestListItems(ctx context.Context, items []db.Request) []requestListItem {
@@ -155,9 +164,16 @@ func (s *Server) buildRequestListItems(ctx context.Context, items []db.Request) 
 	out := make([]requestListItem, 0, len(items))
 	for _, item := range items {
 		cover := s.requestListCoverData(item, matchedBooks)
+		// A non-admin user may trigger a search once the cooldown has elapsed
+		// and the book is not yet available in Readarr.
+		searchEligible := time.Since(item.CreatedAt) >= searchCooldown &&
+			!strings.EqualFold(strings.TrimSpace(item.ExternalStatus), "available") &&
+			item.MatchedReadarrID > 0 &&
+			(item.Status == "approved" || item.Status == "queued" || item.Status == "processing")
 		out = append(out, requestListItem{
-			Request: item,
-			Cover:   cover,
+			Request:        item,
+			Cover:          cover,
+			SearchEligible: searchEligible,
 		})
 	}
 	return out
