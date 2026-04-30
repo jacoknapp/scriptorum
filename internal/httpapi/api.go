@@ -45,6 +45,7 @@ func (s *Server) mountAPI(r chi.Router) {
 		rr.Get("/", s.requireLogin(s.apiListRequests))
 		rr.Post("/{id}/approve", s.requireAdmin(s.apiApproveRequest))
 		rr.Post("/{id}/retry", s.requireAdmin(s.apiRetryRequest))
+		rr.Post("/{id}/search", s.requireAdmin(s.apiSearchRequest))
 		rr.Post("/{id}/hydrate", s.requireAdmin(s.apiHydrateRequest))
 		rr.Post("/{id}/decline", s.requireAdmin(s.apiDeclineRequest))
 		rr.Delete("/{id}", s.requireAdmin(s.apiDeleteRequest))
@@ -1207,6 +1208,66 @@ func (s *Server) apiRetryRequest(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 	writeJSON(w, map[string]string{"status": "processing"}, 200)
+}
+
+// apiSearchRequest asks Readarr to re-search an already-requested book that is
+// monitored/grabbed/queued but not available yet.
+func (s *Server) apiSearchRequest(w http.ResponseWriter, r *http.Request) {
+	idStr := chi.URLParam(r, "id")
+	id, _ := strconv.ParseInt(idStr, 10, 64)
+
+	req, err := s.db.GetRequest(r.Context(), id)
+	if err != nil {
+		http.Error(w, "not found", 404)
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(req.ExternalStatus), "available") {
+		http.Error(w, "request is already available", 400)
+		return
+	}
+	if req.Status != "approved" && req.Status != "queued" && req.Status != "processing" {
+		http.Error(w, "can only search approved or queued requests", 400)
+		return
+	}
+
+	var inst providers.ReadarrInstance
+	if req.Format == "audiobook" {
+		c := s.settings.Get().Readarr.Audiobooks
+		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
+	} else {
+		c := s.settings.Get().Readarr.Ebooks
+		inst = providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}
+	}
+	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
+		http.Error(w, "readarr not configured", 400)
+		return
+	}
+
+	readarrID := req.MatchedReadarrID
+	if readarrID <= 0 {
+		match, err := s.findCatalogMatch(r.Context(), req.Format, req.Title, req.Authors, req.ISBN10, req.ISBN13, "", req.ReadarrReq)
+		if err != nil || match == nil || match.ReadarrID <= 0 {
+			http.Error(w, "request is not matched to a Readarr book", 400)
+			return
+		}
+		readarrID = match.ReadarrID
+	}
+
+	ra := providers.NewReadarrWithDB(inst, s.db.SQL())
+	ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+	defer cancel()
+	body, err := ra.SearchBooks(ctx, []int{int(readarrID)})
+	if err != nil {
+		_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", nil, body)
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+
+	username := r.Context().Value(ctxUser).(*session).Username
+	reason := fmt.Sprintf("Readarr search queued for id %d", readarrID)
+	_ = s.db.UpdateRequestStatus(r.Context(), id, "queued", reason, username, nil, body)
+	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
+	writeJSON(w, map[string]string{"status": "search queued"}, 200)
 }
 
 // processAsyncApproval handles the long-running approval process asynchronously

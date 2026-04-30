@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -41,5 +42,34 @@ func TestReadarrPingLookupRedactsAPIKeyOnTransportError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "apikey=***") {
 		t.Fatalf("expected redacted url in error, got %q", err.Error())
+	}
+}
+
+func TestReadarrSearchBooksQueuesCommand(t *testing.T) {
+	var gotPath, gotMethod, gotBody, gotAPIKey string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+		gotAPIKey = r.Header.Get("X-Api-Key")
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":1}`))
+	}))
+	t.Cleanup(ts.Close)
+
+	r := NewReadarrWithDB(ReadarrInstance{BaseURL: ts.URL, APIKey: "secret"}, nil)
+	if _, err := r.SearchBooks(context.Background(), []int{10, 20}); err != nil {
+		t.Fatalf("SearchBooks: %v", err)
+	}
+
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/command" {
+		t.Fatalf("unexpected request %s %s", gotMethod, gotPath)
+	}
+	if gotAPIKey != "secret" {
+		t.Fatalf("expected API key header, got %q", gotAPIKey)
+	}
+	if !strings.Contains(gotBody, `"name":"BookSearch"`) || !strings.Contains(gotBody, `"bookIds":[10,20]`) {
+		t.Fatalf("unexpected body: %s", gotBody)
 	}
 }

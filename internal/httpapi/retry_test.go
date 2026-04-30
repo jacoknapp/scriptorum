@@ -4,15 +4,18 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/bootstrap"
 	"gitea.knapp/jacoknapp/scriptorum/internal/config"
+	"gitea.knapp/jacoknapp/scriptorum/internal/db"
 )
 
 // helper to create server (copied style from api_flow_test)
@@ -138,5 +141,89 @@ func TestRetryFailsWithoutPayload(t *testing.T) {
 	r.ServeHTTP(rec2, retryReq)
 	if rec2.Code != 400 {
 		t.Fatalf("expected 400 when retrying without payload, got %d body=%s", rec2.Code, rec2.Body.String())
+	}
+}
+
+func TestSearchRequestQueuesReadarrBookSearch(t *testing.T) {
+	s := newServerForRetryTest(t)
+
+	var gotPath, gotMethod, gotBody string
+	readarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":5,"name":"BookSearch"}`))
+	}))
+	t.Cleanup(readarr.Close)
+
+	cfg := s.settings.Get()
+	cfg.Readarr.Ebooks.BaseURL = readarr.URL
+	cfg.Readarr.Ebooks.APIKey = "test-key"
+	if err := s.settings.Update(cfg); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	id, err := s.db.CreateRequest(context.Background(), &db.Request{
+		RequesterEmail:   "reader@example.com",
+		Title:            "Search Me",
+		Authors:          []string{"Alice"},
+		Format:           "ebook",
+		Status:           "queued",
+		ExternalStatus:   "monitored",
+		MatchedReadarrID: 55,
+		ReadarrReq:       json.RawMessage(`{"title":"Search Me"}`),
+	})
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/requests/"+strconv.FormatInt(id, 10)+"/search", nil)
+	req.AddCookie(makeCookie(t, s, "admin", true))
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != 200 {
+		t.Fatalf("search code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if gotMethod != http.MethodPost || gotPath != "/api/v1/command" {
+		t.Fatalf("unexpected readarr request %s %s", gotMethod, gotPath)
+	}
+	if !strings.Contains(gotBody, `"name":"BookSearch"`) || !strings.Contains(gotBody, `"bookIds":[55]`) {
+		t.Fatalf("unexpected command body: %s", gotBody)
+	}
+	got, err := s.db.GetRequest(context.Background(), id)
+	if err != nil {
+		t.Fatalf("get request: %v", err)
+	}
+	if got.Status != "queued" || !strings.Contains(got.StatusReason, "Readarr search queued for id 55") {
+		t.Fatalf("unexpected request after search: status=%q reason=%q", got.Status, got.StatusReason)
+	}
+}
+
+func TestSearchRequestRejectsAvailableRequest(t *testing.T) {
+	s := newServerForRetryTest(t)
+	id, err := s.db.CreateRequest(context.Background(), &db.Request{
+		RequesterEmail:   "reader@example.com",
+		Title:            "Done",
+		Authors:          []string{"Alice"},
+		Format:           "ebook",
+		Status:           "queued",
+		ExternalStatus:   "available",
+		MatchedReadarrID: 56,
+	})
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/requests/"+strconv.FormatInt(id, 10)+"/search", nil)
+	req.AddCookie(makeCookie(t, s, "admin", true))
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != 400 {
+		t.Fatalf("expected 400 for available request, got %d body=%s", rec.Code, rec.Body.String())
 	}
 }

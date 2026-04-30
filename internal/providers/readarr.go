@@ -836,6 +836,32 @@ func (r *Readarr) MonitorBooks(ctx context.Context, ids []int, monitored bool) (
 	return body, nil
 }
 
+// SearchBooks queues a Readarr book search command for the provided book ids.
+func (r *Readarr) SearchBooks(ctx context.Context, ids []int) ([]byte, error) {
+	if len(ids) == 0 {
+		return nil, fmt.Errorf("no ids provided")
+	}
+	payload := map[string]any{
+		"name":    "BookSearch",
+		"bookIds": ids,
+	}
+	b, _ := json.Marshal(payload)
+	req, u, err := r.newJSONRequest(ctx, http.MethodPost, "/api/v1/command", nil, bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	resp, err := r.cl.Do(req)
+	if err != nil {
+		return nil, readarrTransportError(u, r.inst.APIKey, err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return body, readarrHTTPError("book search command failed", u, r.inst.APIKey, resp, body)
+	}
+	return body, nil
+}
+
 // ----- Lookup & matching (ISBN13 -> ISBN10 -> ASIN) -----
 
 func (r *Readarr) LookupByTerm(ctx context.Context, term string) ([]LookupBook, error) {

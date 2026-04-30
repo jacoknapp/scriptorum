@@ -832,6 +832,7 @@
 					<button id="book-modal-approve" class="hidden px-3 py-1.5 text-xs rounded bg-royal-600 text-white hover:bg-royal-500">Approve</button>
 					<button id="book-modal-attach" class="hidden px-3 py-1.5 text-xs rounded bg-amber-600 text-white hover:bg-amber-500">Attach</button>
 					<button id="book-modal-retry" class="hidden px-3 py-1.5 text-xs rounded bg-amber-600 text-white hover:bg-amber-500">Retry</button>
+					<button id="book-modal-search" class="hidden px-3 py-1.5 text-xs rounded bg-blue-600 text-white hover:bg-blue-500">Search</button>
 					<button id="book-modal-decline" class="hidden px-3 py-1.5 text-xs rounded bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30 hover:bg-amber-900/50">Decline</button>
 					<button id="book-modal-delete" class="hidden px-3 py-1.5 text-xs rounded ml-2 bg-transparent text-rose-200 ring-1 ring-rose-500/30 hover:bg-rose-950/40">Delete</button>
 				</div>
@@ -956,6 +957,7 @@
 				var attachBtn = document.getElementById('book-modal-attach');
 				var declineBtn = document.getElementById('book-modal-decline');
 				var deleteBtn = document.getElementById('book-modal-delete');
+				var searchBtn = document.getElementById('book-modal-search');
 				
 				if (!modal) {
 					return;
@@ -1009,6 +1011,7 @@
 						var requestStatus = data.status || data.Status || 'pending';
 						var externalStatus = data.externalStatus || data.ExternalStatus || '';
 						var hasReadarrReq = !!(data.readarrRequest || data.ReadarrReq);
+						var matchedReadarrId = parseInt(data.matchedReadarrId || data.MatchedReadarrID || data.matchedReadarrID || 0, 10) || 0;
 						var requestId = data.requestId || data.id || data.ID;
 						
 						// Show appropriate buttons based on status and data
@@ -1065,6 +1068,16 @@
 								retryBtn.onclick = function() { handleRequestAction('retry', requestId); };
 							} else {
 								retryBtn.classList.add('hidden');
+							}
+						}
+						if (searchBtn) {
+							if (matchedReadarrId > 0 && normalizeRequestState(externalStatus) !== 'available' && (requestStatus === 'approved' || requestStatus === 'queued' || requestStatus === 'processing')) {
+								searchBtn.classList.remove('hidden');
+								searchBtn.onclick = function() { handleRequestAction('search', requestId); };
+								searchBtn.title = 'Queue a new Readarr search for this book';
+							} else {
+								searchBtn.classList.add('hidden');
+								searchBtn.onclick = null;
 							}
 						}
 					} else {
@@ -1330,6 +1343,9 @@
 				case 'retry':
 					apiUrl = '/api/v1/requests/' + requestId + '/retry';
 					break;
+				case 'search':
+					apiUrl = '/api/v1/requests/' + requestId + '/search';
+					break;
 				case 'decline':
 					apiUrl = '/api/v1/requests/' + requestId + '/decline';
 					break;
@@ -1362,6 +1378,7 @@
 									action === 'approve' ? 'approved' : 
 									action === 'decline' ? 'declined' :
 									action === 'hydrate' ? 'updated' :
+									action === 'search' ? 'search queued' :
 									action === 'retry' ? 'retried' : action + 'd';
 					window.scriptorumShowToast && window.scriptorumShowToast('Request ' + actionText + ' successfully.');
 				} else {
