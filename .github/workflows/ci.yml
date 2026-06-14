@@ -44,7 +44,7 @@ jobs:
 
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         env:
           # Self-hosted runner sits behind a private CA; skip TLS verification on upload.
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
@@ -80,7 +80,7 @@ jobs:
 
       - name: Upload binary artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         env:
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
         with:
@@ -227,7 +227,7 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Download coverage artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v3
         env:
           NODE_TLS_REJECT_UNAUTHORIZED: '0'
         with:
