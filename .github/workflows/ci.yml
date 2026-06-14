@@ -16,6 +16,8 @@ env:
 jobs:
   build-test:
     runs-on: ubuntu-latest
+    container:
+      image: golang:1.25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -200,13 +202,10 @@ jobs:
           cache-to: type=gha,mode=max
   lint:
     runs-on: ubuntu-latest
+    container:
+      image: golang:1.25
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-          cache: true
-          cache-dependency-path: go.sum
       - name: Vet
         run: go vet ./...
       - name: Staticcheck
@@ -218,13 +217,10 @@ jobs:
   coverage-check:
     needs: build-test
     runs-on: ubuntu-latest
+    container:
+      image: golang:1.25
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: '1.25'
-          cache: true
-          cache-dependency-path: go.sum
 
       - name: Download coverage artifact
         uses: actions/download-artifact@v4
