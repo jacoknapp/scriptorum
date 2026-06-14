@@ -195,15 +195,18 @@ func readarrProbeMessage(err error) string {
 		return ""
 	}
 	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	// Status codes are matched as "http NNN" (the provider renders them as
+	// "(HTTP NNN ...)") rather than bare "NNN" so they don't collide with digits
+	// in the host/port of the Readarr URL embedded in the error string.
 	switch {
-	case strings.Contains(msg, "401"), strings.Contains(msg, "403"),
+	case strings.Contains(msg, "http 401"), strings.Contains(msg, "http 403"),
 		strings.Contains(msg, "unauthorized"), strings.Contains(msg, "forbidden"),
 		strings.Contains(msg, "api key"):
 		return "Could not connect to Readarr. Check the API key."
 	case strings.Contains(msg, "x509"), strings.Contains(msg, "tls"),
 		strings.Contains(msg, "certificate"), strings.Contains(msg, "handshake"):
 		return "Could not connect to Readarr. Check the certificate or enable Skip TLS verification if you trust it."
-	case strings.Contains(msg, "404"), strings.Contains(msg, "no such host"),
+	case strings.Contains(msg, "http 404"), strings.Contains(msg, "no such host"),
 		strings.Contains(msg, "connection refused"), strings.Contains(msg, "timeout"),
 		strings.Contains(msg, "deadline exceeded"), strings.Contains(msg, "dial tcp"):
 		return "Could not connect to Readarr. Check the Base URL and that the server is reachable."

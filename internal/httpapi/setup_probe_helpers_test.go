@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -73,6 +74,42 @@ func TestHandleTestReadarrUsesSavedSettings(t *testing.T) {
 	}
 	if stepFlags["raudio"] {
 		t.Fatal("expected audiobook step flag to be cleared on failure")
+	}
+}
+
+func TestReadarrProbeMessageIgnoresPortDigits(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{
+			name: "502 with port containing 401 is not misread as auth error",
+			err:  fmt.Errorf("book lookup failed (HTTP 502 Bad Gateway) from http://127.0.0.1:40123/api/v1/book/lookup: boom"),
+			want: "Could not connect to Readarr. Check the Base URL, API key, and TLS setting.",
+		},
+		{
+			name: "502 with port containing 404 is not misread as unreachable",
+			err:  fmt.Errorf("book lookup failed (HTTP 502 Bad Gateway) from http://127.0.0.1:40456/api/v1/book/lookup: boom"),
+			want: "Could not connect to Readarr. Check the Base URL, API key, and TLS setting.",
+		},
+		{
+			name: "genuine 401 is classified as auth error",
+			err:  fmt.Errorf("book lookup failed (HTTP 401 Unauthorized) from http://127.0.0.1:55555/api/v1/book/lookup: bad key"),
+			want: "Could not connect to Readarr. Check the API key.",
+		},
+		{
+			name: "genuine 404 is classified as unreachable",
+			err:  fmt.Errorf("book lookup failed (HTTP 404 Not Found) from http://127.0.0.1:55555/api/v1/book/lookup: nope"),
+			want: "Could not connect to Readarr. Check the Base URL and that the server is reachable.",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := readarrProbeMessage(tc.err); got != tc.want {
+				t.Fatalf("readarrProbeMessage = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
