@@ -1443,12 +1443,13 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 							fmt.Printf("DEBUG: PUT /api/v1/book/monitor returned body:\n%s\n", string(monBody))
 						}
 						_ = s.db.ApproveRequest(ctx, id, username)
-						_ = s.db.UpdateRequestStatus(ctx, id, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid), username, payload, respBody)
 						externalStatus := "monitored"
 						if _, status := readarrStateFromResponse(gotBody); status != "" {
 							externalStatus = status
 						}
+						// Persist matched id/availability before flipping to "queued".
 						_ = s.db.UpdateRequestExternalStatus(ctx, id, externalStatus, int64(bid), fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid))
+						_ = s.db.UpdateRequestStatus(ctx, id, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d", bid), username, payload, respBody)
 						if cover := s.requestCoverFromPayload(req.Format, respBody); cover != "" {
 							_ = s.db.UpdateRequestCover(ctx, id, cover)
 						}
@@ -1459,10 +1460,11 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 			}
 			// Fallback: treat as already present without monitor update
 			_ = s.db.ApproveRequest(ctx, id, username)
-			_ = s.db.UpdateRequestStatus(ctx, id, "queued", "already in Readarr (duplicate edition)", username, payload, respBody)
+			// Persist matched id/availability before flipping to "queued".
 			if bid, status := readarrStateFromResponse(respBody); bid > 0 || status != "" {
 				_ = s.db.UpdateRequestExternalStatus(ctx, id, status, bid, "already in Readarr (duplicate edition)")
 			}
+			_ = s.db.UpdateRequestStatus(ctx, id, "queued", "already in Readarr (duplicate edition)", username, payload, respBody)
 			if cover := s.requestCoverFromPayload(req.Format, respBody); cover != "" {
 				_ = s.db.UpdateRequestCover(ctx, id, cover)
 			}
@@ -1479,13 +1481,16 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 
 	// Success: book added to Readarr
 	_ = s.db.ApproveRequest(ctx, id, username)
-	_ = s.db.UpdateRequestStatus(ctx, id, "queued", "sent to Readarr", username, payload, respBody)
+	// Persist the matched id/availability before flipping status to "queued".
+	// Observers (and tests) treat "queued" as the completion signal, so the
+	// matched id must already be visible by the time that status is.
 	if bid, status := readarrStateFromResponse(respBody); bid > 0 || status != "" {
 		if status == "" {
 			status = "monitored"
 		}
 		_ = s.db.UpdateRequestExternalStatus(ctx, id, status, bid, "sent to Readarr")
 	}
+	_ = s.db.UpdateRequestStatus(ctx, id, "queued", "sent to Readarr", username, payload, respBody)
 	if cover := s.requestCoverFromPayload(req.Format, respBody); cover != "" {
 		_ = s.db.UpdateRequestCover(ctx, id, cover)
 	}

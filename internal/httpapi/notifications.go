@@ -304,12 +304,13 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 							fmt.Printf("DEBUG: PUT /api/v1/book/monitor returned body:\n%s\n", string(monBody))
 						}
 						_ = s.db.ApproveRequest(ctx, req.ID, username)
-						_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d via notification", bid), username, payload, respBody)
 						externalStatus := "monitored"
 						if _, status := readarrStateFromResponse(gotBody); status != "" {
 							externalStatus = status
 						}
+						// Persist matched id/availability before flipping to "queued".
 						_ = s.db.UpdateRequestExternalStatus(ctx, req.ID, externalStatus, int64(bid), fmt.Sprintf("already in Readarr; monitoring enabled for id %d via notification", bid))
+						_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", fmt.Sprintf("already in Readarr; monitoring enabled for id %d via notification", bid), username, payload, respBody)
 
 						// Send notification for approved request
 						s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
@@ -321,10 +322,11 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 
 			// Fallback: treat as already present without monitor update
 			_ = s.db.ApproveRequest(ctx, req.ID, username)
-			_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", "already in Readarr (duplicate edition) via notification", username, payload, respBody)
+			// Persist matched id/availability before flipping to "queued".
 			if bid, status := readarrStateFromResponse(respBody); bid > 0 || status != "" {
 				_ = s.db.UpdateRequestExternalStatus(ctx, req.ID, status, bid, "already in Readarr (duplicate edition) via notification")
 			}
+			_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", "already in Readarr (duplicate edition) via notification", username, payload, respBody)
 
 			// Send notification for approved request
 			s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
@@ -338,13 +340,15 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 
 	// Success - book added to Readarr
 	_ = s.db.ApproveRequest(ctx, req.ID, username)
-	_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", "sent to Readarr via notification", username, payload, respBody)
+	// Persist matched id/availability before flipping to "queued" so observers
+	// that key off the "queued" status see the matched id immediately.
 	if bid, status := readarrStateFromResponse(respBody); bid > 0 || status != "" {
 		if status == "" {
 			status = "monitored"
 		}
 		_ = s.db.UpdateRequestExternalStatus(ctx, req.ID, status, bid, "sent to Readarr via notification")
 	}
+	_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", "sent to Readarr via notification", username, payload, respBody)
 
 	// Start background monitoring task for successful additions
 	if respBody != nil {
