@@ -49,8 +49,11 @@ func (s *Server) completeRequestFromCatalogMatch(ctx context.Context, req *db.Re
 	}
 
 	_ = s.db.ApproveRequest(ctx, req.ID, username)
-	_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", reason, username, req.ReadarrReq, match.ReadarrData)
+	// Write the external status (matched id + availability) before flipping the
+	// status to "queued". Observers treat "queued" as the completion signal, so
+	// the matched id must already be persisted by the time that status is visible.
 	_ = s.db.UpdateRequestExternalStatus(ctx, req.ID, externalStatus, match.ReadarrID, reason)
+	_ = s.db.UpdateRequestStatus(ctx, req.ID, "queued", reason, username, req.ReadarrReq, match.ReadarrData)
 	if cover := s.requestCoverFromPayload(req.Format, match.ReadarrData); cover != "" {
 		_ = s.db.UpdateRequestCover(ctx, req.ID, cover)
 	}
