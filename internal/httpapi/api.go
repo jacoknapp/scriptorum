@@ -918,19 +918,61 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 		format = "ebook"
 	}
 	if match, err := s.findCatalogMatchForPayload(format, p); err == nil && match != nil {
-		msg := fmt.Sprintf("already in Readarr as %s", match.Availability())
-		if strings.Contains(r.Header.Get("HX-Request"), "true") || r.Header.Get("HX-Request") == "true" {
+		isHX := strings.Contains(r.Header.Get("HX-Request"), "true") || r.Header.Get("HX-Request") == "true"
+
+		// If the book is already downloaded there's nothing to do; report it as a
+		// genuine duplicate.
+		if match.Availability() == "available" {
+			msg := "already in Readarr as available"
+			if isHX {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.WriteHeader(http.StatusConflict)
+				w.Write([]byte(`<li class="p-3 bg-amber-50 text-amber-800 rounded mb-2">This title is already available in Readarr. No duplicate request was created.</li>`))
+				return
+			}
+			writeJSON(w, map[string]any{
+				"status":          "exists",
+				"message":         msg,
+				"external_status": match.Availability(),
+				"readarr_id":      match.ReadarrID,
+			}, http.StatusConflict)
+			return
+		}
+
+		// The title exists in Readarr but isn't downloaded yet. Rather than
+		// rejecting the request, make sure it's monitored and trigger a search.
+		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		defer cancel()
+		status, serr := s.ensureReadarrMonitoredAndSearch(ctx, format, match)
+		if serr != nil {
+			msg := "title is already in Readarr but the search could not be triggered: " + serr.Error()
+			if isHX {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.WriteHeader(http.StatusBadGateway)
+				w.Write([]byte(`<li class="p-3 bg-red-50 text-red-700 rounded mb-2">This title is already in Readarr, but the search could not be triggered. Check the Readarr connection.</li>`))
+				return
+			}
+			writeJSON(w, map[string]any{
+				"status":     "error",
+				"message":    msg,
+				"readarr_id": match.ReadarrID,
+			}, http.StatusBadGateway)
+			return
+		}
+
+		msg := fmt.Sprintf("already in Readarr (%s); monitoring enabled and search triggered", status)
+		if isHX {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusConflict)
-			w.Write([]byte(`<li class="p-3 bg-amber-50 text-amber-800 rounded mb-2">This title is already in Readarr (` + match.Availability() + `). No duplicate request was created.</li>`))
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`<li class="p-3 bg-emerald-50 text-emerald-700 rounded mb-2">This title is already in Readarr — monitoring enabled and a search has been triggered.</li>`))
 			return
 		}
 		writeJSON(w, map[string]any{
-			"status":          "exists",
+			"status":          "searching",
 			"message":         msg,
-			"external_status": match.Availability(),
+			"external_status": status,
 			"readarr_id":      match.ReadarrID,
-		}, http.StatusConflict)
+		}, http.StatusOK)
 		return
 	}
 

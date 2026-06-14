@@ -63,6 +63,35 @@ func (s *Server) completeRequestFromCatalogMatch(ctx context.Context, req *db.Re
 	return nil
 }
 
+// ensureReadarrMonitoredAndSearch makes sure an already-cataloged Readarr book
+// is monitored and queues a Readarr search command for it. It returns the
+// resulting availability label (e.g. "monitored") so callers can surface a
+// status to the user.
+func (s *Server) ensureReadarrMonitoredAndSearch(ctx context.Context, format string, match *db.ReadarrBook) (string, error) {
+	if match == nil || match.ReadarrID <= 0 {
+		return "", fmt.Errorf("no Readarr id for catalog match")
+	}
+	inst, ok := s.readarrInstanceForFormat(format)
+	if !ok {
+		return "", fmt.Errorf("no Readarr instance configured for %s", format)
+	}
+	ra := providers.NewReadarrWithDB(inst, s.db.SQL())
+	id := int(match.ReadarrID)
+	if !match.Monitored {
+		if _, err := ra.MonitorBooks(ctx, []int{id}, true); err != nil {
+			return "", fmt.Errorf("enable monitoring: %w", err)
+		}
+	}
+	if _, err := ra.SearchBooks(ctx, []int{id}); err != nil {
+		return "", fmt.Errorf("trigger search: %w", err)
+	}
+	status := match.Availability()
+	if status == "" {
+		status = "monitored"
+	}
+	return status, nil
+}
+
 func readarrStateFromResponse(body []byte) (int64, string) {
 	if len(body) == 0 {
 		return 0, ""
