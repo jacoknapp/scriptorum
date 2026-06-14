@@ -16,10 +16,6 @@ env:
 jobs:
   build-test:
     runs-on: ubuntu-latest
-    container:
-      # node:20-bookworm ships Node.js + git so JS actions (checkout, setup-go)
-      # run inside the container. Pulled from Docker Hub, avoiding ghcr.io.
-      image: node:20-bookworm
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -28,9 +24,8 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-          # The runner's actions cache server is unavailable, so caching only
-          # adds 401 noise and failures. Disable it.
-          cache: false
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Build
         run: |
@@ -205,14 +200,13 @@ jobs:
           cache-to: type=gha,mode=max
   lint:
     runs-on: ubuntu-latest
-    container:
-      image: node:20-bookworm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-          cache: false
+          cache: true
+          cache-dependency-path: go.sum
       - name: Vet
         run: go vet ./...
       - name: Staticcheck
@@ -224,14 +218,13 @@ jobs:
   coverage-check:
     needs: build-test
     runs-on: ubuntu-latest
-    container:
-      image: node:20-bookworm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
-          cache: false
+          cache: true
+          cache-dependency-path: go.sum
 
       - name: Download coverage artifact
         uses: actions/download-artifact@v4
