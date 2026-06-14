@@ -116,7 +116,8 @@ func TestStartBackgroundTasksHandlesNilContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 
-	s.StartBackgroundTasks(nil)
+	var nilCtx context.Context // intentionally nil to exercise the guard
+	s.StartBackgroundTasks(nilCtx)
 	s.StartBackgroundTasks(ctx)
 }
 

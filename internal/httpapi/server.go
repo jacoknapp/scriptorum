@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"io/fs"
@@ -25,6 +26,10 @@ var tplFS embed.FS
 
 //go:embed web/setup/*
 var setupFS embed.FS
+
+// Version is the build version, overridable at link time with
+// -ldflags "-X gitea.knapp/jacoknapp/scriptorum/internal/httpapi.Version=x.y.z".
+var Version = "dev"
 
 type Server struct {
 	cfg                    *config.Config
@@ -53,7 +58,6 @@ type Server struct {
 	// searchDispatchQueue holds pending Readarr search commands submitted via the
 	// Search button. A background worker drains and dispatches them every ~30 s.
 	searchDispatchQueue    chan searchDispatchJob
-	searchDispatchOnce     sync.Once
 	disableCSRF            bool // For testing purposes
 	disableDiscoveryWarmup bool // For testing purposes
 	disableDiscoveryAsync  bool // For testing purposes
@@ -112,7 +116,19 @@ func (s *Server) Router() http.Handler {
 	s.mountAuth(r)
 	s.mountSetup(r)
 
-	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); w.Write([]byte("ok")) })
+	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		if err := s.db.Ping(ctx); err != nil {
+			http.Error(w, "db unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	})
+	r.Get("/version", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, map[string]string{"version": Version}, http.StatusOK)
+	})
 
 	// If setup is needed, redirect the root path to the setup wizard so
 	// first-time users are guided through initial configuration.

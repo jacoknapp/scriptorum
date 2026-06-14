@@ -126,6 +126,7 @@ $env:SCRIPTORUM_DB_PATH = "C:\data\scriptorum.db"
 - Example config: `scriptorum.example.yaml` (repo root). Copy it to `data/scriptorum.yaml` and edit.
 - Key fields you’ll likely touch:
   - `http.listen` — HTTP listen address.
+  - `insecure_skip_verify` — skip TLS verification for outbound calls to self-hosted backends (Readarr, ntfy, Discord, SMTP, OIDC) that use self-signed certs.
   - `db.path` — SQLite DB location.
   - `readarr.ebooks` / `readarr.audiobooks` — `base_url`, `api_key`, profile, root folder, tags.
   - `notifications` — ntfy/SMTP/Discord settings and which events to send.

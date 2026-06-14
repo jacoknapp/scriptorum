@@ -35,11 +35,13 @@ func TestReadarrStateFromResponseVariants(t *testing.T) {
 }
 
 func TestCtxOrBackground(t *testing.T) {
-	if got := ctxOrBackground(nil); got == nil {
+	var nilCtx context.Context // intentionally nil to exercise the fallback
+	if got := ctxOrBackground(nilCtx); got == nil {
 		t.Fatal("expected background context for nil input")
 	}
 
-	ctx := context.WithValue(context.Background(), "k", "v")
+	type ctxTestKey string
+	ctx := context.WithValue(context.Background(), ctxTestKey("k"), "v")
 	if got := ctxOrBackground(ctx); got != ctx {
 		t.Fatal("expected same non-nil context instance back")
 	}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"gitea.knapp/jacoknapp/scriptorum/internal/config"
 	"gitea.knapp/jacoknapp/scriptorum/internal/db"
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 )
@@ -50,15 +51,25 @@ type readarrSyncViewData struct {
 	Running         bool
 }
 
+func (s *Server) readarrSyncInterval() time.Duration {
+	if cfg := s.settings.Get(); cfg != nil {
+		if d, err := time.ParseDuration(cfg.Readarr.SyncInterval); err == nil && d >= time.Minute {
+			return d
+		}
+	}
+	return readarrAutoSyncInterval
+}
+
 func (s *Server) StartBackgroundTasks(ctx context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	s.backgroundTasks.Do(func() {
 		go s.recoverProcessingApprovals(ctx)
-		go s.runReadarrSyncLoop(ctx, readarrAutoSyncStartupDelay, readarrAutoSyncInterval)
+		go s.runReadarrSyncLoop(ctx, readarrAutoSyncStartupDelay, s.readarrSyncInterval())
 		go s.reloadSearchQueue(ctx)
 		go s.runSearchDispatchLoop(ctx)
+		go s.runSecurityJanitor(ctx)
 	})
 }
 
@@ -280,9 +291,10 @@ func (s *Server) readarrSyncSnapshot() readarrSyncRuntimeState {
 
 func (s *Server) readarrSyncView() readarrSyncViewData {
 	state := s.readarrSyncSnapshot()
+	interval := s.readarrSyncInterval()
 	view := readarrSyncViewData{
-		AutoInterval:    "Auto 30m",
-		ScheduleNote:    "Automatic sync runs every 15 minutes and shortly after startup.",
+		AutoInterval:    "Auto " + formatDuration(interval),
+		ScheduleNote:    "Automatic sync runs every " + formatDuration(interval) + " and shortly after startup.",
 		LastRunLabel:    "No sync has run yet.",
 		LastResultLabel: "Manual sync is available any time.",
 		LastResultClass: "text-slate-400",
@@ -395,6 +407,16 @@ func (s *Server) syncReadarrCatalog(ctx context.Context, requestedKind, actor st
 	return summaries, nil
 }
 
+func formatDuration(d time.Duration) string {
+	if d%time.Hour == 0 {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	if d%time.Minute == 0 {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	return d.String()
+}
+
 func syncTriggerLabel(trigger string) string {
 	switch strings.ToLower(strings.TrimSpace(trigger)) {
 	case "automatic":
@@ -485,6 +507,19 @@ func (s *Server) findCatalogMatchForPayload(kind string, p RequestPayload) (*db.
 	return s.findCatalogMatch(context.Background(), kind, p.Title, p.Authors, p.ISBN10, p.ISBN13, p.ASIN, []byte(p.ProviderPayload))
 }
 
+// toProviderInstance maps a configured Readarr instance to the provider type,
+// applying the global self-hosted TLS-skip flag on top of the per-instance one.
+func (s *Server) toProviderInstance(c config.ReadarrInstance) providers.ReadarrInstance {
+	return providers.ReadarrInstance{
+		BaseURL:                 c.BaseURL,
+		APIKey:                  c.APIKey,
+		DefaultQualityProfileID: c.DefaultQualityProfileID,
+		DefaultRootFolderPath:   c.DefaultRootFolderPath,
+		DefaultTags:             c.DefaultTags,
+		InsecureSkipVerify:      c.InsecureSkipVerify || s.outboundTLSInsecure(),
+	}
+}
+
 func (s *Server) readarrInstanceForFormat(format string) (providers.ReadarrInstance, bool) {
 	cfg := s.settings.Get()
 	switch normalizeSyncKind(format) {
@@ -493,13 +528,13 @@ func (s *Server) readarrInstanceForFormat(format string) (providers.ReadarrInsta
 		if strings.TrimSpace(c.BaseURL) == "" || strings.TrimSpace(c.APIKey) == "" {
 			return providers.ReadarrInstance{}, false
 		}
-		return providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}, true
+		return s.toProviderInstance(c), true
 	default:
 		c := cfg.Readarr.Ebooks
 		if strings.TrimSpace(c.BaseURL) == "" || strings.TrimSpace(c.APIKey) == "" {
 			return providers.ReadarrInstance{}, false
 		}
-		return providers.ReadarrInstance{BaseURL: c.BaseURL, APIKey: c.APIKey, DefaultQualityProfileID: c.DefaultQualityProfileID, DefaultRootFolderPath: c.DefaultRootFolderPath, DefaultTags: c.DefaultTags, InsecureSkipVerify: c.InsecureSkipVerify}, true
+		return s.toProviderInstance(c), true
 	}
 }
 

@@ -82,7 +82,15 @@ func (s *Server) mountUI(r chi.Router) {
 					_ = s.db.SetUserAutoApprove(r.Context(), id, autoApprove)
 
 					// Update password if provided and confirmed
-					if password != "" && password == confirmPassword {
+					if password != "" {
+						if password != confirmPassword {
+							http.Redirect(w, r, "/users?error="+url.QueryEscape("passwords do not match"), http.StatusFound)
+							return
+						}
+						if err := validatePassword(password); err != nil {
+							http.Redirect(w, r, "/users?error="+url.QueryEscape(err.Error()), http.StatusFound)
+							return
+						}
 						hash, _ := s.hashPassword(password, s.settings.Get().Auth.Salt)
 						_ = s.db.UpdateUserPassword(r.Context(), id, hash)
 					}
@@ -369,6 +377,10 @@ func (u *ui) handleUsers(s *Server) http.HandlerFunc {
 			admin := r.FormValue("is_admin") == "on"
 			autoApprove := r.FormValue("is_auto_approve") == "on"
 			if username != "" && password != "" {
+				if err := validatePassword(password); err != nil {
+					http.Redirect(w, r, "/users?error="+url.QueryEscape(err.Error()), http.StatusFound)
+					return
+				}
 				hash, _ := s.hashPassword(password, s.settings.Get().Auth.Salt)
 				_, _ = s.db.CreateUser(r.Context(), username, hash, admin, autoApprove)
 			}

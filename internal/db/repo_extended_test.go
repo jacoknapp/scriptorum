@@ -110,7 +110,7 @@ func TestRequestAndUserRepositoryFlows(t *testing.T) {
 		t.Fatalf("unexpected listed requests: %+v", listed)
 	}
 
-	if err := db.DeclineRequest(ctx, reqID, "OTHERADMIN@example.com"); err != nil {
+	if err := db.DeclineRequest(ctx, reqID, "OTHERADMIN@example.com", ""); err != nil {
 		t.Fatalf("DeclineRequest: %v", err)
 	}
 	got, err = db.GetRequest(ctx, reqID)

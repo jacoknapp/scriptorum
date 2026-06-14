@@ -6,6 +6,7 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	sha256pkg "crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -80,8 +81,8 @@ func (s *Server) initOIDC() error {
 		}
 		return fmt.Errorf("missing client_id/redirect_url in oauth config")
 	}
-	// Use a discovery client with sane timeouts
-	discCtx := context.WithValue(context.Background(), oauth2.HTTPClient, &http.Client{Timeout: 10 * time.Second})
+	// Use a discovery client with sane timeouts (honors self-hosted TLS skip)
+	discCtx := context.WithValue(context.Background(), oauth2.HTTPClient, s.outboundHTTPClient(10*time.Second))
 
 	// Attempt OIDC discovery with issuer normalization
 	p, err := oidc.NewProvider(discCtx, issuer)
@@ -473,8 +474,12 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	// Use an HTTP client that does not follow redirects and can modify token requests for PKCE
 	ctx := r.Context()
 	client := &http.Client{CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }}
-	// Wrap transport to add PKCE parameters and log requests
-	base := http.DefaultTransport
+	// Wrap transport to add PKCE parameters and log requests. Honor the
+	// self-hosted TLS-skip flag for the underlying transport.
+	var base http.RoundTripper = http.DefaultTransport
+	if s.outboundTLSInsecure() {
+		base = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+	}
 	client.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		// For token exchange requests, add PKCE code_verifier if present
 		if strings.Contains(req.URL.Path, "/token") && req.Method == "POST" {
@@ -694,6 +699,17 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	sess := &session{Username: u.Username, Name: u.Username, Admin: u.IsAdmin, Exp: time.Now().Add(24 * time.Hour).Unix()}
 	s.setSession(w, sess)
 	http.Redirect(w, r, "/search", http.StatusFound)
+}
+
+// minPasswordLength is the minimum length enforced for local account passwords.
+const minPasswordLength = 8
+
+// validatePassword enforces a basic local-account password policy.
+func validatePassword(password string) error {
+	if len([]rune(password)) < minPasswordLength {
+		return fmt.Errorf("password must be at least %d characters", minPasswordLength)
+	}
+	return nil
 }
 
 func (s *Server) hashPassword(password, salt string) (string, error) {

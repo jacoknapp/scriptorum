@@ -30,7 +30,7 @@
 					<span class="inline-flex w-[9rem] justify-center px-3 py-1.5 rounded-full text-center text-xs font-medium whitespace-nowrap overflow-hidden {{ if .SearchDispatchPending }}bg-royal-900/40 text-royal-100 ring-1 ring-royal-500/30{{ else if eq .ExternalStatus "available" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .ExternalStatus "monitored" }}bg-amber-900/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .ExternalStatus "grabbed" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else if eq .Status "queued" }}bg-emerald-900/40 text-emerald-200 ring-1 ring-emerald-500/30{{ else if eq .Status "pending" }}bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30{{ else if eq .Status "processing" }}bg-sky-900/40 text-sky-200 ring-1 ring-sky-500/30{{ else if eq .Status "approved" }}bg-royal-900/40 text-royal-100 ring-1 ring-royal-500/30{{ else if eq .Status "declined" }}bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30{{ else if eq .Status "error" }}bg-rose-950/40 text-rose-200 ring-1 ring-rose-500/30{{ else }}bg-night-700 text-slate-200 ring-1 ring-white/10{{ end }}">
 						{{ if .SearchDispatchPending }}Queued{{ else if eq .ExternalStatus "available" }}Available{{ else if eq .ExternalStatus "monitored" }}Monitored{{ else if eq .ExternalStatus "grabbed" }}Grabbed{{ else if eq .Status "queued" }}Requested{{ else if eq .Status "processing" }}Approving{{ else if eq .Status "pending" }}Pending{{ else if eq .Status "approved" }}Approved{{ else if eq .Status "error" }}Needs Attention{{ else }}{{ .Status }}{{ end }}
 					</span>
-					{{ if eq .Status "error" }}
+					{{ if and .StatusReason (or (eq .Status "error") (eq .Status "declined")) }}
 					<div class="max-w-[15rem] text-xs leading-snug text-slate-400 whitespace-normal break-words text-center" title="{{ .StatusReason }}">{{ .StatusReason }}</div>
 					{{ end }}
 				</div>
@@ -48,7 +48,7 @@
 						<button class="inline-flex h-9 min-w-[6.5rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-lg bg-amber-600 text-white ring-1 ring-white/10 hover:bg-amber-500 whitespace-nowrap transition-colors" title="Attempt to attach a selection payload from Readarr">Attach</button>
 					</form>
 					{{ end }}
-					<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest tr" hx-swap="none">
+					<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest tr" hx-swap="none" hx-prompt="Reason for declining (optional):">
 						<button class="inline-flex h-9 min-w-[6.5rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-lg bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30 hover:bg-amber-900/50 whitespace-nowrap transition-colors">Decline</button>
 					</form>
 					{{ end }}
@@ -113,7 +113,7 @@
 				{{ if .SearchDispatchPending }}Queued{{ else if eq .ExternalStatus "available" }}Available{{ else if eq .ExternalStatus "monitored" }}Monitored{{ else if eq .ExternalStatus "grabbed" }}Grabbed{{ else if eq .Status "queued" }}Requested{{ else if eq .Status "processing" }}Approving{{ else if eq .Status "pending" }}Pending{{ else if eq .Status "approved" }}Approved{{ else if eq .Status "error" }}Needs Attention{{ else }}{{ .Status }}{{ end }}
 			</span>
 		</div>
-		{{ if eq .Status "error" }}
+		{{ if and .StatusReason (or (eq .Status "error") (eq .Status "declined")) }}
 		<div class="mt-2 text-center text-xs text-slate-400">{{ .StatusReason }}</div>
 		{{ end }}
 		<div class="mt-4 flex flex-wrap justify-center sm:justify-end gap-2">
@@ -128,7 +128,7 @@
 				<button class="inline-flex h-9 min-w-[6.5rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-lg bg-amber-600 text-white ring-1 ring-white/10 hover:bg-amber-500 whitespace-nowrap transition-colors">Attach</button>
 			</form>
 			{{ end }}
-			<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest div.rounded-xl" hx-swap="none">
+			<form hx-post="/api/v1/requests/{{ .ID }}/decline" hx-target="closest div.rounded-xl" hx-swap="none" hx-prompt="Reason for declining (optional):">
 				<button class="inline-flex h-9 min-w-[6.5rem] items-center justify-center px-3 py-2 text-center text-sm font-medium rounded-lg bg-amber-950/40 text-amber-200 ring-1 ring-amber-500/30 hover:bg-amber-900/50 whitespace-nowrap transition-colors">Decline</button>
 			</form>
 			{{ end }}

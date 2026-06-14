@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -580,9 +581,7 @@ func (s *Server) sendNtfyNotificationWithActions(server, topic, username, passwo
 		req.SetBasicAuth(username, password)
 	}
 
-	client := &http.Client{
-		Timeout: 10 * time.Second, // 10 second timeout
-	}
+	client := s.outboundHTTPClient(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send notification: %w", err)
@@ -619,6 +618,8 @@ func (s *Server) sendSMTPNotification(smtpConfig config.SMTPConfig, subject, htm
 	d := gomail.NewDialer(smtpConfig.Host, smtpConfig.Port, smtpConfig.Username, smtpConfig.Password)
 	if !smtpConfig.EnableTLS {
 		d.TLSConfig = nil
+	} else if s.outboundTLSInsecure() {
+		d.TLSConfig = &tls.Config{InsecureSkipVerify: true, ServerName: smtpConfig.Host}
 	}
 
 	return d.DialAndSend(m)
@@ -753,9 +754,7 @@ func (s *Server) sendDiscordNotification(webhookURL, username, title, message st
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{
-		Timeout: 10 * time.Second,
-	}
+	client := s.outboundHTTPClient(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send Discord notification: %w", err)

@@ -87,8 +87,12 @@ var discoveryLanguageAliases = map[string]string{
 }
 
 type Config struct {
-	Debug     bool   `yaml:"debug"`
-	ServerURL string `yaml:"server_url"`
+	Debug bool `yaml:"debug"`
+	// InsecureSkipVerify disables TLS certificate verification for all outbound
+	// connections to self-hosted services (Readarr, ntfy, Discord, SMTP, OIDC).
+	// Intended for self-hosted deployments using self-signed certificates.
+	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
+	ServerURL          string `yaml:"server_url"`
 	Discovery struct {
 		Languages []string `yaml:"languages"`
 	} `yaml:"discovery"`
@@ -141,6 +145,9 @@ type Config struct {
 	Readarr struct {
 		Ebooks     ReadarrInstance `yaml:"ebooks"`
 		Audiobooks ReadarrInstance `yaml:"audiobooks"`
+		// SyncInterval controls how often the automatic Readarr catalog sync runs.
+		// Accepts Go duration strings (e.g. "15m", "1h"). Defaults to 15m.
+		SyncInterval string `yaml:"sync_interval"`
 	} `yaml:"readarr"`
 
 	Notifications struct {

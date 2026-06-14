@@ -65,6 +65,10 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		adminUser := strings.TrimSpace(r.FormValue("admin_username"))
 		adminPass := r.FormValue("admin_password")
 		if adminUser != "" && adminPass != "" {
+			if err := validatePassword(adminPass); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			// Hash with config salt and store
 			hash, err := s.hashPassword(adminPass, cur.Auth.Salt)
 			if err == nil {

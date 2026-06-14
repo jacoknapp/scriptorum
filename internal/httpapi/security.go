@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -16,7 +17,9 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Content Security Policy - restrictive policy that allows HTMX and inline styles
 		csp := "default-src 'self'; " +
-			"script-src 'self' 'unsafe-inline' https://unpkg.com/htmx.org@1.9.12; " +
+			// htmx is vendored under /static; inline scripts/handlers in templates
+			// still require 'unsafe-inline' (removing it needs a nonce refactor).
+			"script-src 'self' 'unsafe-inline'; " +
 			"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.jsdelivr.net; " +
 			"font-src 'self' https://fonts.gstatic.com https://cdn.jsdelivr.net; " +
 			"img-src 'self' data: https:; " +
@@ -56,9 +59,16 @@ func (s *Server) dynamicNoStore(next http.Handler) http.Handler {
 }
 
 // CSRF Protection
+const csrfTokenTTL = time.Hour
+
+type csrfTokenInfo struct {
+	created time.Time
+	session string
+}
+
 type csrfManager struct {
 	mu     sync.RWMutex
-	tokens map[string]time.Time
+	tokens map[string]csrfTokenInfo
 	secret []byte
 }
 
@@ -66,7 +76,7 @@ func newCSRFManager() *csrfManager {
 	secret := make([]byte, 32)
 	rand.Read(secret)
 	return &csrfManager{
-		tokens: make(map[string]time.Time),
+		tokens: make(map[string]csrfTokenInfo),
 		secret: secret,
 	}
 }
@@ -75,38 +85,47 @@ func (c *csrfManager) generateToken(sessionID string) string {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Clean up expired tokens (older than 1 hour)
-	cutoff := time.Now().Add(-time.Hour)
-	for token, created := range c.tokens {
-		if created.Before(cutoff) {
-			delete(c.tokens, token)
-		}
-	}
+	c.cleanupLocked()
 
-	// Generate new token
+	// Generate new token bound to the issuing session.
 	tokenBytes := make([]byte, 32)
 	rand.Read(tokenBytes)
 	token := base64.URLEncoding.EncodeToString(tokenBytes)
 
-	c.tokens[token] = time.Now()
+	c.tokens[token] = csrfTokenInfo{created: time.Now(), session: sessionID}
 	return token
 }
 
-func (c *csrfManager) validateToken(token string) bool {
+// validateToken returns true only when the token exists, is unexpired, and was
+// issued to the same session that is now presenting it.
+func (c *csrfManager) validateToken(token, sessionID string) bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	created, exists := c.tokens[token]
+	info, exists := c.tokens[token]
 	if !exists {
 		return false
 	}
-
-	// Check if token is expired (1 hour)
-	if time.Since(created) > time.Hour {
+	if time.Since(info.created) > csrfTokenTTL {
 		return false
 	}
+	return info.session == sessionID
+}
 
-	return true
+// cleanupLocked removes expired tokens. Caller must hold c.mu.
+func (c *csrfManager) cleanupLocked() {
+	cutoff := time.Now().Add(-csrfTokenTTL)
+	for token, info := range c.tokens {
+		if info.created.Before(cutoff) {
+			delete(c.tokens, token)
+		}
+	}
+}
+
+func (c *csrfManager) cleanup() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cleanupLocked()
 }
 
 // CSRF middleware
@@ -128,7 +147,7 @@ func (s *Server) csrfProtection(next http.Handler) http.Handler {
 			token = r.FormValue("_csrf_token")
 		}
 
-		if token != "" && s.csrf.validateToken(token) {
+		if token != "" && s.csrf.validateToken(token, s.csrfSessionID(r)) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -202,17 +221,49 @@ func (rl *rateLimiter) allow(key string, maxRequests int, window time.Duration) 
 	return true
 }
 
+// cleanup evicts keys whose timestamps are all older than maxAge so the map does
+// not grow unbounded across distinct client IPs and paths.
+func (rl *rateLimiter) cleanup(maxAge time.Duration) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+
+	cutoff := time.Now().Add(-maxAge)
+	for key, requests := range rl.requests {
+		var valid []time.Time
+		for _, req := range requests {
+			if req.After(cutoff) {
+				valid = append(valid, req)
+			}
+		}
+		if len(valid) == 0 {
+			delete(rl.requests, key)
+		} else {
+			rl.requests[key] = valid
+		}
+	}
+}
+
+// runSecurityJanitor periodically purges expired CSRF tokens and stale
+// rate-limiter entries until the context is cancelled.
+func (s *Server) runSecurityJanitor(ctx context.Context) {
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.csrf.cleanup()
+			// Largest rate-limit window is 15 minutes; drop anything older.
+			s.rateLimiter.cleanup(15 * time.Minute)
+		}
+	}
+}
+
 // Rate limiting middleware
 func (s *Server) rateLimiting(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Get client IP
-		clientIP := r.Header.Get("X-Forwarded-For")
-		if clientIP == "" {
-			clientIP = r.Header.Get("X-Real-IP")
-		}
-		if clientIP == "" {
-			clientIP = r.RemoteAddr
-		}
+		ip := clientIP(r)
 
 		// Different limits for different endpoints
 		var maxRequests int
@@ -233,7 +284,7 @@ func (s *Server) rateLimiting(next http.Handler) http.Handler {
 			window = 5 * time.Minute
 		}
 
-		key := fmt.Sprintf("%s:%s", clientIP, r.URL.Path)
+		key := fmt.Sprintf("%s:%s", ip, r.URL.Path)
 
 		if !s.rateLimiter.allow(key, maxRequests, window) {
 			http.Error(w, "Rate limit exceeded. Please try again later.", http.StatusTooManyRequests)
@@ -244,18 +295,19 @@ func (s *Server) rateLimiting(next http.Handler) http.Handler {
 	})
 }
 
-// Helper function to generate CSRF token for templates
-func (s *Server) getCSRFToken(r *http.Request) string {
-	// Use session ID or IP as identifier
-	sessionID := "anonymous"
+// csrfSessionID derives a stable identifier for the requester used to bind CSRF
+// tokens to a session: the authenticated username when available, otherwise the
+// client IP for anonymous requests.
+func (s *Server) csrfSessionID(r *http.Request) string {
 	if user := r.Context().Value(ctxUser); user != nil {
-		if session, ok := user.(*session); ok {
-			sessionID = session.Username
+		if session, ok := user.(*session); ok && session.Username != "" {
+			return "user:" + session.Username
 		}
 	}
-	if sessionID == "anonymous" {
-		sessionID = r.RemoteAddr
-	}
+	return "ip:" + clientIP(r)
+}
 
-	return s.csrf.generateToken(sessionID)
+// Helper function to generate CSRF token for templates
+func (s *Server) getCSRFToken(r *http.Request) string {
+	return s.csrf.generateToken(s.csrfSessionID(r))
 }

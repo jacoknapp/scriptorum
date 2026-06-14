@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"strings"
 )
@@ -9,6 +10,27 @@ import (
 type ctxKey string
 
 const ctxUser ctxKey = "user"
+
+// clientIP resolves the originating client IP for a request. Scriptorum is
+// typically self-hosted behind a single reverse proxy, so the proxy-supplied
+// forwarding headers are trusted when present. The port is always stripped so
+// the value is stable across a client's connections (important for rate-limit
+// and CSRF keying).
+func clientIP(r *http.Request) string {
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// The left-most entry is the original client.
+		if ip := strings.TrimSpace(strings.Split(xff, ",")[0]); ip != "" {
+			return ip
+		}
+	}
+	if xr := strings.TrimSpace(r.Header.Get("X-Real-IP")); xr != "" {
+		return xr
+	}
+	if host, _, err := net.SplitHostPort(r.RemoteAddr); err == nil {
+		return host
+	}
+	return r.RemoteAddr
+}
 
 func (s *Server) withUser(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -42,7 +42,7 @@ func TestHealthCheckEndpoint(t *testing.T) {
 	}
 }
 
-// Test version endpoint - NOTE: /version endpoint is not implemented
+// Test version endpoint returns the build version as JSON.
 func TestVersionEndpoint(t *testing.T) {
 	server := newServerForTest(t)
 
@@ -51,9 +51,14 @@ func TestVersionEndpoint(t *testing.T) {
 
 	server.Router().ServeHTTP(rec, req)
 
-	// Since /version is not implemented, expect 404
-	if rec.Code != http.StatusNotFound {
-		t.Errorf("Expected status 404 for unimplemented endpoint, got %d", rec.Code)
+	if rec.Code != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", rec.Code)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Expected JSON content type, got %q", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "version") {
+		t.Errorf("Expected body to contain version, got %s", rec.Body.String())
 	}
 }
 

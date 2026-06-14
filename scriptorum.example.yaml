@@ -1,5 +1,9 @@
+# Skip TLS certificate verification for outbound connections to self-hosted
+# backends (Readarr, ntfy, Discord, SMTP, OIDC). Useful when those services use
+# self-signed certificates. Leave false when talking to public providers.
+insecure_skip_verify: false
 http:
-  listen: ":8080"
+  listen: ":8491"
 discovery:
   languages: ["eng"]
 db:
@@ -10,7 +14,7 @@ oauth:
   enabled: false
   issuer: ""
   client_id: ""
-  redirect_url: "http://localhost:8080/oauth/callback"
+  redirect_url: "http://localhost:8491/oauth/callback"
   # Optional overrides; normally discovery is used.
   # auth_url: ""
   # token_url: ""
@@ -22,6 +26,9 @@ oauth:
 amazon_public:
   enabled: true
 readarr:
+  # How often to automatically sync the Readarr catalog. Accepts Go duration
+  # strings: "15m", "30m", "1h", etc. Minimum is 1m. Defaults to 15m.
+  sync_interval: "15m"
   ebooks:
     base_url: "http://readarr-ebooks:8787"
     api_key: ""
