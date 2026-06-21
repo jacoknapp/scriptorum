@@ -206,6 +206,9 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 				// to decide whether to overwrite.
 				items[i].BookItem.CoverMedium = mergeCover(items[i].BookItem.CoverMedium, si.BookItem.CoverMedium)
 				items[i].BookItem.CoverSmall = mergeCover(items[i].BookItem.CoverSmall, si.BookItem.CoverSmall)
+				if items[i].BookItem.Series == "" && si.BookItem.Series != "" {
+					items[i].BookItem.Series = si.BookItem.Series
+				}
 				return
 			}
 			if ebook {
@@ -298,7 +301,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 						cover = strings.TrimRight(instE.BaseURL, "/") + cover
 					}
 					cover = s.normalizeRequestCover("ebook", cover)
-					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-ebook"}, true, string(cjson))
+					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover, Series: b.SeriesTitle}, Provider: "readarr-ebook"}, true, string(cjson))
 				}
 			}
 		}
@@ -367,7 +370,7 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 						cover = strings.TrimRight(instA.BaseURL, "/") + cover
 					}
 					cover = s.normalizeRequestCover("audiobook", cover)
-					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover}, Provider: "readarr-audiobook"}, false, string(cjson))
+					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover, Series: b.SeriesTitle}, Provider: "readarr-audiobook"}, false, string(cjson))
 				}
 			}
 		}
