@@ -12,6 +12,7 @@
     <div class="min-w-0 pl-2 md:pl-0 flex-1">
       <div class="font-medium leading-snug" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">{{ .Title }}</div>
       <div class="text-sm text-slate-400 whitespace-normal break-words">{{ truncateChars (authorsText .Authors) 72 }}</div>
+      {{ if .Series }}<div class="text-xs text-royal-300 whitespace-normal break-words">Series: {{ .Series }}</div>{{ end }}
       <div class="mt-1.5 text-xs text-slate-400">
         {{ if .ISBN13 }}ISBN-13: {{ .ISBN13 }}{{ end }}
         {{ if and .ISBN13 .ISBN10 }}, {{ end }}

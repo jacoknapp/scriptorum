@@ -26,6 +26,10 @@
 						<span class="w-2 h-2 rounded-full {{ if .Notifications.Discord.Enabled }}bg-emerald-500{{ else }}bg-slate-500{{ end }}"></span>
 						<span class="text-sm">Discord</span>
 					</button>
+					<button type="button" data-provider="webhook" class="provider-chip inline-flex items-center gap-2 px-3 py-1 rounded-full bg-night-800 hover:bg-night-700 border border-white/10 text-slate-200">
+						<span class="w-2 h-2 rounded-full {{ if .Notifications.Webhook.Enabled }}bg-emerald-500{{ else }}bg-slate-500{{ end }}"></span>
+						<span class="text-sm">Webhook</span>
+					</button>
 				</div>
 
 				<!-- Empty state -->
@@ -184,7 +188,39 @@
 							<span id="discord_test" class="text-sm text-slate-400">—</span>
 						</div>
 					</div>
-					
+
+					<!-- Generic Webhook Provider -->
+					<div id="webhook_section" class="provider-section border border-white/10 rounded p-4 hidden">
+						<div class="flex items-center gap-3 mb-3">
+							<input type="checkbox" id="webhook_enabled" name="webhook_enabled" value="on" {{ if .Notifications.Webhook.Enabled }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+							<label for="webhook_enabled" class="font-medium text-slate-200">Enable generic webhook notifications</label>
+						</div>
+						<div class="text-xs text-slate-400 mb-3">Posts a plain JSON event payload to any HTTP endpoint — useful for piping events into something not natively supported (n8n, Home Assistant, a custom relay, etc.).</div>
+						<div>
+							<label class="block text-sm font-medium text-slate-200 mb-1">Webhook URL</label>
+							<input name="webhook_url" placeholder="https://example.com/hooks/scriptorum" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Notifications.Webhook.URL }}">
+							<div class="text-xs text-slate-400 mt-1">Any HTTP(S) endpoint that accepts a JSON POST body</div>
+						</div>
+						<div class="mt-3">
+							<label class="inline-flex items-center gap-2">
+								<input type="checkbox" name="webhook_enable_request_notifications" value="on" {{ if .Notifications.Webhook.EnableRequestNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">New request notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="webhook_enable_approval_notifications" value="on" {{ if .Notifications.Webhook.EnableApprovalNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">Approval notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="webhook_enable_system_notifications" value="on" {{ if .Notifications.Webhook.EnableSystemNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">System notifications</span>
+							</label>
+						</div>
+						<div class="mt-4 flex items-center gap-2">
+							<button type="button" class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-500" onclick="testWebhook()">Test Webhook</button>
+							<span id="webhook_test" class="text-sm text-slate-400">—</span>
+						</div>
+					</div>
+
 				</div>
 			</section>
 
@@ -235,18 +271,19 @@
 		const isEnabled = {
 			ntfy: (document.getElementById('ntfy_enabled') && document.getElementById('ntfy_enabled').checked) || false,
 			smtp: (document.getElementById('smtp_enabled') && document.getElementById('smtp_enabled').checked) || false,
-			discord: (document.getElementById('discord_enabled') && document.getElementById('discord_enabled').checked) || false
+			discord: (document.getElementById('discord_enabled') && document.getElementById('discord_enabled').checked) || false,
+			webhook: (document.getElementById('webhook_enabled') && document.getElementById('webhook_enabled').checked) || false
 		};
 		const params = new URLSearchParams(window.location.search);
 		let initial = params.get('provider');
-		if (!['ntfy','smtp','discord'].includes(initial || '')) {
+		if (!['ntfy','smtp','discord','webhook'].includes(initial || '')) {
 			const saved = (window.localStorage && localStorage.getItem('notifications.provider')) || '';
-			if (['ntfy','smtp','discord'].includes(saved)) {
+			if (['ntfy','smtp','discord','webhook'].includes(saved)) {
 				initial = saved;
 			}
 		}
-		if (!['ntfy','smtp','discord'].includes(initial || '')) {
-			initial = (isEnabled.ntfy && 'ntfy') || (isEnabled.smtp && 'smtp') || (isEnabled.discord && 'discord') || 'ntfy';
+		if (!['ntfy','smtp','discord','webhook'].includes(initial || '')) {
+			initial = (isEnabled.ntfy && 'ntfy') || (isEnabled.smtp && 'smtp') || (isEnabled.discord && 'discord') || (isEnabled.webhook && 'webhook') || 'ntfy';
 		}
 		currentProvider = initial || 'ntfy';
 		updateProviderUI();
@@ -475,6 +512,70 @@ function testDiscord() {
 		button.classList.remove('opacity-50', 'cursor-not-allowed');
 		
 		// Reset status after 5 seconds
+		setTimeout(() => {
+			testSpan.textContent = '—';
+			testSpan.className = 'text-sm text-slate-400';
+		}, 5000);
+	});
+}
+
+function testWebhook() {
+	const testSpan = document.getElementById('webhook_test');
+	const button = document.querySelector('button[onclick="testWebhook()"]');
+
+	testSpan.textContent = 'Sending test event...';
+	testSpan.className = 'text-sm text-blue-400';
+	button.disabled = true;
+	button.classList.add('opacity-50', 'cursor-not-allowed');
+
+	const form = document.querySelector('form');
+	const formData = new FormData(form);
+
+	const testData = {
+		url: formData.get('webhook_url') || ''
+	};
+
+	const controller = new AbortController();
+	const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+	fetch('/api/notifications/test-webhook', {
+		method: 'POST',
+		headers: {
+			'Content-Type': 'application/json',
+			'X-Requested-With': 'XMLHttpRequest',
+			'X-CSRF-Token': formData.get('_csrf_token')
+		},
+		body: JSON.stringify(testData),
+		signal: controller.signal
+	})
+	.then(response => {
+		clearTimeout(timeoutId);
+		if (!response.ok) {
+			throw new Error(`HTTP ${response.status}`);
+		}
+		return response.json();
+	})
+	.then(data => {
+		if (data.success) {
+			testSpan.textContent = '✓ Test event sent successfully!';
+			testSpan.className = 'text-sm text-emerald-400';
+		} else {
+			testSpan.textContent = '✗ ' + (data.error || 'Test failed');
+			testSpan.className = 'text-sm text-red-400';
+		}
+	})
+	.catch(error => {
+		clearTimeout(timeoutId);
+		if (error.name === 'AbortError') {
+			testSpan.textContent = '✗ Test timed out after 10 seconds';
+		} else {
+			testSpan.textContent = '✗ ' + (error.message || 'Network error');
+		}
+		testSpan.className = 'text-sm text-red-400';
+	})
+	.finally(() => {
+		button.disabled = false;
+		button.classList.remove('opacity-50', 'cursor-not-allowed');
 		setTimeout(() => {
 			testSpan.textContent = '—';
 			testSpan.className = 'text-sm text-slate-400';

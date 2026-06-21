@@ -148,6 +148,9 @@ type BookItem struct {
 	OpenLibraryEditionKey string
 	CoverSmall            string
 	CoverMedium           string
+	// Series is the series/collection title, when the source provider
+	// supplies one (currently only Readarr lookups do).
+	Series string
 }
 
 func (ol *OpenLibrary) Search(ctx context.Context, q string, limit, page int) ([]BookItem, error) {

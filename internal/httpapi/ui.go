@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"net/http"
 	"net/url"
@@ -48,20 +49,24 @@ func (s *Server) mountUI(r chi.Router) {
 			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
 		}))
 		rt.HandleFunc("/users", s.requireAdmin(u.handleUsers(s)))
+		rt.Get("/audit", s.requireAdmin(u.handleAudit(s)))
 	})
 	r.Get("/ui/requests/table", s.requireLogin(u.handleRequestsTable(s)))
 	r.Group(func(rt chi.Router) {
 		rt.Use(func(next http.Handler) http.Handler { return s.requireAdmin(next.ServeHTTP) })
 		rt.Post("/users/delete", func(w http.ResponseWriter, r *http.Request) {
 			_ = r.ParseForm()
+			actor := r.Context().Value(ctxUser).(*session).Username
 			if id := r.URL.Query().Get("id"); id != "" {
 				if n, err := strconv.ParseInt(id, 10, 64); err == nil {
 					_ = s.db.DeleteUser(r.Context(), n)
+					s.auditLog(r.Context(), actor, "user.deleted", nil, fmt.Sprintf("user id %d", n))
 				}
 			}
 			if id := r.FormValue("id"); id != "" {
 				if n, err := strconv.ParseInt(id, 10, 64); err == nil {
 					_ = s.db.DeleteUser(r.Context(), n)
+					s.auditLog(r.Context(), actor, "user.deleted", nil, fmt.Sprintf("user id %d", n))
 				}
 			}
 			http.Redirect(w, r, "/users", http.StatusFound)
@@ -76,10 +81,12 @@ func (s *Server) mountUI(r chi.Router) {
 
 			if idStr != "" {
 				if id, err := strconv.ParseInt(idStr, 10, 64); err == nil {
+					actor := r.Context().Value(ctxUser).(*session).Username
 					// Update admin status
 					_ = s.db.SetUserAdmin(r.Context(), id, admin)
 					// Update auto-approve status
 					_ = s.db.SetUserAutoApprove(r.Context(), id, autoApprove)
+					s.auditLog(r.Context(), actor, "user.updated", nil, fmt.Sprintf("user id %d, admin=%t, autoApprove=%t", id, admin, autoApprove))
 
 					// Update password if provided and confirmed
 					if password != "" {
@@ -93,6 +100,7 @@ func (s *Server) mountUI(r chi.Router) {
 						}
 						hash, _ := s.hashPassword(password, s.settings.Get().Auth.Salt)
 						_ = s.db.UpdateUserPassword(r.Context(), id, hash)
+						s.auditLog(r.Context(), actor, "user.password_reset", nil, fmt.Sprintf("user id %d", id))
 					}
 				}
 			}
@@ -106,6 +114,8 @@ func (s *Server) mountUI(r chi.Router) {
 					for _, u := range users {
 						if u.ID == n {
 							_ = s.db.SetUserAdmin(r.Context(), n, !u.IsAdmin)
+							actor := r.Context().Value(ctxUser).(*session).Username
+							s.auditLog(r.Context(), actor, "user.updated", nil, fmt.Sprintf("user id %d, admin=%t", n, !u.IsAdmin))
 							break
 						}
 					}
@@ -383,6 +393,8 @@ func (u *ui) handleUsers(s *Server) http.HandlerFunc {
 				}
 				hash, _ := s.hashPassword(password, s.settings.Get().Auth.Salt)
 				_, _ = s.db.CreateUser(r.Context(), username, hash, admin, autoApprove)
+				actor := r.Context().Value(ctxUser).(*session).Username
+				s.auditLog(r.Context(), actor, "user.created", nil, fmt.Sprintf("username=%s, admin=%t, autoApprove=%t", username, admin, autoApprove))
 			}
 			http.Redirect(w, r, "/users", http.StatusFound)
 			return
@@ -395,5 +407,17 @@ func (u *ui) handleUsers(s *Server) http.HandlerFunc {
 			"CSRFToken": s.getCSRFToken(r),
 		}
 		_ = u.tpl.ExecuteTemplate(w, "users.html", data)
+	}
+}
+
+func (u *ui) handleAudit(s *Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		events, _ := s.db.ListAuditEvents(r.Context(), 200)
+		data := map[string]any{
+			"UserName": s.userName(r),
+			"IsAdmin":  true,
+			"Events":   events,
+		}
+		_ = u.tpl.ExecuteTemplate(w, "audit.html", data)
 	}
 }

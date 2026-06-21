@@ -1,4 +1,19 @@
 # syntax=docker/dockerfile:1
+# Compile the Tailwind stylesheet from the templates so the image always ships
+# CSS that matches the current UI, regardless of whether the committed
+# internal/httpapi/web/static/css/tailwind.css copy is up to date. Runs on the
+# native build platform (CSS is platform-independent) to avoid QEMU emulation.
+FROM --platform=$BUILDPLATFORM node:20-bookworm-slim AS css
+WORKDIR /src
+COPY package.json package-lock.json ./
+RUN npm ci
+# Copy only what Tailwind needs: its config, the input stylesheet, and the
+# templates it scans for utility classes (see `content` globs in the config).
+COPY tailwind.config.js ./
+COPY assets ./assets
+COPY internal/httpapi/web ./internal/httpapi/web
+RUN npm run build:css
+
 # Build on the native build platform and cross-compile to the requested target
 # platform so multi-arch images (linux/amd64, linux/arm64) each get a binary
 # compiled for their own architecture.
@@ -10,6 +25,10 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
+# Overwrite the committed stylesheet with the freshly compiled one before the Go
+# build embeds web/static/* via go:embed. This makes the CSS build a permanent
+# part of producing the image — no manual `npm run build:css` step required.
+COPY --from=css /src/internal/httpapi/web/static/css/tailwind.css ./internal/httpapi/web/static/css/tailwind.css
 ENV CGO_ENABLED=0
 RUN --mount=type=cache,target=/root/.cache/go-build \
     GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -v \

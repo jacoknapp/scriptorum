@@ -10,7 +10,7 @@ The Scriptorum API is organized into several categories:
 - **Book Details** (`/api/v1/book/*`): Retrieve normalized book metadata from various sources
 - **Search** (`/api/providers/search`): Search for books across multiple providers
 - **Readarr Integration** (`/api/readarr/*`): Access Readarr quality profiles and root folders
-- **Notifications** (`/api/notifications/*`): Test notification delivery (ntfy, SMTP, Discord)
+- **Notifications** (`/api/notifications/*`): Test notification delivery (ntfy, SMTP, Discord, generic webhook)
 - **User Management** (`/users/*`): Admin endpoints for user administration
 - **Settings** (`/settings/*`): System configuration management
 - **System** (`/healthz`, `/version`): Health checks and version information
@@ -592,6 +592,33 @@ Test Discord webhook delivery.
 }
 ```
 
+#### POST /api/notifications/test-webhook
+Test generic webhook delivery. Unlike `/test-discord`, this posts a plain JSON event payload (no chat-app formatting) to any HTTP endpoint — useful for piping events into something not natively supported (n8n, Home Assistant, a custom relay, etc.).
+
+**Request Body:**
+```json
+{
+  "url": "https://example.com/hooks/scriptorum"
+}
+```
+
+**Response (Success):**
+```json
+{
+  "success": true
+}
+```
+
+**Response (Error):**
+```json
+{
+  "success": false,
+  "error": "webhook URL is required"
+}
+```
+
+Live events (`request.created`, `request.approved`, `system.alert`) are posted as JSON objects with an `event` field identifying the type, plus the relevant request/title/author/timestamp fields.
+
 ### System Endpoints
 
 #### GET /healthz
@@ -702,11 +729,17 @@ Some endpoints emit HTMX events:
 
 ## Rate Limiting
 
-Currently, no rate limiting is implemented. Consider implementing reverse proxy rate limiting in production.
+Per-IP, per-path rate limiting is enforced in-process (see `rateLimiting` middleware in `internal/httpapi/security.go`), applied globally to every request:
+
+- Auth endpoints (`/login`, `/oauth/*`): 10 requests / 15 minutes.
+- API endpoints (`/api/*`): 100 requests / 5 minutes.
+- Everything else: 200 requests / 5 minutes.
+
+Requests over the limit receive `429 Too Many Requests`. Limits are tracked in memory per server process, so they reset on restart and don't share state across multiple replicas — fine for the typical single-instance self-hosted deployment this app targets.
 
 ## CORS
 
-CORS is not explicitly configured. Cross-origin requests may be blocked by browsers.
+No `Access-Control-*` headers are sent, which is intentional: this is a same-origin, server-rendered HTMX app, not a JSON API meant to be called from other origins in a browser. Browsers therefore block cross-origin `fetch`/`XHR` access by default. Server-to-server API calls (e.g. via `curl` or a backend script) are unaffected, since CORS is a browser-enforced policy only.
 
 ## WebSocket Support
 

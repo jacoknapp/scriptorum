@@ -977,6 +977,22 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	u := r.Context().Value(ctxUser).(*session)
+
+	if maxPending := s.settings.Get().Requests.MaxPendingPerUser; maxPending > 0 {
+		pendingCount, err := s.db.CountPendingRequestsByUser(r.Context(), u.Username)
+		if err == nil && pendingCount >= maxPending {
+			msg := fmt.Sprintf("you already have %d pending request(s), which is the maximum allowed", pendingCount)
+			if strings.Contains(r.Header.Get("HX-Request"), "true") {
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.WriteHeader(http.StatusTooManyRequests)
+				w.Write([]byte(`<li class="p-3 bg-amber-50 text-amber-800 rounded mb-2">` + msg + `</li>`))
+				return
+			}
+			writeJSON(w, map[string]any{"status": "error", "message": msg}, http.StatusTooManyRequests)
+			return
+		}
+	}
+
 	req := &db.Request{
 		// store username in requester_email for backward-compatible storage
 		RequesterEmail: strings.ToLower(u.Username),
@@ -1167,8 +1183,10 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	// If Readarr not configured, approve without sending
 	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
-		_ = s.db.ApproveRequest(r.Context(), id, r.Context().Value(ctxUser).(*session).Username)
-		_ = s.db.UpdateRequestStatus(r.Context(), id, "approved", "approved (no Readarr configured)", r.Context().Value(ctxUser).(*session).Username, nil, nil)
+		actor := r.Context().Value(ctxUser).(*session).Username
+		_ = s.db.ApproveRequest(r.Context(), id, actor)
+		_ = s.db.UpdateRequestStatus(r.Context(), id, "approved", "approved (no Readarr configured)", actor, nil, nil)
+		s.auditLog(r.Context(), actor, "request.approved", &id, "no Readarr configured")
 
 		// Send notification for approved request asynchronously
 		go s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
@@ -1188,6 +1206,7 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
 	}
+	s.auditLog(r.Context(), username, "request.approved", &id, "queued for Readarr submission")
 
 	// Send immediate response to unblock the UI
 	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
@@ -1624,6 +1643,7 @@ func (s *Server) apiDeclineRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to decline request", 500)
 		return
 	}
+	s.auditLog(r.Context(), username, "request.declined", &id, reason)
 
 	w.Header().Set("HX-Trigger", `{"request:updated": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 	writeJSON(w, map[string]string{"status": "declined"}, 200)
@@ -1703,6 +1723,7 @@ func (s *Server) apiApproveAllRequests(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, fmt.Sprintf("failed to approve request %d", req.ID), 500)
 				return
 			}
+			s.auditLog(r.Context(), username, "request.approved", &req.ID, "bulk action, no Readarr configured")
 			s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
 			continue
 		}
@@ -1716,6 +1737,7 @@ func (s *Server) apiApproveAllRequests(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("failed to queue request %d: %v", req.ID, err), http.StatusServiceUnavailable)
 			return
 		}
+		s.auditLog(r.Context(), username, "request.approved", &req.ID, "bulk action, queued for Readarr submission")
 	}
 
 	w.Header().Set("HX-Trigger", `{"request:updated": {}}`)

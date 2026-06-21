@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -303,6 +304,15 @@ WHERE id=?`,
 	return err
 }
 
+func (d *DB) CountPendingRequestsByUser(ctx context.Context, requesterEmail string) (int, error) {
+	row := d.sql.QueryRowContext(ctx, `SELECT COUNT(1) FROM requests WHERE requester_email=? AND status='pending'`, strings.ToLower(requesterEmail))
+	var n int
+	if err := row.Scan(&n); err != nil {
+		return 0, err
+	}
+	return n, nil
+}
+
 func (d *DB) DeleteAllRequests(ctx context.Context) error {
 	_, err := d.sql.ExecContext(ctx, `DELETE FROM requests`)
 	return err
@@ -402,4 +412,67 @@ func boolToInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// Audit events
+type AuditEvent struct {
+	ID         int64     `json:"id"`
+	Timestamp  time.Time `json:"timestamp"`
+	ActorEmail string    `json:"actorEmail"`
+	EventType  string    `json:"eventType"`
+	RequestID  *int64    `json:"requestId,omitempty"`
+	Details    string    `json:"details,omitempty"`
+}
+
+// RequestIDStr returns the request id as a string, or "" if unset. Templates
+// can't dereference a *int64 directly without printing the pointer address.
+func (e AuditEvent) RequestIDStr() string {
+	if e.RequestID == nil {
+		return ""
+	}
+	return strconv.FormatInt(*e.RequestID, 10)
+}
+
+func (d *DB) InsertAuditEvent(ctx context.Context, actorEmail, eventType string, requestID *int64, details string) error {
+	now := time.Now().UTC()
+	_, err := d.sql.ExecContext(ctx, `
+INSERT INTO audit_events (ts, actor_email, event_type, request_id, details)
+VALUES (?, ?, ?, ?, ?)`,
+		now.Format(time.RFC3339Nano), strings.ToLower(actorEmail), eventType, requestID, details,
+	)
+	return err
+}
+
+func (d *DB) ListAuditEvents(ctx context.Context, limit int) ([]AuditEvent, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	rows, err := d.sql.QueryContext(ctx, `
+SELECT id, ts, actor_email, event_type, request_id, details
+FROM audit_events
+ORDER BY id DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []AuditEvent
+	for rows.Next() {
+		var ev AuditEvent
+		var ts string
+		var requestID sql.NullInt64
+		var details sql.NullString
+		if err := rows.Scan(&ev.ID, &ts, &ev.ActorEmail, &ev.EventType, &requestID, &details); err != nil {
+			return nil, err
+		}
+		ev.Timestamp, _ = time.Parse(time.RFC3339Nano, ts)
+		if requestID.Valid {
+			id := requestID.Int64
+			ev.RequestID = &id
+		}
+		if details.Valid {
+			ev.Details = details.String
+		}
+		out = append(out, ev)
+	}
+	return out, rows.Err()
 }

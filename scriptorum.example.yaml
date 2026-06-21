@@ -41,6 +41,10 @@ readarr:
     default_quality_profile_id: 2
     default_root_folder_path: "/books/audiobooks"
     default_tags: ["audiobook"]
+requests:
+  # Caps how many requests a single user may have in "pending" status at
+  # once. 0 means unlimited.
+  max_pending_per_user: 0
 admins:
     usernames:
         - admin

@@ -87,8 +87,40 @@ jobs:
           name: scriptorum-binary
           path: ./bin
 
+  css:
+    # The app embeds the prebuilt Tailwind stylesheet
+    # (internal/httpapi/web/static/css/tailwind.css) via go:embed; the Docker
+    # image and Go binary ship whatever is committed. This job regenerates the
+    # CSS from the templates and fails if the committed copy is stale, so a
+    # template change that introduces a new utility class can't silently ship
+    # unstyled.
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild Tailwind CSS
+        run: npm run build:css
+
+      - name: Verify committed CSS is up to date
+        run: |
+          if ! git diff --exit-code -- internal/httpapi/web/static/css/tailwind.css; then
+            echo "::error::Committed Tailwind CSS is out of date. Run 'npm run build:css' and commit internal/httpapi/web/static/css/tailwind.css."
+            exit 1
+          fi
+          echo "Committed Tailwind CSS is up to date."
+
   docker:
-    needs: build-test
+    needs: [build-test, css]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:
@@ -238,3 +270,14 @@ jobs:
         run: |
           test -f coverage.out
           go tool cover -func coverage.out | tee coverage-summary.txt
+
+      - name: Enforce coverage threshold
+        env:
+          # Current total sits around 72.7%; gate a couple points below that
+          # so normal fluctuation doesn't fail builds, while still catching
+          # real regressions.
+          MIN_COVERAGE: '70.0'
+        run: |
+          TOTAL=$(tail -n 1 coverage-summary.txt | awk '{print $NF}' | tr -d '%')
+          echo "Total coverage: ${TOTAL}% (minimum: ${MIN_COVERAGE}%)"
+          awk -v total="$TOTAL" -v min="$MIN_COVERAGE" 'BEGIN { exit !(total + 0 >= min + 0) }'
