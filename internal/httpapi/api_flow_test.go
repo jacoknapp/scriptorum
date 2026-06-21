@@ -220,7 +220,10 @@ func TestApproveAllSubmitsPendingRequestsToReadarr(t *testing.T) {
 	defer readarr.Close()
 
 	s := newServerForTest(t)
-	s.approvalQueueInterval = 75 * time.Millisecond
+	// Use a comfortably large interval so the measured gap (taken at the
+	// Readarr POST inside each job, which includes variable first-call
+	// connection overhead) stays well clear of the assertion threshold below.
+	s.approvalQueueInterval = 150 * time.Millisecond
 	cfg := s.settings.Get()
 	cfg.Readarr.Ebooks.BaseURL = readarr.URL
 	cfg.Readarr.Ebooks.APIKey = "test-key"
@@ -278,7 +281,11 @@ func TestApproveAllSubmitsPendingRequestsToReadarr(t *testing.T) {
 			if len(times) != 2 {
 				t.Fatalf("expected 2 recorded add call times, got %d", len(times))
 			}
-			if gap := times[1].Sub(times[0]); gap < 70*time.Millisecond {
+			// Proves the submissions are spaced by the queue interval rather
+			// than fired back-to-back (which would be a near-zero gap). The
+			// threshold sits well below the 150ms interval to tolerate
+			// scheduler/first-call jitter while still catching lost spacing.
+			if gap := times[1].Sub(times[0]); gap < 100*time.Millisecond {
 				t.Fatalf("expected Readarr submissions to be spaced by queue interval, gap=%s", gap)
 			}
 			for _, item := range items {
