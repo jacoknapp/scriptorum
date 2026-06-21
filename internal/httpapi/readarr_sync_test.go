@@ -228,6 +228,15 @@ func TestReadarrSyncResolvesStaleErrorThroughCatalogMatch(t *testing.T) {
 	}
 }
 
+func TestFormatReadarrSyncMatchReason(t *testing.T) {
+	if got := formatReadarrSyncMatchReason("ebook", ""); got != "Readarr sync: found in ebook library" {
+		t.Fatalf("unexpected reason for empty availability: %q", got)
+	}
+	if got := formatReadarrSyncMatchReason("audiobook", "available"); got != "Readarr sync: available in audiobook library" {
+		t.Fatalf("unexpected reason: %q", got)
+	}
+}
+
 func TestNextSearchDispatchIntervalWithinRange(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		got := nextSearchDispatchInterval()

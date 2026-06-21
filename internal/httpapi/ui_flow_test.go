@@ -71,6 +71,113 @@ func TestLocalLoginAndDashboard(t *testing.T) {
 	}
 }
 
+func TestLocalLoginFailureAuditEvents(t *testing.T) {
+	s, database, _ := newServerForLoginTest(t)
+	t.Cleanup(func() { _ = database.Close() })
+
+	password := "secret123"
+	peppered := s.settings.Get().Auth.Salt + ":" + password
+	hash, _ := bcrypt.GenerateFromPassword([]byte(peppered), bcrypt.DefaultCost)
+	if _, err := database.CreateUser(t.Context(), "tester", string(hash), true, false); err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	r := s.Router()
+
+	// Unknown username
+	form := url.Values{}
+	form.Set("username", "nosuchuser")
+	form.Set("password", password)
+	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("login (unknown user) code=%d", rec.Code)
+	}
+
+	// Wrong password for a real user
+	form2 := url.Values{}
+	form2.Set("username", "tester")
+	form2.Set("password", "wrong-password")
+	req2 := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(form2.Encode()))
+	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec2 := httptest.NewRecorder()
+	r.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusFound {
+		t.Fatalf("login (wrong password) code=%d", rec2.Code)
+	}
+
+	events, err := database.ListAuditEvents(t.Context(), 50)
+	if err != nil {
+		t.Fatalf("list audit events: %v", err)
+	}
+	var sawUnknownUser, sawWrongPassword bool
+	for _, ev := range events {
+		if ev.EventType != "user.login_failed" {
+			continue
+		}
+		switch {
+		case ev.ActorEmail == "nosuchuser" && ev.Details == "unknown username":
+			sawUnknownUser = true
+		case ev.ActorEmail == "tester" && ev.Details == "invalid password":
+			sawWrongPassword = true
+		}
+	}
+	if !sawUnknownUser {
+		t.Errorf("expected login_failed audit event for unknown username, got %+v", events)
+	}
+	if !sawWrongPassword {
+		t.Errorf("expected login_failed audit event for wrong password, got %+v", events)
+	}
+}
+
+func TestLocalLoginRedirectsToWelcomeWhenOIDCEnabled(t *testing.T) {
+	s, database, _ := newServerForLoginTest(t)
+	t.Cleanup(func() { _ = database.Close() })
+
+	cfg := s.settings.Get()
+	cfg.OAuth.Enabled = true
+	cfg.OAuth.Issuer = "https://issuer.invalid"
+	_ = s.settings.Update(cfg)
+	_ = s.initOIDC()
+
+	form := url.Values{}
+	form.Set("username", "tester")
+	form.Set("password", "secret123")
+	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("code=%d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "force_welcome=true") {
+		t.Fatalf("expected redirect to welcome page, got Location=%q", loc)
+	}
+}
+
+func TestLocalLoginMissingCredentials(t *testing.T) {
+	s, database, _ := newServerForLoginTest(t)
+	t.Cleanup(func() { _ = database.Close() })
+
+	form := url.Values{}
+	form.Set("username", "")
+	form.Set("password", "")
+	req := httptest.NewRequest(http.MethodPost, "/login", bytes.NewBufferString(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusFound {
+		t.Fatalf("code=%d", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); !strings.Contains(loc, "error=Invalid") {
+		t.Fatalf("expected redirect with invalid-credentials error, got Location=%q", loc)
+	}
+}
+
 func TestApproveWithoutReadarrConfigured(t *testing.T) {
 	s, database, _ := newServerForLoginTest(t)
 	t.Cleanup(func() { _ = database.Close() })

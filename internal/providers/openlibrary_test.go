@@ -8,6 +8,44 @@ import (
 	"testing"
 )
 
+func TestDisableOLRateLimiterRestoresOriginal(t *testing.T) {
+	orig := olRateLimiter
+	restore := TestDisableOLRateLimiter()
+	if olRateLimiter == orig {
+		t.Fatal("expected rate limiter to be replaced")
+	}
+	if err := olRateLimiter.Wait(context.Background()); err != nil {
+		t.Fatalf("expected fast limiter to not block: %v", err)
+	}
+	restore()
+	if olRateLimiter != orig {
+		t.Fatal("expected rate limiter to be restored")
+	}
+}
+
+func TestSetOpenLibraryHTTPClientFactoryRestoresOriginal(t *testing.T) {
+	called := false
+	custom := &http.Client{}
+	restore := TestSetOpenLibraryHTTPClientFactory(func() *http.Client {
+		called = true
+		return custom
+	})
+	if got := NewOpenLibrary(); got.cl != custom {
+		t.Fatal("expected NewOpenLibrary to use the overridden client factory")
+	}
+	if !called {
+		t.Fatal("expected overridden factory to be invoked")
+	}
+	restore()
+
+	// A nil factory should fall back to the default rather than panicking.
+	restore2 := TestSetOpenLibraryHTTPClientFactory(nil)
+	if got := NewOpenLibrary(); got.cl == custom {
+		t.Fatal("expected default client factory after restore")
+	}
+	restore2()
+}
+
 func TestOpenLibrarySearch(t *testing.T) {
 	ol := NewOpenLibrary()
 	ol.cl.Transport = rtFunc(func(r *http.Request) (*http.Response, error) {
