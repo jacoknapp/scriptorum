@@ -163,6 +163,13 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 		cur.OAuth.UsernameClaim = strings.TrimSpace(r.FormValue("oauth_username_claim"))
 		cur.OAuth.AutoCreateUsers = r.FormValue("oauth_autocreate") == "on"
 		cur.Discovery.Languages = config.NormalizeDiscoveryLanguages(r.Form["discovery_languages"])
+		if v := strings.TrimSpace(r.FormValue("max_pending_per_user")); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+				cur.Requests.MaxPendingPerUser = n
+			}
+		} else {
+			cur.Requests.MaxPendingPerUser = 0
+		}
 		_ = s.settings.Update(&cur)
 		// Propagate debug flag to provider packages that use package-level Debug variables
 		providers.Debug = cur.Debug

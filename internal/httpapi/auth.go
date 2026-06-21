@@ -682,10 +682,12 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := s.db.GetUserByUsername(r.Context(), username)
 	if err != nil {
+		s.auditLog(r.Context(), username, "user.login_failed", nil, "unknown username")
 		http.Redirect(w, r, "/login?error=Invalid+credentials&username="+url.QueryEscape(username)+"&force_welcome=true", http.StatusFound)
 		return
 	}
 	if err := s.comparePassword(u.Hash, password, s.settings.Get().Auth.Salt); err != nil {
+		s.auditLog(r.Context(), username, "user.login_failed", nil, "invalid password")
 		http.Redirect(w, r, "/login?error=Invalid+credentials&username="+url.QueryEscape(username)+"&force_welcome=true", http.StatusFound)
 		return
 	}
@@ -698,6 +700,7 @@ func (s *Server) handleLocalLogin(w http.ResponseWriter, r *http.Request) {
 
 	sess := &session{Username: u.Username, Name: u.Username, Admin: u.IsAdmin, Exp: time.Now().Add(24 * time.Hour).Unix()}
 	s.setSession(w, sess)
+	s.auditLog(r.Context(), u.Username, "user.login", nil, "")
 	http.Redirect(w, r, "/search", http.StatusFound)
 }
 

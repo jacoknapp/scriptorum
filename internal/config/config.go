@@ -93,7 +93,7 @@ type Config struct {
 	// Intended for self-hosted deployments using self-signed certificates.
 	InsecureSkipVerify bool   `yaml:"insecure_skip_verify"`
 	ServerURL          string `yaml:"server_url"`
-	Discovery struct {
+	Discovery          struct {
 		Languages []string `yaml:"languages"`
 	} `yaml:"discovery"`
 	HTTP struct {
@@ -154,7 +154,14 @@ type Config struct {
 		Ntfy    NtfyConfig    `yaml:"ntfy"`
 		SMTP    SMTPConfig    `yaml:"smtp"`
 		Discord DiscordConfig `yaml:"discord"`
+		Webhook WebhookConfig `yaml:"webhook"`
 	} `yaml:"notifications"`
+
+	Requests struct {
+		// MaxPendingPerUser caps how many requests a single user may have in
+		// "pending" status at once. 0 (the default) means unlimited.
+		MaxPendingPerUser int `yaml:"max_pending_per_user"`
+	} `yaml:"requests"`
 }
 
 type NtfyConfig struct {
@@ -187,6 +194,17 @@ type DiscordConfig struct {
 	Enabled                     bool   `yaml:"enabled"`
 	WebhookURL                  string `yaml:"webhook_url"`
 	Username                    string `yaml:"username"`
+	EnableRequestNotifications  bool   `yaml:"enable_request_notifications"`
+	EnableApprovalNotifications bool   `yaml:"enable_approval_notifications"`
+	EnableSystemNotifications   bool   `yaml:"enable_system_notifications"`
+}
+
+// WebhookConfig sends a generic JSON POST to any HTTP endpoint, for users who
+// want to pipe Scriptorum events into something not natively supported
+// (n8n, Home Assistant, a custom relay, etc.) rather than a specific chat app.
+type WebhookConfig struct {
+	Enabled                     bool   `yaml:"enabled"`
+	URL                         string `yaml:"url"`
 	EnableRequestNotifications  bool   `yaml:"enable_request_notifications"`
 	EnableApprovalNotifications bool   `yaml:"enable_approval_notifications"`
 	EnableSystemNotifications   bool   `yaml:"enable_system_notifications"`

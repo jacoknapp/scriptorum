@@ -1,0 +1,55 @@
+{{ template "header" . }}
+<div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6">
+	<div class="flex items-center justify-between mb-6">
+		<h1 class="text-xl font-semibold">Audit log</h1>
+	</div>
+
+	<!-- Mobile list (small screens) -->
+	<div class="md:hidden">
+		<ul class="divide-y divide-white/5">
+			{{ range .Events }}
+			<li class="py-3">
+				<div class="flex items-start justify-between gap-3">
+					<div class="min-w-0">
+						<div class="font-medium">{{ .EventType }}</div>
+						<div class="text-xs text-slate-400">{{ .ActorEmail }} • {{ .Timestamp.Format "2006-01-02 15:04:05" }}</div>
+						{{ if .RequestIDStr }}<div class="text-xs text-slate-400">Request #{{ .RequestIDStr }}</div>{{ end }}
+						{{ if .Details }}<div class="text-xs text-slate-500 mt-1">{{ .Details }}</div>{{ end }}
+					</div>
+				</div>
+			</li>
+			{{ else }}
+			<li class="p-4 text-slate-400">No audit events</li>
+			{{ end }}
+		</ul>
+	</div>
+
+	<!-- Desktop/tablet table (md and up) -->
+	<div class="overflow-x-auto hidden md:block">
+	<table class="w-full text-sm min-w-[540px]">
+		<thead>
+			<tr>
+				<th class="text-left p-2">Time</th>
+				<th class="text-left p-2">Actor</th>
+				<th class="text-left p-2">Event</th>
+				<th class="text-left p-2">Request</th>
+				<th class="text-left p-2">Details</th>
+			</tr>
+		</thead>
+		<tbody>
+			{{ range .Events }}
+			<tr class="border-t border-white/5">
+				<td class="p-2 whitespace-nowrap">{{ .Timestamp.Format "2006-01-02 15:04:05" }}</td>
+				<td class="p-2">{{ .ActorEmail }}</td>
+				<td class="p-2">{{ .EventType }}</td>
+				<td class="p-2">{{ if .RequestIDStr }}#{{ .RequestIDStr }}{{ end }}</td>
+				<td class="p-2 text-slate-400">{{ .Details }}</td>
+			</tr>
+			{{ else }}
+			<tr><td colspan="5" class="p-4 text-slate-400">No audit events</td></tr>
+			{{ end }}
+		</tbody>
+	</table>
+	</div>
+</div>
+{{ template "footer" . }}

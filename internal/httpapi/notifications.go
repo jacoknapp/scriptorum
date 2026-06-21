@@ -36,6 +36,7 @@ func (s *Server) mountNotifications(r chi.Router) {
 		rt.Post("/api/notifications/test-ntfy", s.apiTestNtfy())
 		rt.Post("/api/notifications/test-smtp", s.apiTestSMTP())
 		rt.Post("/api/notifications/test-discord", s.apiTestDiscord())
+		rt.Post("/api/notifications/test-webhook", s.apiTestWebhook())
 	})
 }
 
@@ -477,6 +478,13 @@ func (u *notificationsUI) handleNotificationsSave(s *Server) http.HandlerFunc {
 		cur.Notifications.Discord.EnableApprovalNotifications = r.FormValue("discord_enable_approval_notifications") == "on"
 		cur.Notifications.Discord.EnableSystemNotifications = r.FormValue("discord_enable_system_notifications") == "on"
 
+		// Update generic webhook settings
+		cur.Notifications.Webhook.Enabled = r.FormValue("webhook_enabled") == "on"
+		cur.Notifications.Webhook.URL = strings.TrimSpace(r.FormValue("webhook_url"))
+		cur.Notifications.Webhook.EnableRequestNotifications = r.FormValue("webhook_enable_request_notifications") == "on"
+		cur.Notifications.Webhook.EnableApprovalNotifications = r.FormValue("webhook_enable_approval_notifications") == "on"
+		cur.Notifications.Webhook.EnableSystemNotifications = r.FormValue("webhook_enable_system_notifications") == "on"
+
 		_ = s.settings.Update(&cur)
 		http.Redirect(w, r, "/notifications", http.StatusFound)
 	}
@@ -772,6 +780,67 @@ func (s *Server) sendDiscordNotification(webhookURL, username, title, message st
 	return nil
 }
 
+// sendWebhookNotification POSTs a generic JSON payload to a user-configured
+// HTTP endpoint. Unlike the Discord/ntfy senders this carries no chat-app
+// formatting opinions; the payload is just the event data.
+func (s *Server) sendWebhookNotification(url string, payload map[string]any) error {
+	if strings.TrimSpace(url) == "" {
+		return fmt.Errorf("webhook URL is required")
+	}
+
+	jsonData, err := json.Marshal(payload)
+	if err != nil {
+		return fmt.Errorf("failed to marshal webhook payload: %w", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return fmt.Errorf("failed to create webhook request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	client := s.outboundHTTPClient(10 * time.Second)
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to send webhook notification: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("webhook endpoint returned error: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// apiTestWebhook tests the generic webhook configuration by posting a test event
+func (s *Server) apiTestWebhook() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			URL string `json:"url"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, map[string]any{"success": false, "error": "Invalid request"}, 400)
+			return
+		}
+		if req.URL == "" {
+			writeJSON(w, map[string]any{"success": false, "error": "webhook URL is required"}, 400)
+			return
+		}
+
+		err := s.sendWebhookNotification(req.URL, map[string]any{
+			"event":     "system.test",
+			"title":     "Scriptorum Webhook Test",
+			"message":   "Configuration is working correctly.",
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+		if err != nil {
+			writeJSON(w, map[string]any{"success": false, "error": err.Error()}, 500)
+			return
+		}
+		writeJSON(w, map[string]any{"success": true}, 200)
+	}
+}
+
 // apiTestDiscord tests the Discord configuration by sending a test message
 func (s *Server) apiTestDiscord() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -827,6 +896,24 @@ func (s *Server) SendRequestNotification(requestID int64, username, title string
 	if cfg.Notifications.Discord.Enabled && cfg.Notifications.Discord.EnableRequestNotifications {
 		s.sendRequestNotificationDiscord(cfg, requestID, username, title, authorsStr)
 	}
+
+	if cfg.Notifications.Webhook.Enabled && cfg.Notifications.Webhook.EnableRequestNotifications {
+		s.sendRequestNotificationWebhook(cfg, requestID, username, title, authors)
+	}
+}
+
+// sendRequestNotificationWebhook posts a generic JSON event for new requests
+func (s *Server) sendRequestNotificationWebhook(cfg *config.Config, requestID int64, username, title string, authors []string) {
+	go func() {
+		_ = s.sendWebhookNotification(cfg.Notifications.Webhook.URL, map[string]any{
+			"event":     "request.created",
+			"requestId": requestID,
+			"title":     title,
+			"authors":   authors,
+			"requester": username,
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+	}()
 }
 
 // sendRequestNotificationNtfy sends ntfy notification for new requests
@@ -996,6 +1083,23 @@ func (s *Server) SendApprovalNotification(username, title string, authors []stri
 	if cfg.Notifications.Discord.Enabled && cfg.Notifications.Discord.EnableApprovalNotifications {
 		s.sendApprovalNotificationDiscord(cfg, username, title, authorsStr)
 	}
+
+	if cfg.Notifications.Webhook.Enabled && cfg.Notifications.Webhook.EnableApprovalNotifications {
+		s.sendApprovalNotificationWebhook(cfg, username, title, authors)
+	}
+}
+
+// sendApprovalNotificationWebhook posts a generic JSON event for approved requests
+func (s *Server) sendApprovalNotificationWebhook(cfg *config.Config, username, title string, authors []string) {
+	go func() {
+		_ = s.sendWebhookNotification(cfg.Notifications.Webhook.URL, map[string]any{
+			"event":     "request.approved",
+			"title":     title,
+			"authors":   authors,
+			"requester": username,
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+	}()
 }
 
 // sendApprovalNotificationNtfy sends ntfy notification for approved requests
@@ -1134,6 +1238,22 @@ func (s *Server) SendSystemNotification(title, message string) {
 	if cfg.Notifications.Discord.Enabled && cfg.Notifications.Discord.EnableSystemNotifications {
 		s.sendSystemNotificationDiscord(cfg, title, message)
 	}
+
+	if cfg.Notifications.Webhook.Enabled && cfg.Notifications.Webhook.EnableSystemNotifications {
+		s.sendSystemNotificationWebhook(cfg, title, message)
+	}
+}
+
+// sendSystemNotificationWebhook posts a generic JSON event for system alerts
+func (s *Server) sendSystemNotificationWebhook(cfg *config.Config, title, message string) {
+	go func() {
+		_ = s.sendWebhookNotification(cfg.Notifications.Webhook.URL, map[string]any{
+			"event":     "system.alert",
+			"title":     title,
+			"message":   message,
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+	}()
 }
 
 // sendSystemNotificationNtfy sends ntfy notification for system alerts
