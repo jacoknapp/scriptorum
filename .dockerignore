@@ -1,0 +1,22 @@
+# Dependencies are reinstalled inside the build (npm ci in the css stage); never
+# ship or copy the host's node_modules into the build context.
+node_modules
+
+# VCS and build artifacts
+.git
+.gitignore
+bin
+
+# Local runtime data / databases
+data
+*.db
+*.db-shm
+*.db-wal
+
+# Coverage / test output
+coverage.out
+coverage-summary.txt
+
+# Editor / OS cruft
+.DS_Store
+*.swp
