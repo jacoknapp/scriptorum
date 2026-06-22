@@ -37,6 +37,11 @@
 				<input type="number" min="0" name="max_pending_per_user" placeholder="0 = unlimited" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full max-w-md" value="{{ if .Cfg.Requests.MaxPendingPerUser }}{{ .Cfg.Requests.MaxPendingPerUser }}{{ end }}">
 				<div class="text-sm text-slate-400 mt-1">Caps how many requests a single user may have in "pending" status at once. 0 or blank means unlimited.</div>
 			</div>
+			<div class="border border-white/10 rounded p-3 mt-3">
+				<label class="block text-sm font-medium text-slate-200 mb-1">Audit log retention (days)</label>
+				<input type="number" min="0" name="audit_retention_days" placeholder="0 = keep forever" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full max-w-md" value="{{ if .Cfg.Audit.RetentionDays }}{{ .Cfg.Audit.RetentionDays }}{{ end }}">
+				<div class="text-sm text-slate-400 mt-1">Audit events older than this are pruned automatically during the periodic cleanup. 0 or blank keeps them forever.</div>
+			</div>
 			</section>
 
 			<section class="mb-6">

@@ -256,7 +256,23 @@ func (s *Server) runSecurityJanitor(ctx context.Context) {
 			s.csrf.cleanup()
 			// Largest rate-limit window is 15 minutes; drop anything older.
 			s.rateLimiter.cleanup(15 * time.Minute)
+			s.pruneAuditEvents(ctx)
 		}
+	}
+}
+
+// pruneAuditEvents enforces the configured audit retention policy. A retention
+// of 0 (the default) keeps events forever.
+func (s *Server) pruneAuditEvents(ctx context.Context) {
+	days := s.settings.Get().Audit.RetentionDays
+	if days <= 0 {
+		return
+	}
+	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	if n, err := s.db.PruneAuditEvents(ctx, cutoff); err != nil {
+		fmt.Printf("audit: prune failed: %v\n", err)
+	} else if n > 0 {
+		fmt.Printf("audit: pruned %d event(s) older than %d day(s)\n", n, days)
 	}
 }
 

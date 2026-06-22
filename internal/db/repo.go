@@ -476,3 +476,15 @@ ORDER BY id DESC LIMIT ?`, limit)
 	}
 	return out, rows.Err()
 }
+
+// PruneAuditEvents deletes audit events older than cutoff and returns the
+// number removed. Used to enforce a retention policy so the table does not
+// grow without bound.
+func (d *DB) PruneAuditEvents(ctx context.Context, cutoff time.Time) (int64, error) {
+	res, err := d.sql.ExecContext(ctx, `DELETE FROM audit_events WHERE ts < ?`, cutoff.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}

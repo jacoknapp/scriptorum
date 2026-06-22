@@ -124,3 +124,48 @@ func TestAuditPageRequiresAdmin(t *testing.T) {
 		t.Fatalf("expected audit page body to contain heading, got: %s", rec2.Body.String())
 	}
 }
+
+func TestAuditExportCSV(t *testing.T) {
+	s := newServerForTest(t)
+	r := s.Router()
+	admin := makeCookie(t, s, "admin", true)
+	user := makeCookie(t, s, "user", false)
+
+	// Generate at least one audit event via a user creation.
+	form := strings.NewReader("username=csvuser&password=verysecurepw&is_admin=on")
+	createUserReq := httptest.NewRequest(http.MethodPost, "/users", form)
+	createUserReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	createUserReq.AddCookie(admin)
+	r.ServeHTTP(httptest.NewRecorder(), createUserReq)
+
+	// Non-admin is denied.
+	denyReq := httptest.NewRequest(http.MethodGet, "/audit/export", nil)
+	denyReq.AddCookie(user)
+	denyRec := httptest.NewRecorder()
+	r.ServeHTTP(denyRec, denyReq)
+	if denyRec.Code == http.StatusOK {
+		t.Fatalf("expected non-admin to be denied CSV export, got 200")
+	}
+
+	// Admin gets a CSV download with header + the created event.
+	req := httptest.NewRequest(http.MethodGet, "/audit/export", nil)
+	req.AddCookie(admin)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("export code=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "text/csv") {
+		t.Fatalf("expected text/csv content-type, got %q", ct)
+	}
+	if cd := rec.Header().Get("Content-Disposition"); !strings.Contains(cd, "scriptorum-audit.csv") {
+		t.Fatalf("expected attachment filename, got %q", cd)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "timestamp,actor,event_type,request_id,details") {
+		t.Fatalf("expected CSV header row, got: %s", body)
+	}
+	if !strings.Contains(body, "user.created") {
+		t.Fatalf("expected user.created event in CSV, got: %s", body)
+	}
+}

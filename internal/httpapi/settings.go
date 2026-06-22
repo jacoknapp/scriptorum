@@ -170,6 +170,13 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 		} else {
 			cur.Requests.MaxPendingPerUser = 0
 		}
+		if v := strings.TrimSpace(r.FormValue("audit_retention_days")); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+				cur.Audit.RetentionDays = n
+			}
+		} else {
+			cur.Audit.RetentionDays = 0
+		}
 		_ = s.settings.Update(&cur)
 		// Propagate debug flag to provider packages that use package-level Debug variables
 		providers.Debug = cur.Debug
