@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestMigrateAndCRUD(t *testing.T) {
@@ -286,5 +287,49 @@ func TestPing(t *testing.T) {
 	db.Close()
 	if err := db.Ping(context.Background()); err == nil {
 		t.Fatal("expected error pinging a closed database")
+	}
+}
+
+func TestPruneAuditEvents(t *testing.T) {
+	tdir := t.TempDir()
+	db, err := Open(filepath.Join(tdir, "scriptorum.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if err := db.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		if err := db.InsertAuditEvent(context.Background(), "admin@example.com", "user.login", nil, ""); err != nil {
+			t.Fatalf("insert: %v", err)
+		}
+	}
+
+	// A cutoff in the past should remove nothing (all events are newer).
+	n, err := db.PruneAuditEvents(context.Background(), time.Now().Add(-time.Hour))
+	if err != nil {
+		t.Fatalf("prune (past cutoff): %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("expected 0 pruned with past cutoff, got %d", n)
+	}
+
+	// A cutoff in the future should remove all existing events.
+	n, err = db.PruneAuditEvents(context.Background(), time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("prune (future cutoff): %v", err)
+	}
+	if n != 3 {
+		t.Fatalf("expected 3 pruned with future cutoff, got %d", n)
+	}
+
+	events, err := db.ListAuditEvents(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("expected 0 events after prune, got %d", len(events))
 	}
 }

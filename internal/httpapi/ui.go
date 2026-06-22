@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"html/template"
@@ -50,6 +51,7 @@ func (s *Server) mountUI(r chi.Router) {
 		}))
 		rt.HandleFunc("/users", s.requireAdmin(u.handleUsers(s)))
 		rt.Get("/audit", s.requireAdmin(u.handleAudit(s)))
+		rt.Get("/audit/export", s.requireAdmin(u.handleAuditExport(s)))
 	})
 	r.Get("/ui/requests/table", s.requireLogin(u.handleRequestsTable(s)))
 	r.Group(func(rt chi.Router) {
@@ -419,5 +421,30 @@ func (u *ui) handleAudit(s *Server) http.HandlerFunc {
 			"Events":   events,
 		}
 		_ = u.tpl.ExecuteTemplate(w, "audit.html", data)
+	}
+}
+
+// handleAuditExport streams the audit log as a CSV download.
+func (u *ui) handleAuditExport(s *Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		events, err := s.db.ListAuditEvents(r.Context(), 100000)
+		if err != nil {
+			http.Error(w, "failed to load audit events", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", `attachment; filename="scriptorum-audit.csv"`)
+		cw := csv.NewWriter(w)
+		_ = cw.Write([]string{"timestamp", "actor", "event_type", "request_id", "details"})
+		for _, ev := range events {
+			_ = cw.Write([]string{
+				ev.Timestamp.UTC().Format(time.RFC3339),
+				ev.ActorEmail,
+				ev.EventType,
+				ev.RequestIDStr(),
+				ev.Details,
+			})
+		}
+		cw.Flush()
 	}
 }

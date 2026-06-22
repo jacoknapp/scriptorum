@@ -45,6 +45,10 @@ requests:
   # Caps how many requests a single user may have in "pending" status at
   # once. 0 means unlimited.
   max_pending_per_user: 0
+audit:
+  # Prune audit-log events older than this many days during the periodic
+  # cleanup. 0 keeps events forever.
+  retention_days: 0
 admins:
     usernames:
         - admin

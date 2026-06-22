@@ -162,6 +162,13 @@ type Config struct {
 		// "pending" status at once. 0 (the default) means unlimited.
 		MaxPendingPerUser int `yaml:"max_pending_per_user"`
 	} `yaml:"requests"`
+
+	Audit struct {
+		// RetentionDays prunes audit_events older than this many days during
+		// the periodic security janitor sweep. 0 (the default) keeps events
+		// forever.
+		RetentionDays int `yaml:"retention_days"`
+	} `yaml:"audit"`
 }
 
 type NtfyConfig struct {
