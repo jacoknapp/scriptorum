@@ -622,6 +622,12 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 		disp = username
 	}
 
+	// Backfill the user's email from the OIDC claim so personal notifications
+	// work out of the box. Never overwrites an email the user has set.
+	if email, ok := claims["email"].(string); ok && strings.TrimSpace(email) != "" {
+		_ = s.db.SetUserEmailIfEmpty(r.Context(), username, email)
+	}
+
 	// Debug logging for OAuth authentication
 	if cfg.Debug {
 		isAdmin := s.isAdminUsername(username)

@@ -1087,6 +1087,9 @@ func (s *Server) SendApprovalNotification(username, title string, authors []stri
 	if cfg.Notifications.Webhook.Enabled && cfg.Notifications.Webhook.EnableApprovalNotifications {
 		s.sendApprovalNotificationWebhook(cfg, username, title, authors)
 	}
+
+	// Also alert the requester on their own configured channels.
+	s.notifyUserPersonal("approved", username, title, authors)
 }
 
 // sendApprovalNotificationWebhook posts a generic JSON event for approved requests
@@ -1222,6 +1225,92 @@ func (s *Server) sendApprovalNotificationDiscord(cfg *config.Config, username, t
 	}()
 }
 
+// notifyUserPersonal sends approved/available alerts to a requester's own
+// configured channels, honoring their per-event opt-ins. event is "approved"
+// or "available". Each channel is best-effort and independent: Discord and
+// generic webhooks are fully self-contained (the user supplies the full URL),
+// while email and ntfy ride on the admin-configured SMTP/ntfy transport.
+func (s *Server) notifyUserPersonal(event, requesterUsername, title string, authors []string) {
+	if strings.TrimSpace(requesterUsername) == "" {
+		return
+	}
+	u, err := s.db.GetUserByUsername(context.Background(), requesterUsername)
+	if err != nil || u == nil {
+		return
+	}
+	switch event {
+	case "approved":
+		if !u.NotifyOnApproved {
+			return
+		}
+	case "available":
+		if !u.NotifyOnAvailable {
+			return
+		}
+	default:
+		return
+	}
+
+	cfg := s.settings.Get()
+	authorsStr := strings.Join(authors, ", ")
+	var verb, emoji string
+	if event == "available" {
+		verb, emoji = "is now available", "📗"
+	} else {
+		verb, emoji = "was approved", "✅"
+	}
+	subject := fmt.Sprintf("%s \"%s\" %s", emoji, title, verb)
+	body := fmt.Sprintf("%s %s", title, verb)
+	if authorsStr != "" {
+		body += " (by " + authorsStr + ")"
+	}
+	link := strings.TrimSpace(cfg.ServerURL)
+
+	// Email via the admin-configured SMTP transport, overriding the recipient.
+	if e := strings.TrimSpace(u.Email); e != "" && strings.TrimSpace(cfg.Notifications.SMTP.Host) != "" {
+		smtpCfg := cfg.Notifications.SMTP
+		smtpCfg.ToEmail = e
+		html := fmt.Sprintf("<p>%s</p>", body)
+		if link != "" {
+			html += fmt.Sprintf(`<p><a href="%s/requests">View your requests</a></p>`, link)
+		}
+		go func() { _ = s.sendSMTPNotification(smtpCfg, subject, html, body) }()
+	}
+
+	// Personal ntfy topic on the admin's ntfy server.
+	if topic := strings.TrimSpace(u.NotifyNtfyTopic); topic != "" {
+		server := strings.TrimSpace(cfg.Notifications.Ntfy.Server)
+		if server == "" {
+			server = "https://ntfy.sh"
+		}
+		go func() {
+			_ = s.sendNtfyNotification(server, topic, cfg.Notifications.Ntfy.Username, cfg.Notifications.Ntfy.Password, subject, body, "default")
+		}()
+	}
+
+	// Self-contained personal Discord webhook.
+	if wh := strings.TrimSpace(u.NotifyDiscordWebhook); wh != "" {
+		msg := body
+		if link != "" {
+			msg += fmt.Sprintf("\n\n[📋 View your requests](%s/requests)", link)
+		}
+		go func() { _ = s.sendDiscordNotification(wh, "Scriptorum", subject, msg, 0x10b981) }()
+	}
+
+	// Self-contained personal generic webhook.
+	if wh := strings.TrimSpace(u.NotifyWebhookURL); wh != "" {
+		go func() {
+			_ = s.sendWebhookNotification(wh, map[string]any{
+				"event":     "request." + event,
+				"title":     title,
+				"authors":   authors,
+				"requester": u.Username,
+				"timestamp": time.Now().Format(time.RFC3339),
+			})
+		}()
+	}
+}
+
 // SendAvailableNotification announces that a previously-requested title has
 // finished downloading and is now available in the library. It reuses the
 // per-channel "approval" notification toggle, since it is part of the same
@@ -1242,6 +1331,9 @@ func (s *Server) SendAvailableNotification(username, title string, authors []str
 	if cfg.Notifications.Webhook.Enabled && cfg.Notifications.Webhook.EnableApprovalNotifications {
 		s.sendAvailableNotificationWebhook(cfg, username, title, authors)
 	}
+
+	// Also alert the requester on their own configured channels.
+	s.notifyUserPersonal("available", username, title, authors)
 }
 
 // sendAvailableNotificationWebhook posts a generic JSON event for available titles

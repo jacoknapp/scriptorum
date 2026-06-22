@@ -1,0 +1,55 @@
+{{ template "header" . }}
+<div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-6 max-w-2xl">
+	<div class="flex items-center justify-between mb-4">
+		<h1 class="text-xl font-semibold">My notifications</h1>
+	</div>
+	{{ if .Saved }}
+	<div class="mb-4 px-3 py-2 rounded-lg bg-emerald-900/30 text-emerald-200 ring-1 ring-emerald-500/30 text-sm">Settings saved.</div>
+	{{ end }}
+	<p class="text-sm text-slate-400 mb-5">Get alerted on your own channels when one of your requests is approved or becomes available. Leave a field blank to skip that channel.</p>
+
+	<form method="post" action="/account/save" class="grid gap-4">
+		<input type="hidden" name="_csrf_token" value="{{ .CSRFToken }}">
+
+		<fieldset class="border border-white/10 rounded p-4">
+			<legend class="px-1 text-sm font-medium text-slate-200">Notify me when</legend>
+			<label class="inline-flex items-center gap-2">
+				<input type="checkbox" name="notify_on_approved" {{ if and .Account .Account.NotifyOnApproved }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-royal-600 focus:ring-royal-500">
+				<span class="text-sm text-slate-300">A request of mine is approved</span>
+			</label>
+			<label class="inline-flex items-center gap-2 ml-4">
+				<input type="checkbox" name="notify_on_available" {{ if and .Account .Account.NotifyOnAvailable }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-royal-600 focus:ring-royal-500">
+				<span class="text-sm text-slate-300">A request of mine becomes available</span>
+			</label>
+		</fieldset>
+
+		<div>
+			<label class="block text-sm font-medium text-slate-200 mb-1">Email</label>
+			<input type="email" name="email" placeholder="you@example.com" value="{{ if .Account }}{{ .Account.Email }}{{ end }}" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full max-w-md">
+			<div class="text-xs text-slate-400 mt-1">{{ if .SMTPConfigured }}Sent via the server's email setup.{{ else }}Email delivery is unavailable until an admin configures SMTP.{{ end }}</div>
+		</div>
+
+		<div>
+			<label class="block text-sm font-medium text-slate-200 mb-1">ntfy topic</label>
+			<input name="ntfy_topic" placeholder="my-scriptorum-alerts" value="{{ if .Account }}{{ .Account.NotifyNtfyTopic }}{{ end }}" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full max-w-md">
+			<div class="text-xs text-slate-400 mt-1">Subscribe to this topic on <span class="text-slate-300">{{ .NtfyServer }}</span> in the ntfy app.</div>
+		</div>
+
+		<div>
+			<label class="block text-sm font-medium text-slate-200 mb-1">Discord webhook URL</label>
+			<input name="discord_webhook" placeholder="https://discord.com/api/webhooks/..." value="{{ if .Account }}{{ .Account.NotifyDiscordWebhook }}{{ end }}" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full">
+			<div class="text-xs text-slate-400 mt-1">Create a webhook in your Discord server/channel settings and paste it here.</div>
+		</div>
+
+		<div>
+			<label class="block text-sm font-medium text-slate-200 mb-1">Generic webhook URL</label>
+			<input name="webhook_url" placeholder="https://example.com/hooks/me" value="{{ if .Account }}{{ .Account.NotifyWebhookURL }}{{ end }}" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full">
+			<div class="text-xs text-slate-400 mt-1">Receives a JSON POST for each alert (event, title, authors, timestamp).</div>
+		</div>
+
+		<div class="flex justify-end">
+			<button type="submit" class="px-4 py-2 bg-royal-600 text-white rounded hover:bg-royal-500 font-medium">Save</button>
+		</div>
+	</form>
+</div>
+{{ template "footer" . }}

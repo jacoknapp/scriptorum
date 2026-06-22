@@ -333,3 +333,60 @@ func TestPruneAuditEvents(t *testing.T) {
 		t.Fatalf("expected 0 events after prune, got %d", len(events))
 	}
 }
+
+func TestUserNotificationPrefsRoundTrip(t *testing.T) {
+	tdir := t.TempDir()
+	db, err := Open(filepath.Join(tdir, "scriptorum.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer db.Close()
+	if err := db.Migrate(context.Background()); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	id, err := db.CreateUser(context.Background(), "alice", "hash", false, false)
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// Defaults: empty destinations, opt-outs.
+	u, err := db.GetUserByUsername(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if u.Email != "" || u.NotifyOnApproved || u.NotifyOnAvailable {
+		t.Fatalf("expected empty defaults, got %+v", u)
+	}
+
+	if err := db.UpdateUserNotificationPrefs(context.Background(), id, "alice@example.com", "alice-topic", "https://discord/webhook", "https://hook/me", true, true); err != nil {
+		t.Fatalf("update prefs: %v", err)
+	}
+	u, err = db.GetUserByUsername(context.Background(), "alice")
+	if err != nil {
+		t.Fatalf("get after update: %v", err)
+	}
+	if u.Email != "alice@example.com" || u.NotifyNtfyTopic != "alice-topic" || u.NotifyDiscordWebhook != "https://discord/webhook" || u.NotifyWebhookURL != "https://hook/me" || !u.NotifyOnApproved || !u.NotifyOnAvailable {
+		t.Fatalf("prefs not persisted: %+v", u)
+	}
+
+	// SetUserEmailIfEmpty must not overwrite an existing email.
+	if err := db.SetUserEmailIfEmpty(context.Background(), "alice", "other@example.com"); err != nil {
+		t.Fatalf("set email if empty: %v", err)
+	}
+	u, _ = db.GetUserByUsername(context.Background(), "alice")
+	if u.Email != "alice@example.com" {
+		t.Fatalf("expected email unchanged, got %q", u.Email)
+	}
+
+	// But it backfills when empty.
+	id2, _ := db.CreateUser(context.Background(), "bob", "hash", false, false)
+	_ = id2
+	if err := db.SetUserEmailIfEmpty(context.Background(), "bob", "bob@example.com"); err != nil {
+		t.Fatalf("backfill bob: %v", err)
+	}
+	b, _ := db.GetUserByUsername(context.Background(), "bob")
+	if b.Email != "bob@example.com" {
+		t.Fatalf("expected backfilled email, got %q", b.Email)
+	}
+}

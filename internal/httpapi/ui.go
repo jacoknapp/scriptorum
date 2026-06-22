@@ -49,6 +49,8 @@ func (s *Server) mountUI(r chi.Router) {
 			data := map[string]any{"UserName": s.userName(r), "IsAdmin": ses != nil && ses.Admin, "Items": s.buildRequestListItems(r.Context(), items), "FallbackAll": false, "CSRFToken": s.getCSRFToken(r)}
 			_ = u.tpl.ExecuteTemplate(w, "requests.html", data)
 		}))
+		rt.Get("/account", s.requireLogin(u.handleAccount(s)))
+		rt.Post("/account/save", s.requireLogin(u.handleAccountSave(s)))
 		rt.HandleFunc("/users", s.requireAdmin(u.handleUsers(s)))
 		rt.Get("/audit", s.requireAdmin(u.handleAudit(s)))
 		rt.Get("/audit/export", s.requireAdmin(u.handleAuditExport(s)))
@@ -421,6 +423,63 @@ func (u *ui) handleAudit(s *Server) http.HandlerFunc {
 			"Events":   events,
 		}
 		_ = u.tpl.ExecuteTemplate(w, "audit.html", data)
+	}
+}
+
+// handleAccount renders the self-service notification settings page for the
+// currently logged-in user.
+func (u *ui) handleAccount(s *Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ses, _ := r.Context().Value(ctxUser).(*session)
+		if ses == nil {
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		acct, _ := s.db.GetUserByUsername(r.Context(), ses.Username)
+		data := map[string]any{
+			"UserName":  s.userName(r),
+			"IsAdmin":   ses.Admin,
+			"CSRFToken": s.getCSRFToken(r),
+			"Account":   acct,
+			"Saved":     r.URL.Query().Get("saved") == "1",
+			"NtfyServer": func() string {
+				if sv := strings.TrimSpace(s.settings.Get().Notifications.Ntfy.Server); sv != "" {
+					return sv
+				}
+				return "https://ntfy.sh"
+			}(),
+			"SMTPConfigured": strings.TrimSpace(s.settings.Get().Notifications.SMTP.Host) != "",
+		}
+		_ = u.tpl.ExecuteTemplate(w, "account.html", data)
+	}
+}
+
+// handleAccountSave persists the logged-in user's own notification settings.
+func (u *ui) handleAccountSave(s *Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ses, _ := r.Context().Value(ctxUser).(*session)
+		if ses == nil {
+			http.Redirect(w, r, "/login", http.StatusFound)
+			return
+		}
+		acct, err := s.db.GetUserByUsername(r.Context(), ses.Username)
+		if err != nil || acct == nil {
+			http.Error(w, "account not found", http.StatusNotFound)
+			return
+		}
+		_ = r.ParseForm()
+		email := strings.TrimSpace(r.FormValue("email"))
+		ntfyTopic := strings.TrimSpace(r.FormValue("ntfy_topic"))
+		discordWebhook := strings.TrimSpace(r.FormValue("discord_webhook"))
+		webhookURL := strings.TrimSpace(r.FormValue("webhook_url"))
+		onApproved := r.FormValue("notify_on_approved") == "on"
+		onAvailable := r.FormValue("notify_on_available") == "on"
+
+		if err := s.db.UpdateUserNotificationPrefs(r.Context(), acct.ID, email, ntfyTopic, discordWebhook, webhookURL, onApproved, onAvailable); err != nil {
+			http.Error(w, "failed to save settings", http.StatusInternalServerError)
+			return
+		}
+		http.Redirect(w, r, "/account?saved=1", http.StatusFound)
 	}
 }
 
