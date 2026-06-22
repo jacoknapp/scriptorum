@@ -39,11 +39,11 @@ func TestAvailableNotificationFiresOnceOnTransition(t *testing.T) {
 	cfg.Readarr.Ebooks.BaseURL = readarr.URL
 	cfg.Readarr.Ebooks.APIKey = "test-key"
 	cfg.Setup.Completed = true
-	// Enable only the webhook approval channel so the available event is the
+	// Enable only the webhook available channel so the available event is the
 	// only thing that can reach our capture server.
 	cfg.Notifications.Webhook.Enabled = true
 	cfg.Notifications.Webhook.URL = hook.URL
-	cfg.Notifications.Webhook.EnableApprovalNotifications = true
+	cfg.Notifications.Webhook.EnableAvailableNotifications = true
 	if err := config.Save(s.cfgPath, cfg); err != nil {
 		t.Fatalf("save cfg: %v", err)
 	}
@@ -96,4 +96,80 @@ func TestAvailableNotificationFiresOnceOnTransition(t *testing.T) {
 	case <-time.After(500 * time.Millisecond):
 		// success: no duplicate
 	}
+}
+
+// TestGlobalApprovedAvailableTogglesAreIndependent verifies the global admin
+// channels gate approved and available events on separate toggles.
+func TestGlobalApprovedAvailableTogglesAreIndependent(t *testing.T) {
+	type ev = map[string]any
+	newCapture := func() (*httptest.Server, chan ev) {
+		ch := make(chan ev, 4)
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var p ev
+			_ = json.NewDecoder(r.Body).Decode(&p)
+			ch <- p
+			w.WriteHeader(http.StatusOK)
+		}))
+		return srv, ch
+	}
+
+	// Approval-only: approved fires, available does not.
+	t.Run("approval only", func(t *testing.T) {
+		hook, ch := newCapture()
+		defer hook.Close()
+		s := newServerForTest(t)
+		cfg := s.settings.Get()
+		cfg.Notifications.Webhook.Enabled = true
+		cfg.Notifications.Webhook.URL = hook.URL
+		cfg.Notifications.Webhook.EnableApprovalNotifications = true
+		cfg.Notifications.Webhook.EnableAvailableNotifications = false
+		if err := s.settings.Update(cfg); err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		s.SendApprovalNotification("alice", "Book", nil)
+		select {
+		case p := <-ch:
+			if p["event"] != "request.approved" {
+				t.Fatalf("expected request.approved, got %v", p["event"])
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("expected approved webhook")
+		}
+		s.SendAvailableNotification("alice", "Book", nil)
+		select {
+		case p := <-ch:
+			t.Fatalf("did not expect available webhook, got %v", p["event"])
+		case <-time.After(400 * time.Millisecond):
+		}
+	})
+
+	// Available-only: available fires, approved does not.
+	t.Run("available only", func(t *testing.T) {
+		hook, ch := newCapture()
+		defer hook.Close()
+		s := newServerForTest(t)
+		cfg := s.settings.Get()
+		cfg.Notifications.Webhook.Enabled = true
+		cfg.Notifications.Webhook.URL = hook.URL
+		cfg.Notifications.Webhook.EnableApprovalNotifications = false
+		cfg.Notifications.Webhook.EnableAvailableNotifications = true
+		if err := s.settings.Update(cfg); err != nil {
+			t.Fatalf("update: %v", err)
+		}
+		s.SendAvailableNotification("alice", "Book", nil)
+		select {
+		case p := <-ch:
+			if p["event"] != "request.available" {
+				t.Fatalf("expected request.available, got %v", p["event"])
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("expected available webhook")
+		}
+		s.SendApprovalNotification("alice", "Book", nil)
+		select {
+		case p := <-ch:
+			t.Fatalf("did not expect approved webhook, got %v", p["event"])
+		case <-time.After(400 * time.Millisecond):
+		}
+	})
 }

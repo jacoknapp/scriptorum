@@ -172,49 +172,53 @@ type Config struct {
 }
 
 type NtfyConfig struct {
-	Enabled                     bool   `yaml:"enabled"`
-	Server                      string `yaml:"server"`
-	Topic                       string `yaml:"topic"`
-	Username                    string `yaml:"username"`
-	Password                    string `yaml:"password"`
-	EnableRequestNotifications  bool   `yaml:"enable_request_notifications"`
-	EnableApprovalNotifications bool   `yaml:"enable_approval_notifications"`
-	EnableSystemNotifications   bool   `yaml:"enable_system_notifications"`
+	Enabled                      bool   `yaml:"enabled"`
+	Server                       string `yaml:"server"`
+	Topic                        string `yaml:"topic"`
+	Username                     string `yaml:"username"`
+	Password                     string `yaml:"password"`
+	EnableRequestNotifications   bool   `yaml:"enable_request_notifications"`
+	EnableApprovalNotifications  bool   `yaml:"enable_approval_notifications"`
+	EnableAvailableNotifications bool   `yaml:"enable_available_notifications"`
+	EnableSystemNotifications    bool   `yaml:"enable_system_notifications"`
 }
 
 type SMTPConfig struct {
-	Enabled                     bool   `yaml:"enabled"`
-	Host                        string `yaml:"host"`
-	Port                        int    `yaml:"port"`
-	Username                    string `yaml:"username"`
-	Password                    string `yaml:"password"`
-	FromEmail                   string `yaml:"from_email"`
-	FromName                    string `yaml:"from_name"`
-	ToEmail                     string `yaml:"to_email"`
-	EnableTLS                   bool   `yaml:"enable_tls"`
-	EnableRequestNotifications  bool   `yaml:"enable_request_notifications"`
-	EnableApprovalNotifications bool   `yaml:"enable_approval_notifications"`
-	EnableSystemNotifications   bool   `yaml:"enable_system_notifications"`
+	Enabled                      bool   `yaml:"enabled"`
+	Host                         string `yaml:"host"`
+	Port                         int    `yaml:"port"`
+	Username                     string `yaml:"username"`
+	Password                     string `yaml:"password"`
+	FromEmail                    string `yaml:"from_email"`
+	FromName                     string `yaml:"from_name"`
+	ToEmail                      string `yaml:"to_email"`
+	EnableTLS                    bool   `yaml:"enable_tls"`
+	EnableRequestNotifications   bool   `yaml:"enable_request_notifications"`
+	EnableApprovalNotifications  bool   `yaml:"enable_approval_notifications"`
+	EnableAvailableNotifications bool   `yaml:"enable_available_notifications"`
+	EnableSystemNotifications    bool   `yaml:"enable_system_notifications"`
 }
 
 type DiscordConfig struct {
-	Enabled                     bool   `yaml:"enabled"`
-	WebhookURL                  string `yaml:"webhook_url"`
-	Username                    string `yaml:"username"`
-	EnableRequestNotifications  bool   `yaml:"enable_request_notifications"`
-	EnableApprovalNotifications bool   `yaml:"enable_approval_notifications"`
-	EnableSystemNotifications   bool   `yaml:"enable_system_notifications"`
+	Enabled                      bool   `yaml:"enabled"`
+	WebhookURL                   string `yaml:"webhook_url"`
+	Username                     string `yaml:"username"`
+	EnableRequestNotifications   bool   `yaml:"enable_request_notifications"`
+	EnableApprovalNotifications  bool   `yaml:"enable_approval_notifications"`
+	EnableAvailableNotifications bool   `yaml:"enable_available_notifications"`
+	EnableSystemNotifications    bool   `yaml:"enable_system_notifications"`
 }
 
 // WebhookConfig sends a generic JSON POST to any HTTP endpoint, for users who
 // want to pipe Scriptorum events into something not natively supported
 // (n8n, Home Assistant, a custom relay, etc.) rather than a specific chat app.
 type WebhookConfig struct {
-	Enabled                     bool   `yaml:"enabled"`
-	URL                         string `yaml:"url"`
-	EnableRequestNotifications  bool   `yaml:"enable_request_notifications"`
-	EnableApprovalNotifications bool   `yaml:"enable_approval_notifications"`
-	EnableSystemNotifications   bool   `yaml:"enable_system_notifications"`
+	Enabled                      bool   `yaml:"enabled"`
+	URL                          string `yaml:"url"`
+	EnableRequestNotifications   bool   `yaml:"enable_request_notifications"`
+	EnableApprovalNotifications  bool   `yaml:"enable_approval_notifications"`
+	EnableAvailableNotifications bool   `yaml:"enable_available_notifications"`
+	EnableSystemNotifications    bool   `yaml:"enable_system_notifications"`
 }
 
 type ReadarrInstance struct {

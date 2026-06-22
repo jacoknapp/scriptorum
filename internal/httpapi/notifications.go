@@ -444,6 +444,7 @@ func (u *notificationsUI) handleNotificationsSave(s *Server) http.HandlerFunc {
 		}
 		cur.Notifications.Ntfy.EnableRequestNotifications = r.FormValue("ntfy_enable_request_notifications") == "on"
 		cur.Notifications.Ntfy.EnableApprovalNotifications = r.FormValue("ntfy_enable_approval_notifications") == "on"
+		cur.Notifications.Ntfy.EnableAvailableNotifications = r.FormValue("ntfy_enable_available_notifications") == "on"
 		cur.Notifications.Ntfy.EnableSystemNotifications = r.FormValue("ntfy_enable_system_notifications") == "on"
 
 		// Update SMTP settings
@@ -466,6 +467,7 @@ func (u *notificationsUI) handleNotificationsSave(s *Server) http.HandlerFunc {
 		cur.Notifications.SMTP.EnableTLS = r.FormValue("smtp_enable_tls") == "on"
 		cur.Notifications.SMTP.EnableRequestNotifications = r.FormValue("smtp_enable_request_notifications") == "on"
 		cur.Notifications.SMTP.EnableApprovalNotifications = r.FormValue("smtp_enable_approval_notifications") == "on"
+		cur.Notifications.SMTP.EnableAvailableNotifications = r.FormValue("smtp_enable_available_notifications") == "on"
 		cur.Notifications.SMTP.EnableSystemNotifications = r.FormValue("smtp_enable_system_notifications") == "on"
 
 		// Update Discord settings
@@ -476,6 +478,7 @@ func (u *notificationsUI) handleNotificationsSave(s *Server) http.HandlerFunc {
 		}
 		cur.Notifications.Discord.EnableRequestNotifications = r.FormValue("discord_enable_request_notifications") == "on"
 		cur.Notifications.Discord.EnableApprovalNotifications = r.FormValue("discord_enable_approval_notifications") == "on"
+		cur.Notifications.Discord.EnableAvailableNotifications = r.FormValue("discord_enable_available_notifications") == "on"
 		cur.Notifications.Discord.EnableSystemNotifications = r.FormValue("discord_enable_system_notifications") == "on"
 
 		// Update generic webhook settings
@@ -483,6 +486,7 @@ func (u *notificationsUI) handleNotificationsSave(s *Server) http.HandlerFunc {
 		cur.Notifications.Webhook.URL = strings.TrimSpace(r.FormValue("webhook_url"))
 		cur.Notifications.Webhook.EnableRequestNotifications = r.FormValue("webhook_enable_request_notifications") == "on"
 		cur.Notifications.Webhook.EnableApprovalNotifications = r.FormValue("webhook_enable_approval_notifications") == "on"
+		cur.Notifications.Webhook.EnableAvailableNotifications = r.FormValue("webhook_enable_available_notifications") == "on"
 		cur.Notifications.Webhook.EnableSystemNotifications = r.FormValue("webhook_enable_system_notifications") == "on"
 
 		_ = s.settings.Update(&cur)
@@ -1319,16 +1323,16 @@ func (s *Server) SendAvailableNotification(username, title string, authors []str
 	cfg := s.settings.Get()
 	authorsStr := strings.Join(authors, ", ")
 
-	if cfg.Notifications.Ntfy.Enabled && cfg.Notifications.Ntfy.EnableApprovalNotifications {
+	if cfg.Notifications.Ntfy.Enabled && cfg.Notifications.Ntfy.EnableAvailableNotifications {
 		s.sendAvailableNotificationNtfy(cfg, username, title, authorsStr)
 	}
-	if cfg.Notifications.SMTP.Enabled && cfg.Notifications.SMTP.EnableApprovalNotifications {
+	if cfg.Notifications.SMTP.Enabled && cfg.Notifications.SMTP.EnableAvailableNotifications {
 		s.sendAvailableNotificationSMTP(cfg, username, title, authorsStr)
 	}
-	if cfg.Notifications.Discord.Enabled && cfg.Notifications.Discord.EnableApprovalNotifications {
+	if cfg.Notifications.Discord.Enabled && cfg.Notifications.Discord.EnableAvailableNotifications {
 		s.sendAvailableNotificationDiscord(cfg, username, title, authorsStr)
 	}
-	if cfg.Notifications.Webhook.Enabled && cfg.Notifications.Webhook.EnableApprovalNotifications {
+	if cfg.Notifications.Webhook.Enabled && cfg.Notifications.Webhook.EnableAvailableNotifications {
 		s.sendAvailableNotificationWebhook(cfg, username, title, authors)
 	}
 
