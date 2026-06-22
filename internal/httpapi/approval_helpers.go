@@ -31,6 +31,11 @@ func (s *Server) completeRequestFromCatalogMatch(ctx context.Context, req *db.Re
 		return sql.ErrNoRows
 	}
 
+	// Capture the prior availability so we can fire a one-time "now available"
+	// notification only on the transition into "available" (subsequent syncs
+	// see the persisted "available" status and won't re-notify).
+	wasAvailable := strings.EqualFold(strings.TrimSpace(req.ExternalStatus), "available")
+
 	externalStatus := match.Availability()
 	reason := "already in Readarr" + reasonSuffix
 
@@ -59,6 +64,10 @@ func (s *Server) completeRequestFromCatalogMatch(ctx context.Context, req *db.Re
 	}
 	if notify {
 		s.SendApprovalNotification(req.RequesterEmail, req.Title, req.Authors)
+	}
+	if !wasAvailable && externalStatus == "available" {
+		s.auditLog(ctx, "system", "request.available", &req.ID, req.Title)
+		s.SendAvailableNotification(req.RequesterEmail, req.Title, req.Authors)
 	}
 	return nil
 }

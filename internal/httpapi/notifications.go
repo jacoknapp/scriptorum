@@ -1222,6 +1222,158 @@ func (s *Server) sendApprovalNotificationDiscord(cfg *config.Config, username, t
 	}()
 }
 
+// SendAvailableNotification announces that a previously-requested title has
+// finished downloading and is now available in the library. It reuses the
+// per-channel "approval" notification toggle, since it is part of the same
+// request-fulfillment lifecycle (approved -> available).
+func (s *Server) SendAvailableNotification(username, title string, authors []string) {
+	cfg := s.settings.Get()
+	authorsStr := strings.Join(authors, ", ")
+
+	if cfg.Notifications.Ntfy.Enabled && cfg.Notifications.Ntfy.EnableApprovalNotifications {
+		s.sendAvailableNotificationNtfy(cfg, username, title, authorsStr)
+	}
+	if cfg.Notifications.SMTP.Enabled && cfg.Notifications.SMTP.EnableApprovalNotifications {
+		s.sendAvailableNotificationSMTP(cfg, username, title, authorsStr)
+	}
+	if cfg.Notifications.Discord.Enabled && cfg.Notifications.Discord.EnableApprovalNotifications {
+		s.sendAvailableNotificationDiscord(cfg, username, title, authorsStr)
+	}
+	if cfg.Notifications.Webhook.Enabled && cfg.Notifications.Webhook.EnableApprovalNotifications {
+		s.sendAvailableNotificationWebhook(cfg, username, title, authors)
+	}
+}
+
+// sendAvailableNotificationWebhook posts a generic JSON event for available titles
+func (s *Server) sendAvailableNotificationWebhook(cfg *config.Config, username, title string, authors []string) {
+	go func() {
+		_ = s.sendWebhookNotification(cfg.Notifications.Webhook.URL, map[string]any{
+			"event":     "request.available",
+			"title":     title,
+			"authors":   authors,
+			"requester": username,
+			"timestamp": time.Now().Format(time.RFC3339),
+		})
+	}()
+}
+
+// sendAvailableNotificationNtfy sends ntfy notification for available titles
+func (s *Server) sendAvailableNotificationNtfy(cfg *config.Config, username, title, authorsStr string) {
+	message := fmt.Sprintf("📗 **%s**", title)
+	if authorsStr != "" {
+		message += fmt.Sprintf("\n👤 *by %s*", authorsStr)
+	}
+	message += fmt.Sprintf("\n📥 **Now available** for: **%s**", username)
+	message += "\n\n🎧 *Your book has finished downloading and is ready to read.*"
+
+	currentCfg := s.settings.Get()
+	actions := []map[string]string{
+		{
+			"action": "view",
+			"label":  "📋 View All Requests",
+			"url":    currentCfg.ServerURL + "/requests",
+		},
+	}
+
+	go func() {
+		_ = s.sendNtfyNotificationWithActions(
+			cfg.Notifications.Ntfy.Server,
+			cfg.Notifications.Ntfy.Topic,
+			cfg.Notifications.Ntfy.Username,
+			cfg.Notifications.Ntfy.Password,
+			"📗 Book Available",
+			message,
+			"default",
+			actions,
+		)
+	}()
+}
+
+// sendAvailableNotificationSMTP sends email notification for available titles
+func (s *Server) sendAvailableNotificationSMTP(cfg *config.Config, username, title, authorsStr string) {
+	subject := "📗 Book Available - Scriptorum"
+
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+	<title>Book Available</title>
+	<style>
+		body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #333; margin: 0; padding: 20px; }
+		.container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); }
+		.header { background: #10b981; color: white; padding: 20px; text-align: center; }
+		.content { padding: 20px; }
+		.book-info { background: #f0fdf4; padding: 15px; border-radius: 6px; margin: 15px 0; border-left: 4px solid #10b981; }
+		.actions { text-align: center; margin: 20px 0; }
+		.button { display: inline-block; padding: 10px 20px; margin: 0 5px; text-decoration: none; border-radius: 5px; font-weight: bold; background: #6b7280; color: white; }
+	</style>
+</head>
+<body>
+	<div class="container">
+		<div class="header">
+			<h1>📗 Book Available</h1>
+		</div>
+		<div class="content">
+			<div class="book-info">
+				<h2>%s</h2>
+				%s
+				<p><strong>📥 Now available for:</strong> %s</p>
+				<p>🎧 <em>Your book has finished downloading and is ready to read.</em></p>
+			</div>
+			<div class="actions">
+				<a href="%s/requests" class="button">📋 View All Requests</a>
+			</div>
+		</div>
+	</div>
+</body>
+</html>`, title,
+		func() string {
+			if authorsStr != "" {
+				return fmt.Sprintf("<p><strong>👤 Author(s):</strong> %s</p>", authorsStr)
+			}
+			return ""
+		}(),
+		username, s.cfg.ServerURL)
+
+	textBody := fmt.Sprintf(`📗 Book Available - Scriptorum
+
+%s
+%s📥 Now available for: %s
+
+🎧 Your book has finished downloading and is ready to read.
+
+View All Requests: %s/requests`,
+		title,
+		func() string {
+			if authorsStr != "" {
+				return fmt.Sprintf("👤 Author(s): %s\n", authorsStr)
+			}
+			return ""
+		}(),
+		username, s.cfg.ServerURL)
+
+	go func() {
+		_ = s.sendSMTPNotification(cfg.Notifications.SMTP, subject, htmlBody, textBody)
+	}()
+}
+
+// sendAvailableNotificationDiscord sends Discord notification for available titles
+func (s *Server) sendAvailableNotificationDiscord(cfg *config.Config, username, title, authorsStr string) {
+	embedTitle := "📗 Book Available"
+	message := fmt.Sprintf("📗 **%s**", title)
+	if authorsStr != "" {
+		message += fmt.Sprintf("\n👤 **Author(s):** %s", authorsStr)
+	}
+	message += fmt.Sprintf("\n📥 **Now available for:** %s", username)
+	message += "\n\n🎧 *Your book has finished downloading and is ready to read.*"
+	message += "\n\n[📋 View All Requests](" + s.cfg.ServerURL + "/requests)"
+
+	color := 0x10b981 // Green for available
+
+	go func() {
+		_ = s.sendDiscordNotification(cfg.Notifications.Discord.WebhookURL, cfg.Notifications.Discord.Username, embedTitle, message, color)
+	}()
+}
+
 // SendSystemNotification sends a system notification
 func (s *Server) SendSystemNotification(title, message string) {
 	cfg := s.settings.Get()
