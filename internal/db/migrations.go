@@ -70,6 +70,20 @@ CREATE TABLE IF NOT EXISTS users (
 		return err
 	}
 
+	// Per-user notification preferences (self-service account settings).
+	for _, col := range []struct{ name, def string }{
+		{"email", "TEXT"},
+		{"notify_ntfy_topic", "TEXT"},
+		{"notify_discord_webhook", "TEXT"},
+		{"notify_webhook_url", "TEXT"},
+		{"notify_on_approved", "INTEGER NOT NULL DEFAULT 0"},
+		{"notify_on_available", "INTEGER NOT NULL DEFAULT 0"},
+	} {
+		if err := d.ensureUserColumn(ctx, col.name, col.def); err != nil {
+			return err
+		}
+	}
+
 	// Readarr caching tables
 	if err := d.Exec(ctx, `
 CREATE TABLE IF NOT EXISTS readarr_cache (

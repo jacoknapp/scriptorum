@@ -79,6 +79,10 @@
 								<span class="text-sm text-slate-300">Approval notifications</span>
 							</label>
 							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="ntfy_enable_available_notifications" value="on" {{ if .Notifications.Ntfy.EnableAvailableNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">Available notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
 								<input type="checkbox" name="ntfy_enable_system_notifications" value="on" {{ if .Notifications.Ntfy.EnableSystemNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
 								<span class="text-sm text-slate-300">System notifications</span>
 							</label>
@@ -141,6 +145,10 @@
 								<span class="text-sm text-slate-300">Approval notifications</span>
 							</label>
 							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="smtp_enable_available_notifications" value="on" {{ if .Notifications.SMTP.EnableAvailableNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">Available notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
 								<input type="checkbox" name="smtp_enable_system_notifications" value="on" {{ if .Notifications.SMTP.EnableSystemNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
 								<span class="text-sm text-slate-300">System notifications</span>
 							</label>
@@ -179,6 +187,10 @@
 								<span class="text-sm text-slate-300">Approval notifications</span>
 							</label>
 							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="discord_enable_available_notifications" value="on" {{ if .Notifications.Discord.EnableAvailableNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">Available notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
 								<input type="checkbox" name="discord_enable_system_notifications" value="on" {{ if .Notifications.Discord.EnableSystemNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
 								<span class="text-sm text-slate-300">System notifications</span>
 							</label>
@@ -209,6 +221,10 @@
 							<label class="inline-flex items-center gap-2 ml-4">
 								<input type="checkbox" name="webhook_enable_approval_notifications" value="on" {{ if .Notifications.Webhook.EnableApprovalNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
 								<span class="text-sm text-slate-300">Approval notifications</span>
+							</label>
+							<label class="inline-flex items-center gap-2 ml-4">
+								<input type="checkbox" name="webhook_enable_available_notifications" value="on" {{ if .Notifications.Webhook.EnableAvailableNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">
+								<span class="text-sm text-slate-300">Available notifications</span>
 							</label>
 							<label class="inline-flex items-center gap-2 ml-4">
 								<input type="checkbox" name="webhook_enable_system_notifications" value="on" {{ if .Notifications.Webhook.EnableSystemNotifications }}checked{{ end }} class="rounded border-white/10 bg-night-900 text-purple-600 focus:ring-purple-500">

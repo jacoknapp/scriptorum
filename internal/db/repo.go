@@ -326,6 +326,34 @@ type User struct {
 	IsAdmin     bool
 	AutoApprove bool
 	Created     time.Time
+	// Per-user notification preferences. Email/topic/webhooks are the personal
+	// destinations; the two flags opt the user into approved/available alerts.
+	Email                string
+	NotifyNtfyTopic      string
+	NotifyDiscordWebhook string
+	NotifyWebhookURL     string
+	NotifyOnApproved     bool
+	NotifyOnAvailable    bool
+}
+
+// userColumns is the shared SELECT list for the full User shape. COALESCE keeps
+// it forward-compatible with rows created before the notification columns were
+// added.
+const userColumns = `id, created_at, username, password_hash, is_admin, COALESCE(auto_approve,0), COALESCE(email,''), COALESCE(notify_ntfy_topic,''), COALESCE(notify_discord_webhook,''), COALESCE(notify_webhook_url,''), COALESCE(notify_on_approved,0), COALESCE(notify_on_available,0)`
+
+func scanUser(sc rowScanner) (User, error) {
+	var u User
+	var created string
+	var isAdminInt, autoApproveInt, onApprovedInt, onAvailableInt int
+	if err := sc.Scan(&u.ID, &created, &u.Username, &u.Hash, &isAdminInt, &autoApproveInt, &u.Email, &u.NotifyNtfyTopic, &u.NotifyDiscordWebhook, &u.NotifyWebhookURL, &onApprovedInt, &onAvailableInt); err != nil {
+		return u, err
+	}
+	u.IsAdmin = isAdminInt == 1
+	u.AutoApprove = autoApproveInt == 1
+	u.NotifyOnApproved = onApprovedInt == 1
+	u.NotifyOnAvailable = onAvailableInt == 1
+	u.Created, _ = time.Parse(time.RFC3339Nano, created)
+	return u, nil
 }
 
 func (d *DB) CreateUser(ctx context.Context, username, passwordHash string, isAdmin bool, autoApprove bool) (int64, error) {
@@ -341,17 +369,11 @@ VALUES (?, ?, ?, ?, ?)`, now.Format(time.RFC3339Nano), strings.ToLower(username)
 }
 
 func (d *DB) GetUserByUsername(ctx context.Context, username string) (*User, error) {
-	row := d.sql.QueryRowContext(ctx, `SELECT id, created_at, username, password_hash, is_admin, COALESCE(auto_approve, 0) FROM users WHERE username=?`, strings.ToLower(username))
-	var u User
-	var created string
-	var isAdminInt int
-	var autoApproveInt int
-	if err := row.Scan(&u.ID, &created, &u.Username, &u.Hash, &isAdminInt, &autoApproveInt); err != nil {
+	row := d.sql.QueryRowContext(ctx, `SELECT `+userColumns+` FROM users WHERE username=?`, strings.ToLower(username))
+	u, err := scanUser(row)
+	if err != nil {
 		return nil, err
 	}
-	u.IsAdmin = isAdminInt == 1
-	u.AutoApprove = autoApproveInt == 1
-	u.Created, _ = time.Parse(time.RFC3339Nano, created)
 	return &u, nil
 }
 
@@ -365,26 +387,20 @@ func (d *DB) CountAdmins(ctx context.Context) (int, error) {
 }
 
 func (d *DB) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := d.sql.QueryContext(ctx, `SELECT id, created_at, username, password_hash, is_admin, COALESCE(auto_approve, 0) FROM users ORDER BY id DESC`)
+	rows, err := d.sql.QueryContext(ctx, `SELECT `+userColumns+` FROM users ORDER BY id DESC`)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []User
 	for rows.Next() {
-		var u User
-		var created string
-		var isAdminInt int
-		var autoApproveInt int
-		if err := rows.Scan(&u.ID, &created, &u.Username, &u.Hash, &isAdminInt, &autoApproveInt); err != nil {
+		u, err := scanUser(rows)
+		if err != nil {
 			return nil, err
 		}
-		u.Created, _ = time.Parse(time.RFC3339Nano, created)
-		u.IsAdmin = isAdminInt == 1
-		u.AutoApprove = autoApproveInt == 1
 		out = append(out, u)
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 func (d *DB) DeleteUser(ctx context.Context, id int64) error {
@@ -399,6 +415,33 @@ func (d *DB) SetUserAdmin(ctx context.Context, id int64, isAdmin bool) error {
 
 func (d *DB) SetUserAutoApprove(ctx context.Context, id int64, autoApprove bool) error {
 	_, err := d.sql.ExecContext(ctx, `UPDATE users SET auto_approve=? WHERE id=?`, boolToInt(autoApprove), id)
+	return err
+}
+
+// UpdateUserNotificationPrefs persists a user's self-service notification
+// destinations and per-event opt-ins.
+func (d *DB) UpdateUserNotificationPrefs(ctx context.Context, id int64, email, ntfyTopic, discordWebhook, webhookURL string, onApproved, onAvailable bool) error {
+	_, err := d.sql.ExecContext(ctx, `
+UPDATE users
+SET email=?, notify_ntfy_topic=?, notify_discord_webhook=?, notify_webhook_url=?, notify_on_approved=?, notify_on_available=?
+WHERE id=?`,
+		strings.TrimSpace(email), strings.TrimSpace(ntfyTopic), strings.TrimSpace(discordWebhook), strings.TrimSpace(webhookURL),
+		boolToInt(onApproved), boolToInt(onAvailable), id,
+	)
+	return err
+}
+
+// SetUserEmailIfEmpty backfills a user's email (e.g. from an OIDC claim) without
+// overwriting one the user has already set.
+func (d *DB) SetUserEmailIfEmpty(ctx context.Context, username, email string) error {
+	email = strings.TrimSpace(email)
+	if email == "" {
+		return nil
+	}
+	_, err := d.sql.ExecContext(ctx, `
+UPDATE users SET email=? WHERE username=? AND (email IS NULL OR TRIM(email)='')`,
+		email, strings.ToLower(username),
+	)
 	return err
 }
 
