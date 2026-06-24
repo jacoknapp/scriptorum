@@ -91,6 +91,7 @@ type settingsUI struct{ tpl *template.Template }
 func (u *settingsUI) handleSettings(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfg := s.settings.Get()
+		events, _ := s.db.ListAuditEvents(r.Context(), 200)
 		data := map[string]any{
 			"Cfg":                        cfg,
 			"UserName":                   s.userName(r),
@@ -99,6 +100,7 @@ func (u *settingsUI) handleSettings(s *Server) http.HandlerFunc {
 			"ReadarrSync":                s.readarrSyncView(),
 			"DiscoveryLanguageOptions":   discoveryLanguageOptions,
 			"DiscoveryLanguageSelection": discoveryLanguageSelectedMap(cfg.Discovery.Languages),
+			"Events":                     events,
 		}
 		_ = u.tpl.ExecuteTemplate(w, "settings.html", data)
 	}

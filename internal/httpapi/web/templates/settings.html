@@ -1,6 +1,11 @@
 {{ template "header" . }}
 <div class="bg-night-800 rounded-xl2 shadow-card ring-1 ring-white/10 p-5">
 	<h1 class="text-xl font-semibold mb-4">Settings</h1>
+	<div class="flex gap-2 mb-6 border-b border-white/10 pb-3">
+		<button type="button" data-settings-tab="config" class="px-4 py-2 rounded-lg text-sm bg-royal-600 text-white">Configuration</button>
+		<button type="button" data-settings-tab="audit" class="px-4 py-2 rounded-lg text-sm bg-night-700/50 text-slate-100 ring-1 ring-white/10 hover:bg-night-700">Audit Log</button>
+	</div>
+	<div data-settings-panel="config">
 	<form method="post" action="/settings/save" class="grid gap-6">
 		<input type="hidden" name="_csrf_token" value="{{.CSRFToken}}">
 
@@ -192,8 +197,24 @@
 			</section>
 		</div>
 	</form>
+	</div>
+	<div data-settings-panel="audit" class="hidden">
+		{{ template "audit_panel" . }}
+	</div>
 </div>
 <script>
+document.querySelectorAll('[data-settings-tab]').forEach(btn => {
+	btn.addEventListener('click', () => {
+		document.querySelectorAll('[data-settings-tab]').forEach(b => {
+			b.classList.remove('bg-royal-600', 'text-white');
+			b.classList.add('bg-night-700/50', 'text-slate-100', 'ring-1', 'ring-white/10', 'hover:bg-night-700');
+		});
+		btn.classList.remove('bg-night-700/50', 'text-slate-100', 'ring-1', 'ring-white/10', 'hover:bg-night-700');
+		btn.classList.add('bg-royal-600', 'text-white');
+		document.querySelectorAll('[data-settings-panel]').forEach(p => p.classList.add('hidden'));
+		document.querySelector('[data-settings-panel="' + btn.dataset.settingsTab + '"]').classList.remove('hidden');
+	});
+});
 // populate Readarr quality profile selects
 async function loadQPs(kind, selId, serverDefault) {
 	const sel = document.getElementById(selId);
