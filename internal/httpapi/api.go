@@ -964,15 +964,15 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 		// Create a DB request so the user can track it in the requests list.
 		u := r.Context().Value(ctxUser).(*session)
 		req := &db.Request{
-			RequesterEmail:  strings.ToLower(u.Username),
-			Title:           p.Title,
-			Authors:         p.Authors,
-			ISBN10:          p.ISBN10,
-			ISBN13:          p.ISBN13,
-			Format:          format,
-			Status:          "queued",
-			StatusReason:    fmt.Sprintf("already in Readarr (%s); search triggered", status),
-			ExternalStatus:  status,
+			RequesterEmail:   strings.ToLower(u.Username),
+			Title:            p.Title,
+			Authors:          p.Authors,
+			ISBN10:           p.ISBN10,
+			ISBN13:           p.ISBN13,
+			Format:           format,
+			Status:           "queued",
+			StatusReason:     fmt.Sprintf("already in Readarr (%s); search triggered", status),
+			ExternalStatus:   status,
 			MatchedReadarrID: match.ReadarrID,
 		}
 		if strings.TrimSpace(p.ProviderPayload) != "" {

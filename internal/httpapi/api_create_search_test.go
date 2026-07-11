@@ -108,7 +108,7 @@ func TestCreateRequestEnablesMonitoringAndSearchesUnmonitoredMatch(t *testing.T)
 	})
 
 	rec := postCreateRequest(t, s, false)
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusCreated {
 		t.Fatalf("create code=%d body=%s", rec.Code, rec.Body.String())
 	}
 
@@ -116,8 +116,8 @@ func TestCreateRequestEnablesMonitoringAndSearchesUnmonitoredMatch(t *testing.T)
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode resp: %v body=%s", err, rec.Body.String())
 	}
-	if resp["status"] != "searching" {
-		t.Fatalf("expected status searching, got %v", resp["status"])
+	if resp["status"] != "queued" {
+		t.Fatalf("expected status queued, got %v", resp["status"])
 	}
 	if resp["external_status"] != "monitored" {
 		t.Fatalf("expected external_status monitored, got %v", resp["external_status"])
@@ -130,6 +130,21 @@ func TestCreateRequestEnablesMonitoringAndSearchesUnmonitoredMatch(t *testing.T)
 	}
 	if stub.addPOSTs.Load() != 0 {
 		t.Fatalf("expected no add calls for an existing title, got %d", stub.addPOSTs.Load())
+	}
+
+	// A DB request should have been created so the user can track it.
+	items, err := s.db.ListRequests(context.Background(), "user", 10)
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 request to be created, got %d", len(items))
+	}
+	if items[0].Status != "queued" {
+		t.Fatalf("expected created request status queued, got %s", items[0].Status)
+	}
+	if items[0].MatchedReadarrID != 77 {
+		t.Fatalf("expected matched readarr id 77, got %d", items[0].MatchedReadarrID)
 	}
 }
 
@@ -148,7 +163,7 @@ func TestCreateRequestSearchesAlreadyMonitoredMatchWithoutRemonitoring(t *testin
 	})
 
 	rec := postCreateRequest(t, s, false)
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusCreated {
 		t.Fatalf("create code=%d body=%s", rec.Code, rec.Body.String())
 	}
 	if stub.monitorPUTs.Load() != 0 {
@@ -174,7 +189,7 @@ func TestCreateRequestHXReturnsSearchNotice(t *testing.T) {
 	})
 
 	rec := postCreateRequest(t, s, true)
-	if rec.Code != http.StatusOK {
+	if rec.Code != http.StatusCreated {
 		t.Fatalf("create code=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
