@@ -512,7 +512,14 @@ func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
 	}
 	if raw, err := json.Marshal(result); err == nil {
 		if cover := s.requestCoverFromPayload(format, raw); cover != "" {
-			result["cover"] = cover
+			isbn10, isbn13, _ := extractIdentifiers(pick)
+			if isbn13 == "" {
+				isbn13, _ = in["isbn13"].(string)
+			}
+			if isbn10 == "" {
+				isbn10, _ = in["isbn10"].(string)
+			}
+			result["cover"] = appendCoverIsbnFallback(cover, isbn13, isbn10)
 		}
 	}
 	if !hasDetailedBookDescription(result) || isBlankJSONValue(result["cover"]) {

@@ -239,19 +239,19 @@ func requestListMatchedBookKey(format string, readarrID int64) string {
 func (s *Server) requestListCoverData(req db.Request, matchedBooks map[string]db.ReadarrBook) string {
 	if cover := strings.TrimSpace(req.CoverURL); cover != "" {
 		if normalized := s.normalizeRequestCover(req.Format, cover); normalized != "" {
-			return normalized
+			return appendCoverIsbnFallback(normalized, req.ISBN13, req.ISBN10)
 		}
 	}
 	if cover := s.requestCoverFromPayload(req.Format, req.ReadarrResp); cover != "" {
-		return cover
+		return appendCoverIsbnFallback(cover, req.ISBN13, req.ISBN10)
 	}
 	if cover := s.requestCoverFromPayload(req.Format, req.ReadarrReq); cover != "" {
-		return cover
+		return appendCoverIsbnFallback(cover, req.ISBN13, req.ISBN10)
 	}
 	if key := requestListMatchedBookKey(req.Format, req.MatchedReadarrID); key != "" {
 		if book, ok := matchedBooks[key]; ok && len(book.ReadarrData) > 0 {
 			if cover := s.requestCoverFromPayload(req.Format, book.ReadarrData); cover != "" {
-				return cover
+				return appendCoverIsbnFallback(cover, req.ISBN13, req.ISBN10)
 			}
 		}
 	}

@@ -301,6 +301,8 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 						cover = strings.TrimRight(instE.BaseURL, "/") + cover
 					}
 					cover = s.normalizeRequestCover("ebook", cover)
+					lbIsbn10, lbIsbn13, _ := extractIdentifiers(b)
+					cover = appendCoverIsbnFallback(cover, lbIsbn13, lbIsbn10)
 					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover, Series: b.SeriesTitle}, Provider: "readarr-ebook"}, true, string(cjson))
 				}
 			}
@@ -370,6 +372,8 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 						cover = strings.TrimRight(instA.BaseURL, "/") + cover
 					}
 					cover = s.normalizeRequestCover("audiobook", cover)
+					lbIsbn10, lbIsbn13, _ := extractIdentifiers(b)
+					cover = appendCoverIsbnFallback(cover, lbIsbn13, lbIsbn10)
 					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover, Series: b.SeriesTitle}, Provider: "readarr-audiobook"}, false, string(cjson))
 				}
 			}
@@ -1119,7 +1123,9 @@ func cachedCatalogState(stateCache map[string]string, s *Server, kind, title str
 
 // serveReadarrCover returns a handler that fetches a remote image and streams
 // it directly to the client on every request (no on-disk caching). Query
-// param: u=<image-absolute-url>
+// params: u=<image-absolute-url>, isbn=<isbn10-or-13> (optional; used to
+// redirect to an OpenLibrary cover when the Readarr fetch fails, e.g. when a
+// reverse-proxy in front of Readarr rejects MediaCoverProxy requests).
 func (s *Server) serveReadarrCover() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		remote := strings.TrimSpace(r.URL.Query().Get("u"))
@@ -1127,6 +1133,7 @@ func (s *Server) serveReadarrCover() http.HandlerFunc {
 			http.Error(w, "missing url", http.StatusBadRequest)
 			return
 		}
+		fallback := openLibraryCoverFallbackURL(r.URL.Query().Get("isbn"))
 		// validate URL
 		ru, err := url.Parse(remote)
 		if err != nil || !(ru.Scheme == "http" || ru.Scheme == "https") {
@@ -1166,11 +1173,19 @@ func (s *Server) serveReadarrCover() http.HandlerFunc {
 
 		resp, err := client.Do(req)
 		if err != nil {
+			if fallback != "" {
+				http.Redirect(w, r, fallback, http.StatusFound)
+				return
+			}
 			http.Error(w, "fetch error", http.StatusBadGateway)
 			return
 		}
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
+			if fallback != "" {
+				http.Redirect(w, r, fallback, http.StatusFound)
+				return
+			}
 			http.Error(w, "remote not ok", http.StatusBadGateway)
 			return
 		}
@@ -1193,6 +1208,40 @@ func (s *Server) serveReadarrCover() http.HandlerFunc {
 		lr := io.LimitReader(resp.Body, maxCoverBytes)
 		_, _ = io.Copy(w, lr)
 	}
+}
+
+// openLibraryCoverFallbackURL returns an OpenLibrary cover URL for a valid
+// ISBN-10/13, or "" when the input isn't a usable ISBN. default=false makes
+// OpenLibrary 404 on missing covers so the client's onerror placeholder logic
+// still runs instead of rendering a blank image.
+func openLibraryCoverFallbackURL(isbn string) string {
+	cleaned := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(isbn), "-", ""))
+	if len(cleaned) != 10 && len(cleaned) != 13 {
+		return ""
+	}
+	for _, r := range cleaned {
+		if (r < '0' || r > '9') && r != 'X' {
+			return ""
+		}
+	}
+	return "https://covers.openlibrary.org/b/isbn/" + cleaned + "-M.jpg?default=false"
+}
+
+// appendCoverIsbnFallback attaches an isbn fallback parameter to covers served
+// through the /ui/readarr-cover proxy so the proxy can recover from upstream
+// failures by redirecting to OpenLibrary.
+func appendCoverIsbnFallback(cover, isbn13, isbn10 string) string {
+	if !strings.HasPrefix(cover, "/ui/readarr-cover?") {
+		return cover
+	}
+	isbn := strings.TrimSpace(isbn13)
+	if isbn == "" {
+		isbn = strings.TrimSpace(isbn10)
+	}
+	if openLibraryCoverFallbackURL(isbn) == "" {
+		return cover
+	}
+	return cover + "&isbn=" + url.QueryEscape(isbn)
 }
 
 func (s *Server) readarrInstanceForRemoteCoverURL(remote string) (providers.ReadarrInstance, bool) {
