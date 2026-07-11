@@ -939,8 +939,9 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// The title exists in Readarr but isn't downloaded yet. Rather than
-		// rejecting the request, make sure it's monitored and trigger a search.
+		// The title exists in Readarr but isn't downloaded yet. Make sure it's
+		// monitored and trigger a search, then create a DB request so the user
+		// can track progress.
 		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 		defer cancel()
 		status, serr := s.ensureReadarrMonitoredAndSearch(ctx, format, match)
@@ -960,19 +961,39 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		msg := fmt.Sprintf("already in Readarr (%s); monitoring enabled and search triggered", status)
+		// Create a DB request so the user can track it in the requests list.
+		u := r.Context().Value(ctxUser).(*session)
+		req := &db.Request{
+			RequesterEmail:  strings.ToLower(u.Username),
+			Title:           p.Title,
+			Authors:         p.Authors,
+			ISBN10:          p.ISBN10,
+			ISBN13:          p.ISBN13,
+			Format:          format,
+			Status:          "queued",
+			StatusReason:    fmt.Sprintf("already in Readarr (%s); search triggered", status),
+			ExternalStatus:  status,
+			MatchedReadarrID: match.ReadarrID,
+		}
+		if strings.TrimSpace(p.ProviderPayload) != "" {
+			req.ReadarrReq = json.RawMessage([]byte(p.ProviderPayload))
+			req.CoverURL = s.requestCoverFromPayload(format, req.ReadarrReq)
+		}
+		id, _ := s.db.CreateRequest(r.Context(), req)
+
 		if isHX {
+			w.Header().Set("HX-Trigger", `{"request:created": {"id": `+strconv.FormatInt(id, 10)+`}}`)
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`<li class="p-3 bg-emerald-50 text-emerald-700 rounded mb-2">This title is already in Readarr — monitoring enabled and a search has been triggered.</li>`))
+			w.WriteHeader(http.StatusCreated)
+			w.Write([]byte(`<li class="p-3 bg-emerald-50 text-emerald-700 rounded mb-2">Request submitted (ID ` + strconv.FormatInt(id, 10) + `). Already in Readarr — a search has been triggered. <a class="underline text-emerald-800" href="/requests">View in Requests</a></li>`))
 			return
 		}
 		writeJSON(w, map[string]any{
-			"status":          "searching",
-			"message":         msg,
+			"id":              id,
+			"status":          "queued",
 			"external_status": status,
 			"readarr_id":      match.ReadarrID,
-		}, http.StatusOK)
+		}, http.StatusCreated)
 		return
 	}
 

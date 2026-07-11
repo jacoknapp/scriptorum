@@ -588,13 +588,16 @@
 
 				var resp = await fetch('/api/v1/requests', { method: 'POST', body: JSON.stringify(payload), headers: { 'HX-Request':'true', 'Content-Type':'application/json' }, credentials: 'same-origin' });
 				if (ind) ind.style.display = 'none';
-				if (resp.ok) {
+				if (resp.status === 201) {
 					setRequestButtonState(btn, format, 'requested');
 					scriptorumShowToast('Request submitted. Open Requests to view.');
 					var tbl = document.querySelector('#req-table');
 					if (tbl) {
 						try { const html = await fetch('/ui/requests/table', { credentials: 'same-origin' }).then(r=>r.text()); tbl.innerHTML = html; } catch {}
 					}
+				} else if (resp.status === 200) {
+					setRequestButtonState(btn, format, 'requested');
+					scriptorumShowToast('Already in Readarr — search triggered.');
 				} else if (resp.status === 302 || resp.redirected) {
 					scriptorumShowToast('Not signed in. Please log in.', 'bg-amber-50 text-amber-800 ring-1 ring-amber-200');
 					btn.classList.remove('opacity-60','pointer-events-none');
@@ -647,8 +650,7 @@
 			var ind = li && li.querySelector('.req-ind');
 			if (ind) ind.style.display = 'none';
 			
-			if (event.detail.xhr.status >= 200 && event.detail.xhr.status < 300) {
-				// Success
+			if (event.detail.xhr.status === 201) {
 				setRequestButtonState(btn, format, 'requested');
 				scriptorumShowToast('Request submitted. Open Requests to view.');
 				// Trigger refresh of requests table
@@ -656,6 +658,9 @@
 				if (reqTable && window.htmx) {
 					htmx.trigger(reqTable, 'refresh');
 				}
+			} else if (event.detail.xhr.status === 200) {
+				setRequestButtonState(btn, format, 'requested');
+				scriptorumShowToast('Already in Readarr — search triggered.');
 			} else if (event.detail.xhr.status === 302 || event.detail.xhr.status === 401) {
 				scriptorumShowToast('Not signed in. Please log in.', 'bg-amber-50 text-amber-800 ring-1 ring-amber-200');
 				btn.classList.remove('opacity-60','pointer-events-none');
@@ -714,7 +719,7 @@
 				});
 				
 				if (ind) ind.style.display = 'none';
-				if (resp.ok) {
+				if (resp.status === 201) {
 					setRequestButtonState(btn, format, 'requested');
 					scriptorumShowToast('Request submitted. Open Requests to view.');
 					// Trigger HTMX refresh of requests table if it exists
@@ -722,6 +727,9 @@
 					if (reqTable && window.htmx) {
 						htmx.trigger(reqTable, 'refresh');
 					}
+				} else if (resp.status === 200) {
+					setRequestButtonState(btn, format, 'requested');
+					scriptorumShowToast('Already in Readarr — search triggered.');
 				} else if (resp.status === 302 || resp.redirected) {
 					scriptorumShowToast('Not signed in. Please log in.', 'bg-amber-50 text-amber-800 ring-1 ring-amber-200');
 					btn.classList.remove('opacity-60','pointer-events-none');
@@ -1277,12 +1285,16 @@
 					credentials: 'same-origin'
 				});
 
-				if (resp.ok) {
+				if (resp.status === 201 || resp.status === 200) {
 					// Mark only the clicked button as requested; leave the other available
 					if (btnTarget) {
 						setRequestButtonState(btnTarget, format, 'requested');
 					}
-					scriptorumShowToast('Request submitted. Open Requests to view.');
+					if (resp.status === 201) {
+						scriptorumShowToast('Request submitted. Open Requests to view.');
+					} else {
+						scriptorumShowToast('Already in Readarr — search triggered.');
+					}
 					// Also reflect the selection on the main search list (if visible)
 					try {
 						var matchForm = null;
@@ -1309,9 +1321,11 @@
 							}
 						}
 					} catch(e) { /* ignore sync errors */ }
-					// Optionally refresh requests table if present
-					var reqTable = document.querySelector('#req-table');
-					if (reqTable && window.htmx) { htmx.trigger(reqTable, 'refresh'); }
+					// Refresh requests table only when a new request was created
+					if (resp.status === 201) {
+						var reqTable = document.querySelector('#req-table');
+						if (reqTable && window.htmx) { htmx.trigger(reqTable, 'refresh'); }
+					}
 				} else if (resp.status === 302 || resp.redirected) {
 					scriptorumShowToast('Not signed in. Please log in.', 'bg-amber-50 text-amber-800 ring-1 ring-amber-200');
 					if (btnTarget) btnTarget.classList.remove('opacity-60','pointer-events-none');
