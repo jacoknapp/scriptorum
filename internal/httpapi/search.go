@@ -177,6 +177,20 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			return
 		}
 
+		// Query OpenLibrary in parallel with the Readarr lookups so the extra
+		// source doesn't add latency to the search page.
+		olCh := make(chan []providers.BookItem, 1)
+		go func() {
+			olCtx, olCancel := context.WithTimeout(r.Context(), 6*time.Second)
+			defer olCancel()
+			books, err := providers.NewOpenLibrary().Search(olCtx, q, limit, page)
+			if err != nil {
+				olCh <- nil
+				return
+			}
+			olCh <- books
+		}()
+
 		items := []searchItem{}
 		// Index by dedupe key to merge ebook/audiobook payloads for the same work
 		idx := map[string]int{}
@@ -379,13 +393,17 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 			}
 		}
 
-		// If neither provider is configured, fallback to public sources
+		// If Readarr produced nothing, fall back to Amazon before merging the
+		// OpenLibrary results (Amazon is the only source that resolves ASINs).
 		if len(items) == 0 {
-			// Fallback to public sources if provider not configured
 			ap := providers.NewAmazonPublic("www.amazon.com")
 			if asin != "" {
 				if book, err := ap.GetByASIN(r.Context(), asin); err == nil && book != nil {
-					items = append(items, searchItem{BookItem: providers.BookItem{ASIN: book.ASIN, Title: book.Title, Authors: book.Authors, ISBN10: book.ISBN10, ISBN13: book.ISBN13, CoverSmall: book.Image, CoverMedium: book.Image}})
+					si := searchItem{BookItem: providers.BookItem{ASIN: book.ASIN, Title: book.Title, Authors: book.Authors, ISBN10: book.ISBN10, ISBN13: book.ISBN13, CoverSmall: book.Image, CoverMedium: book.Image}}
+					if k := dedupeKey(si.BookItem); k != "" {
+						idx[k] = len(items)
+					}
+					items = append(items, si)
 				}
 			} else if q != "" {
 				if pubItems, err := ap.SearchBooks(r.Context(), q, page, limit); err == nil {
@@ -393,23 +411,23 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 						if !isRenderableSearchBook(b.Title) {
 							continue
 						}
-						items = append(items, searchItem{BookItem: providers.BookItem{ASIN: b.ASIN, Title: b.Title, Authors: b.Authors, CoverSmall: b.Image, CoverMedium: b.Image}})
-					}
-				}
-			}
-
-			if q != "" {
-				ol := providers.NewOpenLibrary()
-				if olItems, err := ol.Search(r.Context(), q, limit, page); err == nil {
-					for _, b := range olItems {
-						if !isRenderableSearchBook(b.Title) {
-							continue
+						si := searchItem{BookItem: providers.BookItem{ASIN: b.ASIN, Title: b.Title, Authors: b.Authors, CoverSmall: b.Image, CoverMedium: b.Image}}
+						if k := dedupeKey(si.BookItem); k != "" {
+							if _, exists := idx[k]; exists {
+								continue
+							}
+							idx[k] = len(items)
 						}
-						items = append(items, openLibrarySearchItem(b, ""))
+						items = append(items, si)
 					}
 				}
 			}
 		}
+
+		// Merge the OpenLibrary results gathered in parallel: fill identifier
+		// and cover gaps on items Readarr already returned, and append books
+		// the other sources don't know about.
+		items = mergeOpenLibrarySearchItems(items, idx, <-olCh)
 
 		data := map[string]any{"Query": q, "Items": items}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -662,6 +680,86 @@ func (u *searchUI) loadDiscoveryCategories(ctx context.Context, languageCodes ..
 		return loadFallbackSubjectCategories(ctx, ol)
 	}
 	return categories
+}
+
+// mergeOpenLibrarySearchItems folds OpenLibrary search results into the list
+// built from Readarr/Amazon. Books matching an existing item (by ASIN, ISBN13,
+// or title+author) fill that item's identifier, cover, and metadata gaps; the
+// rest are appended as OpenLibrary-only results.
+func mergeOpenLibrarySearchItems(items []searchItem, idx map[string]int, books []providers.BookItem) []searchItem {
+	for _, b := range books {
+		if !isRenderableSearchBook(b.Title) {
+			continue
+		}
+		matched := -1
+		for _, k := range []string{
+			"ASIN:" + strings.TrimSpace(strings.ToUpper(b.ASIN)),
+			"ISBN13:" + strings.TrimSpace(strings.ToUpper(b.ISBN13)),
+			titleAuthorKey(b),
+		} {
+			if k == "ASIN:" || k == "ISBN13:" || k == "" {
+				continue
+			}
+			if i, ok := idx[k]; ok {
+				matched = i
+				break
+			}
+		}
+		if matched >= 0 {
+			fillSearchItemFromOpenLibrary(&items[matched], b)
+			continue
+		}
+		si := openLibrarySearchItem(b, "")
+		k := dedupeKey(si.BookItem)
+		if k == "" {
+			continue
+		}
+		if _, exists := idx[k]; exists {
+			continue
+		}
+		idx[k] = len(items)
+		// Register the title/author key too so identifier-less duplicates from
+		// other sources still merge into this item.
+		if ta := titleAuthorKey(si.BookItem); ta != "" && ta != k {
+			if _, exists := idx[ta]; !exists {
+				idx[ta] = len(items)
+			}
+		}
+		items = append(items, si)
+	}
+	return items
+}
+
+// fillSearchItemFromOpenLibrary copies identifiers and metadata OpenLibrary
+// knows onto an existing search item without overwriting anything already
+// present. Filled ISBNs also become the cover proxy's fallback so Readarr
+// covers that fail upstream can recover via OpenLibrary.
+func fillSearchItemFromOpenLibrary(si *searchItem, b providers.BookItem) {
+	if strings.TrimSpace(si.ISBN13) == "" {
+		si.ISBN13 = b.ISBN13
+	}
+	if strings.TrimSpace(si.ISBN10) == "" {
+		si.ISBN10 = b.ISBN10
+	}
+	if strings.TrimSpace(si.ASIN) == "" {
+		si.ASIN = b.ASIN
+	}
+	if strings.TrimSpace(si.CoverMedium) == "" {
+		si.CoverMedium = b.CoverMedium
+	} else {
+		si.CoverMedium = appendCoverIsbnFallback(si.CoverMedium, si.ISBN13, si.ISBN10)
+	}
+	if strings.TrimSpace(si.CoverSmall) == "" {
+		si.CoverSmall = b.CoverSmall
+	} else {
+		si.CoverSmall = appendCoverIsbnFallback(si.CoverSmall, si.ISBN13, si.ISBN10)
+	}
+	if strings.TrimSpace(si.Series) == "" {
+		si.Series = b.Series
+	}
+	if strings.TrimSpace(si.DetailsPayload) == "" {
+		si.DetailsPayload = buildOpenLibraryDetailsPayload(b)
+	}
 }
 
 func openLibrarySearchItem(book providers.BookItem, discoveryLabel string) searchItem {
@@ -1231,7 +1329,7 @@ func openLibraryCoverFallbackURL(isbn string) string {
 // through the /ui/readarr-cover proxy so the proxy can recover from upstream
 // failures by redirecting to OpenLibrary.
 func appendCoverIsbnFallback(cover, isbn13, isbn10 string) string {
-	if !strings.HasPrefix(cover, "/ui/readarr-cover?") {
+	if !strings.HasPrefix(cover, "/ui/readarr-cover?") || strings.Contains(cover, "&isbn=") {
 		return cover
 	}
 	isbn := strings.TrimSpace(isbn13)

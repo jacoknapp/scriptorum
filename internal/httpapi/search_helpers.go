@@ -58,13 +58,20 @@ func dedupeKey(b providers.BookItem) string {
 	if s := strings.TrimSpace(strings.ToUpper(b.ISBN13)); s != "" {
 		return "ISBN13:" + s
 	}
+	return titleAuthorKey(b)
+}
+
+// titleAuthorKey returns the title/author dedupe key for a book, or "" when
+// the title is empty. It is used to match items across sources that carry
+// different identifiers (e.g. Readarr lookups without ISBNs vs OpenLibrary).
+func titleAuthorKey(b providers.BookItem) string {
 	t := norm(b.Title)
+	if t == "" {
+		return ""
+	}
 	a := ""
 	if len(b.Authors) > 0 {
 		a = norm(b.Authors[0])
-	}
-	if t == "" {
-		return ""
 	}
 	return "TA:" + t + ":" + a
 }

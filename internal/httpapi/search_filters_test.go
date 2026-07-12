@@ -383,6 +383,15 @@ func TestSearchUIFiltersBadReadarrResultsAndNormalizesCover(t *testing.T) {
 		t.Fatalf("update settings: %v", err)
 	}
 
+	// Keep the parallel OpenLibrary search deterministic (no live network).
+	installOpenLibraryTestClient(t, roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(`{"docs":[],"numFound":0}`)),
+			Header:     make(http.Header),
+		}, nil
+	}))
+
 	req := httptest.NewRequest(http.MethodGet, "/ui/search?q=project", nil)
 	req.AddCookie(makeCookie(t, s, "user", false))
 	rec := httptest.NewRecorder()
