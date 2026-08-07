@@ -20,16 +20,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install custom CA (optional)
+      - name: Fetch custom CA (optional)
         # If your environment requires trusting a private CA, set the secret
         # CI_ROOT_CA containing the PEM contents of the CA certificate. This
-        # step will install it into the runner's trusted store on Ubuntu.
+        # writes it to disk for NODE_EXTRA_CA_CERTS to pick up on the Node-based
+        # upload-artifact step below - system-wide install via
+        # update-ca-certificates isn't used because this runner bind-mounts
+        # /etc/ssl/certs/ca-certificates.crt in a way that blocks its atomic
+        # rename ("Device or resource busy").
         if: ${{ secrets.CI_ROOT_CA != '' }}
-        run: |
-          echo "${{ secrets.CI_ROOT_CA }}" > /tmp/ci_root_ca.pem
-          sudo mkdir -p /usr/local/share/ca-certificates/ci
-          sudo cp /tmp/ci_root_ca.pem /usr/local/share/ca-certificates/ci/ci_root_ca.crt
-          sudo update-ca-certificates
+        run: echo "${{ secrets.CI_ROOT_CA }}" > /tmp/ci_root_ca.pem
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -56,6 +56,8 @@ jobs:
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v3
+        env:
+          NODE_EXTRA_CA_CERTS: ${{ secrets.CI_ROOT_CA != '' && '/tmp/ci_root_ca.pem' || '' }}
         with:
           name: scriptorum-coverage
           path: coverage.out
@@ -89,6 +91,8 @@ jobs:
       - name: Upload binary artifact
         if: always()
         uses: actions/upload-artifact@v3
+        env:
+          NODE_EXTRA_CA_CERTS: ${{ secrets.CI_ROOT_CA != '' && '/tmp/ci_root_ca.pem' || '' }}
         with:
           name: scriptorum-binary
           path: ./bin
@@ -139,16 +143,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install custom CA (optional)
-        # If your environment requires trusting a private CA, set the secret
-        # CI_ROOT_CA containing the PEM contents of the CA certificate. This
-        # step will install it into the runner's trusted store on Ubuntu.
+      - name: Fetch custom CA (optional)
+        # No step here currently needs this trusted (docker/buildx auth to
+        # Docker Hub, git tag push - none go through Knapp's private PKI), but
+        # write it to disk in case that changes. See build-test's identical
+        # step for why this doesn't call update-ca-certificates: this runner
+        # bind-mounts /etc/ssl/certs/ca-certificates.crt in a way that blocks
+        # its atomic rename ("Device or resource busy").
         if: ${{ secrets.CI_ROOT_CA != '' }}
-        run: |
-          echo "${{ secrets.CI_ROOT_CA }}" > /tmp/ci_root_ca.pem
-          sudo mkdir -p /usr/local/share/ca-certificates/ci
-          sudo cp /tmp/ci_root_ca.pem /usr/local/share/ca-certificates/ci/ci_root_ca.crt
-          sudo update-ca-certificates
+        run: echo "${{ secrets.CI_ROOT_CA }}" > /tmp/ci_root_ca.pem
 
       - name: Cache QEMU binaries
         # QEMU static binaries are pulled as a Docker image layer. Caching the
@@ -261,16 +264,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install custom CA (optional)
-        # If your environment requires trusting a private CA, set the secret
-        # CI_ROOT_CA containing the PEM contents of the CA certificate. This
-        # step will install it into the runner's trusted store on Ubuntu.
+      - name: Fetch custom CA (optional)
+        # See build-test's identical step for why this doesn't use
+        # update-ca-certificates.
         if: ${{ secrets.CI_ROOT_CA != '' }}
-        run: |
-          echo "${{ secrets.CI_ROOT_CA }}" > /tmp/ci_root_ca.pem
-          sudo mkdir -p /usr/local/share/ca-certificates/ci
-          sudo cp /tmp/ci_root_ca.pem /usr/local/share/ca-certificates/ci/ci_root_ca.crt
-          sudo update-ca-certificates
+        run: echo "${{ secrets.CI_ROOT_CA }}" > /tmp/ci_root_ca.pem
 
       - uses: actions/setup-go@v5
         with:
@@ -280,6 +278,8 @@ jobs:
 
       - name: Download coverage artifact
         uses: actions/download-artifact@v3
+        env:
+          NODE_EXTRA_CA_CERTS: ${{ secrets.CI_ROOT_CA != '' && '/tmp/ci_root_ca.pem' || '' }}
         with:
           name: scriptorum-coverage
           path: .
