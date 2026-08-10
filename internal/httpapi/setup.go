@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"html/template"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,7 @@ func (s *Server) mountSetup(r chi.Router) {
 		rr.Get("/test/oauth", u.handleTestOAuth(s))
 		rr.Get("/test/readarr", u.handleTestReadarr(s))
 		rr.Post("/test/readarr", u.handleTestReadarr(s))
+		rr.Post("/test/chaptarr", u.handleTestChaptarr(s))
 		rr.Get("/step/{n}", u.handleStep(s))
 	})
 }
@@ -51,10 +53,6 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		cur := *s.settings.Get()
-		ebooksBase := strings.TrimSpace(r.FormValue("ra_ebooks_base"))
-		ebooksKey := preserveSecretField(cur.Readarr.Ebooks.APIKey, ebooksBase, r.FormValue("ra_ebooks_key"))
-		audioBase := strings.TrimSpace(r.FormValue("ra_audio_base"))
-		audioKey := preserveSecretField(cur.Readarr.Audiobooks.APIKey, audioBase, r.FormValue("ra_audio_key"))
 		// General settings
 		cur.ServerURL = strings.TrimSpace(r.FormValue("server_url"))
 		// Ensure we have a config salt for password hashing
@@ -109,12 +107,42 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 			}
 		}
 		cur.OAuth.AutoCreateUsers = r.FormValue("oauth_auto_create") == "on"
-		cur.Readarr.Ebooks.BaseURL = ebooksBase
-		cur.Readarr.Ebooks.APIKey = ebooksKey
-		cur.Readarr.Ebooks.InsecureSkipVerify = r.FormValue("ra_ebooks_insecure") == "on"
-		cur.Readarr.Audiobooks.BaseURL = audioBase
-		cur.Readarr.Audiobooks.APIKey = audioKey
-		cur.Readarr.Audiobooks.InsecureSkipVerify = r.FormValue("ra_audio_insecure") == "on"
+		// Preserve Chaptarr settings if an older wizard page is submitted.
+		if _, ok := r.Form["chaptarr_base"]; ok {
+			chaptarrBase := strings.TrimSpace(r.FormValue("chaptarr_base"))
+			chaptarrKey := preserveSecretField(cur.Chaptarr.APIKey, chaptarrBase, r.FormValue("chaptarr_key"))
+			cur.Chaptarr.BaseURL = chaptarrBase
+			cur.Chaptarr.APIKey = chaptarrKey
+			cur.Chaptarr.InsecureSkipVerify = readarrTruthy(r.FormValue("chaptarr_insecure"))
+			if id, err := strconv.Atoi(strings.TrimSpace(r.FormValue("chaptarr_ebook_qp"))); err == nil && id > 0 {
+				cur.Chaptarr.Ebooks.QualityProfileID = id
+			}
+			if id, err := strconv.Atoi(strings.TrimSpace(r.FormValue("chaptarr_audiobook_qp"))); err == nil && id > 0 {
+				cur.Chaptarr.Audiobooks.QualityProfileID = id
+			}
+			if id, err := strconv.Atoi(strings.TrimSpace(r.FormValue("chaptarr_ebook_mp"))); err == nil && id > 0 {
+				cur.Chaptarr.Ebooks.MetadataProfileID = id
+			}
+			if id, err := strconv.Atoi(strings.TrimSpace(r.FormValue("chaptarr_audiobook_mp"))); err == nil && id > 0 {
+				cur.Chaptarr.Audiobooks.MetadataProfileID = id
+			}
+			cur.Chaptarr.Ebooks.RootFolderPath = strings.TrimSpace(r.FormValue("chaptarr_ebook_root"))
+			cur.Chaptarr.Audiobooks.RootFolderPath = strings.TrimSpace(r.FormValue("chaptarr_audiobook_root"))
+		}
+		// Continue accepting the legacy wizard fields so existing automated
+		// installs and older browsers can finish an in-progress setup.
+		if _, ok := r.Form["ra_ebooks_base"]; ok {
+			ebooksBase := strings.TrimSpace(r.FormValue("ra_ebooks_base"))
+			cur.Readarr.Ebooks.BaseURL = ebooksBase
+			cur.Readarr.Ebooks.APIKey = preserveSecretField(cur.Readarr.Ebooks.APIKey, ebooksBase, r.FormValue("ra_ebooks_key"))
+			cur.Readarr.Ebooks.InsecureSkipVerify = readarrTruthy(r.FormValue("ra_ebooks_insecure"))
+		}
+		if _, ok := r.Form["ra_audio_base"]; ok {
+			audioBase := strings.TrimSpace(r.FormValue("ra_audio_base"))
+			cur.Readarr.Audiobooks.BaseURL = audioBase
+			cur.Readarr.Audiobooks.APIKey = preserveSecretField(cur.Readarr.Audiobooks.APIKey, audioBase, r.FormValue("ra_audio_key"))
+			cur.Readarr.Audiobooks.InsecureSkipVerify = readarrTruthy(r.FormValue("ra_audio_insecure"))
+		}
 		_ = s.settings.Update(&cur)
 		// Reinitialize OIDC with the (potentially) updated OAuth settings so /oauth/login works immediately
 		_ = s.initOIDC()
@@ -127,12 +155,34 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		}
 
 		// Set Readarr step flags based on whether configurations are saved
-		stepFlags["rebooks"] = (strings.TrimSpace(cur.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cur.Readarr.Ebooks.APIKey) != "")
-		stepFlags["raudio"] = (strings.TrimSpace(cur.Readarr.Audiobooks.BaseURL) != "" && strings.TrimSpace(cur.Readarr.Audiobooks.APIKey) != "")
+		stepFlags["rebooks"] = (strings.TrimSpace(cur.Chaptarr.BaseURL) != "" && strings.TrimSpace(cur.Chaptarr.APIKey) != "")
+		stepFlags["raudio"] = stepFlags["rebooks"]
 
 		// HTMX: trigger a refresh of gating and reload the current step; no content body
 		w.Header().Set("HX-Trigger", "setup-saved")
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func (u *setupUI) handleTestChaptarr(s *Server) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		cfg := s.settings.Get()
+		base := strings.TrimSpace(r.FormValue("chaptarr_base"))
+		key := preserveSecretField(cfg.Chaptarr.APIKey, base, r.FormValue("chaptarr_key"))
+		client := providers.NewReadarrWithDB(providers.ReadarrInstance{
+			BaseURL: base, APIKey: key, InsecureSkipVerify: readarrTruthy(r.FormValue("chaptarr_insecure")) || s.outboundTLSInsecure(), Backend: "chaptarr",
+		}, s.db.SQL())
+		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
+		defer cancel()
+		caps, err := client.ChaptarrCapabilities(ctx)
+		if err != nil {
+			http.Error(w, chaptarrProbeMessage(err), http.StatusBadGateway)
+			return
+		}
+		stepFlags["rebooks"] = true
+		stepFlags["raudio"] = true
+		writeJSON(w, caps, http.StatusOK)
 	}
 }
 

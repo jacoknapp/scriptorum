@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
 type ReadarrStatistics struct {
@@ -20,7 +22,13 @@ type CatalogBook struct {
 }
 
 func (r *Readarr) ListBooks(ctx context.Context) ([]CatalogBook, error) {
-	req, u, err := r.newRequest(ctx, http.MethodGet, "/api/v1/book", nil, nil)
+	var query url.Values
+	if r.isChaptarr() && strings.TrimSpace(r.inst.MediaType) != "" {
+		// Chaptarr 0.9.x supports server-side media filtering. This matters for
+		// combined libraries where the unfiltered catalog can be tens of MB.
+		query = url.Values{"mediaType": {r.inst.MediaType}}
+	}
+	req, u, err := r.newRequest(ctx, http.MethodGet, "/api/v1/book", query, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +49,15 @@ func (r *Readarr) ListBooks(ctx context.Context) ([]CatalogBook, error) {
 	var out []CatalogBook
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, fmt.Errorf("invalid JSON from catalog listing: %w", err)
+	}
+	if r.isChaptarr() && strings.TrimSpace(r.inst.MediaType) != "" {
+		filtered := make([]CatalogBook, 0, len(out))
+		for _, book := range out {
+			if strings.EqualFold(strings.TrimSpace(book.MediaType), strings.TrimSpace(r.inst.MediaType)) {
+				filtered = append(filtered, book)
+			}
+		}
+		return filtered, nil
 	}
 	return out, nil
 }

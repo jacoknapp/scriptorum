@@ -237,16 +237,13 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 		}
 
 		asin := providers.ExtractASINFromInput(q)
-		cfg := s.settings.Get()
 		// Build instances
 		var instE, instA providers.ReadarrInstance
-		if cfg != nil {
-			if strings.TrimSpace(cfg.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cfg.Readarr.Ebooks.APIKey) != "" {
-				instE = providers.ReadarrInstance{BaseURL: cfg.Readarr.Ebooks.BaseURL, APIKey: cfg.Readarr.Ebooks.APIKey, DefaultQualityProfileID: cfg.Readarr.Ebooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Ebooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Ebooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Ebooks.InsecureSkipVerify}
-			}
-			if strings.TrimSpace(cfg.Readarr.Audiobooks.BaseURL) != "" && strings.TrimSpace(cfg.Readarr.Audiobooks.APIKey) != "" {
-				instA = providers.ReadarrInstance{BaseURL: cfg.Readarr.Audiobooks.BaseURL, APIKey: cfg.Readarr.Audiobooks.APIKey, DefaultQualityProfileID: cfg.Readarr.Audiobooks.DefaultQualityProfileID, DefaultRootFolderPath: cfg.Readarr.Audiobooks.DefaultRootFolderPath, DefaultTags: cfg.Readarr.Audiobooks.DefaultTags, InsecureSkipVerify: cfg.Readarr.Audiobooks.InsecureSkipVerify}
-			}
+		if inst, ok := s.readarrInstanceForFormat("ebook"); ok {
+			instE = inst
+		}
+		if inst, ok := s.readarrInstanceForFormat("audiobook"); ok {
+			instA = inst
 		}
 
 		// Query Readarr ebooks
@@ -286,8 +283,9 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 					cjson, _ := json.Marshal(cand)
 					dispAuthor := ""
 					if author != nil {
-						if n, _ := author["name"].(string); n != "" {
-							dispAuthor = n
+						dispAuthor, _ = author["name"].(string)
+						if dispAuthor == "" {
+							dispAuthor, _ = author["authorName"].(string)
 						}
 					}
 					var authors []string
@@ -357,8 +355,9 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 					cjson, _ := json.Marshal(cand)
 					dispAuthor := ""
 					if author != nil {
-						if n, _ := author["name"].(string); n != "" {
-							dispAuthor = n
+						dispAuthor, _ = author["name"].(string)
+						if dispAuthor == "" {
+							dispAuthor, _ = author["authorName"].(string)
 						}
 					}
 					var authors []string

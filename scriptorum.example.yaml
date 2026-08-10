@@ -1,5 +1,5 @@
 # Skip TLS certificate verification for outbound connections to self-hosted
-# backends (Readarr, ntfy, Discord, SMTP, OIDC). Useful when those services use
+# backends (Chaptarr, Readarr, ntfy, Discord, SMTP, OIDC). Useful when those services use
 # self-signed certificates. Leave false when talking to public providers.
 insecure_skip_verify: false
 http:
@@ -25,6 +25,25 @@ oauth:
   allow_emails: []
 amazon_public:
   enabled: true
+# Preferred backend. A single Chaptarr instance manages both eBooks and
+# audiobooks. Profile IDs and roots can be discovered in onboarding/settings.
+chaptarr:
+  base_url: "http://chaptarr:8789"
+  api_key: ""
+  insecure_skip_verify: false
+  sync_interval: "15m"
+  ebooks:
+    quality_profile_id: 1
+    metadata_profile_id: 2
+    root_folder_path: "/books"
+    tags: []
+  audiobooks:
+    quality_profile_id: 2
+    metadata_profile_id: 1
+    root_folder_path: "/audiobooks"
+    tags: []
+# Legacy fallback for existing installations. Chaptarr takes precedence when
+# its base URL and API key are set.
 readarr:
   # How often to automatically sync the Readarr catalog. Accepts Go duration
   # strings: "15m", "30m", "1h", etc. Minimum is 1m. Defaults to 15m.

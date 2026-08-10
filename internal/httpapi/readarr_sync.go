@@ -53,6 +53,11 @@ type readarrSyncViewData struct {
 
 func (s *Server) readarrSyncInterval() time.Duration {
 	if cfg := s.settings.Get(); cfg != nil {
+		if strings.TrimSpace(cfg.Chaptarr.BaseURL) != "" && strings.TrimSpace(cfg.Chaptarr.APIKey) != "" {
+			if d, err := time.ParseDuration(cfg.Chaptarr.SyncInterval); err == nil && d >= time.Minute {
+				return d
+			}
+		}
 		if d, err := time.ParseDuration(cfg.Readarr.SyncInterval); err == nil && d >= time.Minute {
 			return d
 		}
@@ -522,6 +527,29 @@ func (s *Server) toProviderInstance(c config.ReadarrInstance) providers.ReadarrI
 
 func (s *Server) readarrInstanceForFormat(format string) (providers.ReadarrInstance, bool) {
 	cfg := s.settings.Get()
+	if strings.TrimSpace(cfg.Chaptarr.BaseURL) != "" && strings.TrimSpace(cfg.Chaptarr.APIKey) != "" {
+		kind := normalizeSyncKind(format)
+		media := cfg.Chaptarr.Ebooks
+		if kind == "audiobook" {
+			media = cfg.Chaptarr.Audiobooks
+		}
+		return providers.ReadarrInstance{
+			BaseURL:                    cfg.Chaptarr.BaseURL,
+			APIKey:                     cfg.Chaptarr.APIKey,
+			DefaultQualityProfileID:    media.QualityProfileID,
+			DefaultRootFolderPath:      media.RootFolderPath,
+			DefaultTags:                media.Tags,
+			InsecureSkipVerify:         cfg.Chaptarr.InsecureSkipVerify || s.outboundTLSInsecure(),
+			Backend:                    "chaptarr",
+			MediaType:                  kind,
+			EbookQualityProfileID:      cfg.Chaptarr.Ebooks.QualityProfileID,
+			AudiobookQualityProfileID:  cfg.Chaptarr.Audiobooks.QualityProfileID,
+			EbookMetadataProfileID:     cfg.Chaptarr.Ebooks.MetadataProfileID,
+			AudiobookMetadataProfileID: cfg.Chaptarr.Audiobooks.MetadataProfileID,
+			EbookRootFolderPath:        cfg.Chaptarr.Ebooks.RootFolderPath,
+			AudiobookRootFolderPath:    cfg.Chaptarr.Audiobooks.RootFolderPath,
+		}, true
+	}
 	switch normalizeSyncKind(format) {
 	case "audiobook":
 		c := cfg.Readarr.Audiobooks
@@ -550,6 +578,9 @@ func normalizeSyncKind(kind string) string {
 func authorNameFromLookupBook(book providers.LookupBook) string {
 	if book.Author != nil {
 		if name, _ := book.Author["name"].(string); name != "" {
+			return name
+		}
+		if name, _ := book.Author["authorName"].(string); name != "" {
 			return name
 		}
 	}

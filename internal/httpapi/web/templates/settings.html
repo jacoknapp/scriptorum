@@ -87,53 +87,47 @@
 			</section>
 
 			<section class="mb-6">
-				<h2 class="font-semibold mb-2">Readarr</h2>
-				<div class="grid md:grid-cols-2 gap-4">
+				<h2 class="font-semibold mb-2">Chaptarr</h2>
+				<p class="text-sm text-slate-400 mb-3">One Chaptarr instance manages both eBooks and audiobooks. Test the connection to discover format-compatible profiles and roots.</p>
+				<div class="border border-white/10 rounded p-3">
+					<div class="grid md:grid-cols-2 gap-3">
+						<input name="chaptarr_base" placeholder="Base URL (e.g. http://chaptarr:8789)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Chaptarr.BaseURL }}">
+						<input type="password" name="chaptarr_key" placeholder="{{ if .Cfg.Chaptarr.APIKey }}Leave blank to keep saved API key{{ else }}API Key{{ end }}" autocomplete="new-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full">
+					</div>
+					<label class="inline-flex items-center gap-2 text-sm text-slate-200 mt-3"><input type="checkbox" name="chaptarr_insecure" {{ if .Cfg.Chaptarr.InsecureSkipVerify }}checked{{ end }}> Skip TLS verification</label>
+					<div class="mt-3 flex items-center gap-2">
+						<button type="button" class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-500" onclick="loadChaptarrCapabilities(true)">Test &amp; Discover</button>
+						<span id="chaptarr_test" class="text-sm text-slate-400">-</span>
+					</div>
+				</div>
+				<div class="grid md:grid-cols-2 gap-4 mt-4">
 					<div class="border border-white/10 rounded p-3">
-						<h3 class="font-medium">eBooks</h3>
-						<input name="ra_ebooks_base" placeholder="Base URL (include http:// or https://)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Ebooks.BaseURL }}">
-						<input type="password" name="ra_ebooks_key" placeholder="{{ if .Cfg.Readarr.Ebooks.APIKey }}Leave blank to keep saved API key{{ else }}API Key{{ end }}" autocomplete="new-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full">
-						<div class="mt-2 flex items-center flex-wrap gap-x-4 gap-y-1">
-							<label class="inline-flex items-center gap-2 text-white"><input type="radio" name="ra_ebooks_insecure" value="on" {{ if .Cfg.Readarr.Ebooks.InsecureSkipVerify }}checked{{ end }}> Yes</label>
-							<label class="inline-flex items-center gap-2 text-white"><input type="radio" name="ra_ebooks_insecure" value="off" {{ if not .Cfg.Readarr.Ebooks.InsecureSkipVerify }}checked{{ end }}> No</label>
-							<span class="text-sm text-white">Skip TLS verification (trust self-signed cert)</span>
-						</div>
-						<label class="block mt-2 text-sm text-white">Quality Profile</label>
-						<select id="ra_ebooks_qp" name="ra_ebooks_qp" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" data-server-default="{{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }}">
-							<option value="">(server: {{ .Cfg.Readarr.Ebooks.DefaultQualityProfileID }})</option>
-						</select>
-						<div class="mt-2 flex items-center gap-2">
-							<button type="button" class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-500" onclick="testReadarr('ebooks')">Test</button>
-							<span id="ra_ebooks_test" class="text-sm text-slate-400">-</span>
-						</div>
+						<h3 class="font-medium mb-2">eBooks</h3>
+						<label class="block text-sm text-white">Quality Profile</label>
+						<select id="chaptarr_ebook_qp" name="chaptarr_ebook_qp" data-selected="{{ .Cfg.Chaptarr.Ebooks.QualityProfileID }}" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full"><option value="{{ .Cfg.Chaptarr.Ebooks.QualityProfileID }}">Profile {{ .Cfg.Chaptarr.Ebooks.QualityProfileID }}</option></select>
+						<label class="block mt-2 text-sm text-white">Metadata Profile</label>
+						<select id="chaptarr_ebook_mp" name="chaptarr_ebook_mp" data-selected="{{ .Cfg.Chaptarr.Ebooks.MetadataProfileID }}" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full"><option value="{{ .Cfg.Chaptarr.Ebooks.MetadataProfileID }}">Profile {{ .Cfg.Chaptarr.Ebooks.MetadataProfileID }}</option></select>
+						<label class="block mt-2 text-sm text-white">Root Folder</label>
+						<select id="chaptarr_ebook_root" name="chaptarr_ebook_root" data-selected="{{ .Cfg.Chaptarr.Ebooks.RootFolderPath }}" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full"><option value="{{ .Cfg.Chaptarr.Ebooks.RootFolderPath }}">{{ .Cfg.Chaptarr.Ebooks.RootFolderPath }}</option></select>
 					</div>
 					<div class="border border-white/10 rounded p-3">
-						<h3 class="font-medium">Audiobooks</h3>
-						<input name="ra_audio_base" placeholder="Base URL (include http:// or https://)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Readarr.Audiobooks.BaseURL }}">
-						<input type="password" name="ra_audio_key" placeholder="{{ if .Cfg.Readarr.Audiobooks.APIKey }}Leave blank to keep saved API key{{ else }}API Key{{ end }}" autocomplete="new-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full">
-						<div class="mt-2 flex items-center flex-wrap gap-x-4 gap-y-1">
-							<label class="inline-flex items-center gap-2 text-white"><input type="radio" name="ra_audio_insecure" value="on" {{ if .Cfg.Readarr.Audiobooks.InsecureSkipVerify }}checked{{ end }}> Yes</label>
-							<label class="inline-flex items-center gap-2 text-white"><input type="radio" name="ra_audio_insecure" value="off" {{ if not .Cfg.Readarr.Audiobooks.InsecureSkipVerify }}checked{{ end }}> No</label>
-							<span class="text-sm text-white">Skip TLS verification (trust self-signed cert)</span>
-						</div>
-						<label class="block mt-2 text-sm text-white">Quality Profile</label>
-						<select id="ra_audio_qp" name="ra_audio_qp" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" data-server-default="{{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }}">
-							<option value="">(server: {{ .Cfg.Readarr.Audiobooks.DefaultQualityProfileID }})</option>
-						</select>
-						<div class="mt-2 flex items-center gap-2">
-							<button type="button" class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-500" onclick="testReadarr('audiobooks')">Test</button>
-							<span id="ra_audio_test" class="text-sm text-slate-400">-</span>
-						</div>
+						<h3 class="font-medium mb-2">Audiobooks</h3>
+						<label class="block text-sm text-white">Quality Profile</label>
+						<select id="chaptarr_audiobook_qp" name="chaptarr_audiobook_qp" data-selected="{{ .Cfg.Chaptarr.Audiobooks.QualityProfileID }}" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full"><option value="{{ .Cfg.Chaptarr.Audiobooks.QualityProfileID }}">Profile {{ .Cfg.Chaptarr.Audiobooks.QualityProfileID }}</option></select>
+						<label class="block mt-2 text-sm text-white">Metadata Profile</label>
+						<select id="chaptarr_audiobook_mp" name="chaptarr_audiobook_mp" data-selected="{{ .Cfg.Chaptarr.Audiobooks.MetadataProfileID }}" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full"><option value="{{ .Cfg.Chaptarr.Audiobooks.MetadataProfileID }}">Profile {{ .Cfg.Chaptarr.Audiobooks.MetadataProfileID }}</option></select>
+						<label class="block mt-2 text-sm text-white">Root Folder</label>
+						<select id="chaptarr_audiobook_root" name="chaptarr_audiobook_root" data-selected="{{ .Cfg.Chaptarr.Audiobooks.RootFolderPath }}" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full"><option value="{{ .Cfg.Chaptarr.Audiobooks.RootFolderPath }}">{{ .Cfg.Chaptarr.Audiobooks.RootFolderPath }}</option></select>
 					</div>
 				</div>
 				<div class="mt-4 border border-white/10 rounded p-4 bg-night-800/50">
 					<div class="flex flex-wrap items-start justify-between gap-3">
 						<div>
 							<div class="flex items-center gap-2">
-								<div class="font-medium text-slate-100">Readarr Sync</div>
+								<div class="font-medium text-slate-100">Chaptarr Sync</div>
 								<span class="px-2 py-0.5 rounded bg-royal-600 text-white text-xs uppercase tracking-wide">{{ .ReadarrSync.AutoInterval }}</span>
 							</div>
-							<div class="text-sm text-slate-400 mt-1">Keep the local Readarr catalog fresh, reconcile request state, and prevent duplicate requests in search.</div>
+							<div class="text-sm text-slate-400 mt-1">Keep both Chaptarr media catalogs fresh, reconcile request state, and prevent duplicate requests in search.</div>
 						</div>
 						<div class="text-sm text-slate-400">{{ .ReadarrSync.ScheduleNote }}</div>
 					</div>
@@ -173,7 +167,7 @@
 					<button type="button"
 							class="px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-500 js-notify-on-htmx"
 							hx-post="/api/v1/requests/approve-all"
-							hx-confirm="Are you sure you want to approve ALL pending requests? This will send them to Readarr for processing."
+							hx-confirm="Are you sure you want to approve ALL pending requests? This will send them to Chaptarr for processing."
 							data-success-message="All pending requests have been approved."
 							data-failure-message="Failed to approve requests."
 							data-label-working="Working...">
@@ -190,7 +184,7 @@
 					</button>
 				</div>
 				<div class="text-xs text-slate-400 mt-2">
-					<p><strong>Approve All:</strong> Marks all pending requests as "requested" and sends them to Readarr.</p>
+					<p><strong>Approve All:</strong> Marks all pending requests as "requested" and sends them to Chaptarr.</p>
 					<p><strong>Delete All:</strong> Permanently removes all requests (pending, requested, and declined) from the database.</p>
 				</div>
 			</div>
@@ -215,49 +209,50 @@ document.querySelectorAll('[data-settings-tab]').forEach(btn => {
 		document.querySelector('[data-settings-panel="' + btn.dataset.settingsTab + '"]').classList.remove('hidden');
 	});
 });
-// populate Readarr quality profile selects
-async function loadQPs(kind, selId, serverDefault) {
-	const sel = document.getElementById(selId);
-	if (!sel) return;
+function fillChaptarrSelect(id, entries, selected, valueKey, labelKey) {
+	const select = document.getElementById(id);
+	if (!select) return;
+	select.options.length = 0;
+	entries.forEach(entry => {
+		const option = document.createElement('option');
+		option.value = entry[valueKey];
+		option.textContent = entry[labelKey] + (valueKey === 'id' ? ' (' + entry.id + ')' : '');
+		if (String(entry[valueKey]) === String(selected)) option.selected = true;
+		select.appendChild(option);
+	});
+}
+async function loadChaptarrCapabilities(showStatus) {
+	const status = document.getElementById('chaptarr_test');
+	if (showStatus && status) status.textContent = 'testing...';
+	const base = document.querySelector('[name="chaptarr_base"]');
+	const key = document.querySelector('[name="chaptarr_key"]');
+	const insecure = document.querySelector('[name="chaptarr_insecure"]');
+	const body = new URLSearchParams({
+		use_overrides: 'true', base_url: base ? base.value : '',
+		api_key: key ? key.value : '', insecure: insecure && insecure.checked ? 'true' : 'false'
+	});
 	try {
-		const res = await fetch('/api/readarr/profiles?kind='+encodeURIComponent(kind));
-		if (!res.ok) return;
-		const obj = await res.json();
-		// clear existing options except first
-		sel.options.length = 1;
-		const entries = Object.entries(obj).map(([k, v]) => ({id: parseInt(k, 10), name: v}));
-		entries.sort((a, b) => a.id - b.id);
-		for (const e of entries) {
-			const o = document.createElement('option');
-			o.value = e.id;
-			o.text = e.id + ' - ' + e.name;
-			if (e.id === serverDefault) o.selected = true;
-			sel.appendChild(o);
-		}
-	} catch (e) {
-		{{if .Cfg.Debug}}
-		console.error('qp load', e);
-		{{end}}
+		const response = await fetch('/api/chaptarr/capabilities', {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: body.toString()});
+		if (!response.ok) throw new Error((await response.text()).trim());
+		const caps = await response.json();
+		const ebookQ = (caps.qualityProfiles || []).filter(p => p.profileType === 'ebook');
+		const audioQ = (caps.qualityProfiles || []).filter(p => p.profileType === 'audiobook');
+		const ebookM = (caps.metadataProfiles || []).filter(p => p.profileType === 2);
+		const audioM = (caps.metadataProfiles || []).filter(p => p.profileType === 1);
+		const roots = (caps.rootFolders || []).filter(root => root.accessible !== false);
+		fillChaptarrSelect('chaptarr_ebook_qp', ebookQ, document.getElementById('chaptarr_ebook_qp').dataset.selected, 'id', 'name');
+		fillChaptarrSelect('chaptarr_audiobook_qp', audioQ, document.getElementById('chaptarr_audiobook_qp').dataset.selected, 'id', 'name');
+		fillChaptarrSelect('chaptarr_ebook_mp', ebookM, document.getElementById('chaptarr_ebook_mp').dataset.selected, 'id', 'name');
+		fillChaptarrSelect('chaptarr_audiobook_mp', audioM, document.getElementById('chaptarr_audiobook_mp').dataset.selected, 'id', 'name');
+		fillChaptarrSelect('chaptarr_ebook_root', roots, document.getElementById('chaptarr_ebook_root').dataset.selected, 'path', 'path');
+		fillChaptarrSelect('chaptarr_audiobook_root', roots, document.getElementById('chaptarr_audiobook_root').dataset.selected, 'path', 'path');
+		if (status) { status.textContent = 'OK — Chaptarr ' + caps.version; status.className = 'text-sm text-emerald-300'; }
+	} catch (error) {
+		if (status && showStatus) { status.textContent = error.message || 'Could not connect to Chaptarr.'; status.className = 'text-sm text-rose-300'; }
 	}
 }
-function currentReadarrFormState(kind) {
-	const prefix = kind === 'ebooks' ? 'ra_ebooks' : 'ra_audio';
-	const base = document.querySelector('[name="' + prefix + '_base"]');
-	const apiKey = document.querySelector('[name="' + prefix + '_key"]');
-	const insecure = document.querySelector('input[name="' + prefix + '_insecure"]:checked');
-	return {
-		baseURL: base ? base.value : '',
-		apiKey: apiKey ? apiKey.value : '',
-		insecure: insecure ? insecure.value === 'on' : false
-	};
-}
 document.addEventListener('DOMContentLoaded', () => {
-	const ebSel = document.getElementById('ra_ebooks_qp');
-	const auSel = document.getElementById('ra_audio_qp');
-	const ebDef = ebSel ? parseInt(ebSel.getAttribute('data-server-default') || '0', 10) : 0;
-	const auDef = auSel ? parseInt(auSel.getAttribute('data-server-default') || '0', 10) : 0;
-	loadQPs('ebooks', 'ra_ebooks_qp', ebDef);
-	loadQPs('audiobooks', 'ra_audio_qp', auDef);
+	if ((document.querySelector('[name="chaptarr_base"]') || {}).value) loadChaptarrCapabilities(false);
 
 	// Language chip toggle — switch Tailwind classes to reflect checked state visually
 	document.querySelectorAll('[name="discovery_languages"]').forEach(cb => {
@@ -275,44 +270,9 @@ document.addEventListener('DOMContentLoaded', () => {
 		});
 	});
 });
-// Test Readarr instance and update UI
-async function testReadarr(kind) {
-	const spanId = kind === 'ebooks' ? 'ra_ebooks_test' : 'ra_audio_test';
-	const span = document.getElementById(spanId);
-	if (!span) return;
-	span.textContent = 'testing...';
-	span.className = 'text-sm text-slate-400';
-	try {
-		const state = currentReadarrFormState(kind);
-		const body = new URLSearchParams({
-			kind: kind,
-			use_overrides: 'true',
-			base_url: state.baseURL || '',
-			api_key: state.apiKey || '',
-			insecure: state.insecure ? 'true' : 'false'
-		});
-		const res = await fetch('/api/readarr/profiles', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: body.toString()
-		});
-		if (!res.ok) {
-			const txt = (await res.text()).trim();
-			span.textContent = txt || 'Could not connect to Readarr.';
-			span.className = 'text-sm text-rose-300';
-			return;
-		}
-		const obj = await res.json();
-		span.textContent = 'OK (' + Object.keys(obj).length + ' profiles)';
-		span.className = 'text-sm text-emerald-300';
-	} catch (e) {
-		span.textContent = 'Could not connect to Readarr.';
-		span.className = 'text-sm text-rose-300';
-	}
-}
 function formatReadarrSyncSummary(data) {
 	if (!data || !data.length) {
-		return 'No configured Readarr libraries were available to sync.';
+		return 'No configured Chaptarr libraries were available to sync.';
 	}
 	return data.map(function(item) {
 		const label = item.kind === 'audiobook' ? 'Audiobooks' : 'eBooks';
@@ -335,12 +295,12 @@ async function syncReadarrCatalog(kind, button) {
 		button.textContent = 'Syncing...';
 	}
 	if (status) {
-		status.textContent = 'Syncing Readarr and reconciling requests...';
+		status.textContent = 'Syncing Chaptarr and reconciling requests...';
 		status.className = 'text-sm text-blue-300 mt-3';
 	}
 	const timestamp = new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 	try {
-		const res = await fetch('/api/readarr/sync?kind='+encodeURIComponent(kind), {
+		const res = await fetch('/api/chaptarr/sync?kind='+encodeURIComponent(kind), {
 			method: 'POST',
 			headers: { 'HX-Request': 'true' }
 		});

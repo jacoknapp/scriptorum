@@ -42,6 +42,11 @@ func (s *Server) completeRequestFromCatalogMatch(ctx context.Context, req *db.Re
 	if match.ReadarrID > 0 && !match.Monitored {
 		ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 		if _, err := ra.MonitorBooks(ctx, []int{int(match.ReadarrID)}, true); err == nil {
+			if strings.EqualFold(inst.Backend, "chaptarr") {
+				if _, searchErr := ra.SearchBooks(ctx, []int{int(match.ReadarrID)}); searchErr != nil {
+					return fmt.Errorf("Chaptarr monitoring was enabled but its search could not be queued: %w", searchErr)
+				}
+			}
 			if externalStatus == "" {
 				externalStatus = "monitored"
 			}

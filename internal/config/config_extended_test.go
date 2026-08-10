@@ -281,6 +281,40 @@ func TestReadarrInstanceConfig(t *testing.T) {
 	}
 }
 
+func TestChaptarrDualFormatConfig(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "chaptarr.yaml")
+	configContent := `chaptarr:
+  base_url: https://chaptarr.example
+  api_key: chaptarr-key
+  insecure_skip_verify: true
+  sync_interval: 30m
+  ebooks:
+    quality_profile_id: 11
+    metadata_profile_id: 21
+    root_folder_path: /ebooks
+  audiobooks:
+    quality_profile_id: 12
+    metadata_profile_id: 22
+    root_folder_path: /audiobooks
+`
+	if err := os.WriteFile(configPath, []byte(configContent), 0o600); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("load config: %v", err)
+	}
+	if cfg.Chaptarr.BaseURL != "https://chaptarr.example" || cfg.Chaptarr.APIKey != "chaptarr-key" || !cfg.Chaptarr.InsecureSkipVerify {
+		t.Fatalf("unexpected shared Chaptarr config: %+v", cfg.Chaptarr)
+	}
+	if cfg.Chaptarr.Ebooks.QualityProfileID != 11 || cfg.Chaptarr.Ebooks.MetadataProfileID != 21 || cfg.Chaptarr.Ebooks.RootFolderPath != "/ebooks" {
+		t.Fatalf("unexpected ebook config: %+v", cfg.Chaptarr.Ebooks)
+	}
+	if cfg.Chaptarr.Audiobooks.QualityProfileID != 12 || cfg.Chaptarr.Audiobooks.MetadataProfileID != 22 || cfg.Chaptarr.Audiobooks.RootFolderPath != "/audiobooks" {
+		t.Fatalf("unexpected audiobook config: %+v", cfg.Chaptarr.Audiobooks)
+	}
+}
+
 // Test OAuth configuration
 func TestOAuthConfig(t *testing.T) {
 	tempDir := t.TempDir()

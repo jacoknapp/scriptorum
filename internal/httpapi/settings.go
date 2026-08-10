@@ -81,6 +81,9 @@ func (s *Server) mountSettings(r chi.Router) {
 		rt.Get("/api/readarr/profiles", s.apiReadarrProfiles())
 		rt.Post("/api/readarr/profiles", s.apiReadarrProfiles())
 		rt.Post("/api/readarr/sync", s.apiReadarrSync())
+		rt.Post("/api/chaptarr/sync", s.apiReadarrSync())
+		rt.Get("/api/chaptarr/capabilities", s.apiChaptarrCapabilities())
+		rt.Post("/api/chaptarr/capabilities", s.apiChaptarrCapabilities())
 		// Debug endpoint for admins to inspect runtime Readarr settings (API keys redacted)
 		rt.Get("/api/readarr/debug", s.apiReadarrDebug())
 	})
@@ -110,20 +113,55 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
 		cur := *s.settings.Get()
-		ebooksBase := strings.TrimSpace(r.FormValue("ra_ebooks_base"))
-		ebooksKey := preserveSecretField(cur.Readarr.Ebooks.APIKey, ebooksBase, r.FormValue("ra_ebooks_key"))
-		audioBase := strings.TrimSpace(r.FormValue("ra_audio_base"))
-		audioKey := preserveSecretField(cur.Readarr.Audiobooks.APIKey, audioBase, r.FormValue("ra_audio_key"))
 		// General
 		cur.Debug = (r.FormValue("debug") == "on")
 		cur.ServerURL = strings.TrimSpace(r.FormValue("server_url"))
-		cur.Readarr.Ebooks.BaseURL = ebooksBase
-		cur.Readarr.Ebooks.APIKey = ebooksKey
-		cur.Readarr.Ebooks.InsecureSkipVerify = (r.FormValue("ra_ebooks_insecure") == "on")
-		cur.Readarr.Audiobooks.BaseURL = audioBase
-		cur.Readarr.Audiobooks.APIKey = audioKey
-		cur.Readarr.Audiobooks.InsecureSkipVerify = (r.FormValue("ra_audio_insecure") == "on")
-		// Save quality profile selections
+		// Preserve Chaptarr settings when an older form that does not know about
+		// Chaptarr is submitted.
+		if _, ok := r.Form["chaptarr_base"]; ok {
+			chaptarrBase := strings.TrimSpace(r.FormValue("chaptarr_base"))
+			chaptarrKey := preserveSecretField(cur.Chaptarr.APIKey, chaptarrBase, r.FormValue("chaptarr_key"))
+			cur.Chaptarr.BaseURL = chaptarrBase
+			cur.Chaptarr.APIKey = chaptarrKey
+			cur.Chaptarr.InsecureSkipVerify = readarrTruthy(r.FormValue("chaptarr_insecure"))
+			// Save Chaptarr's format-specific profiles and roots.
+			if v := strings.TrimSpace(r.FormValue("chaptarr_ebook_qp")); v != "" {
+				if i, err := strconv.Atoi(v); err == nil {
+					cur.Chaptarr.Ebooks.QualityProfileID = i
+				}
+			}
+			if v := strings.TrimSpace(r.FormValue("chaptarr_audiobook_qp")); v != "" {
+				if i, err := strconv.Atoi(v); err == nil {
+					cur.Chaptarr.Audiobooks.QualityProfileID = i
+				}
+			}
+			if v := strings.TrimSpace(r.FormValue("chaptarr_ebook_mp")); v != "" {
+				if i, err := strconv.Atoi(v); err == nil {
+					cur.Chaptarr.Ebooks.MetadataProfileID = i
+				}
+			}
+			if v := strings.TrimSpace(r.FormValue("chaptarr_audiobook_mp")); v != "" {
+				if i, err := strconv.Atoi(v); err == nil {
+					cur.Chaptarr.Audiobooks.MetadataProfileID = i
+				}
+			}
+			cur.Chaptarr.Ebooks.RootFolderPath = strings.TrimSpace(r.FormValue("chaptarr_ebook_root"))
+			cur.Chaptarr.Audiobooks.RootFolderPath = strings.TrimSpace(r.FormValue("chaptarr_audiobook_root"))
+		}
+		// Preserve legacy Readarr settings unless an older settings form submitted
+		// those fields explicitly.
+		if _, ok := r.Form["ra_ebooks_base"]; ok {
+			ebooksBase := strings.TrimSpace(r.FormValue("ra_ebooks_base"))
+			cur.Readarr.Ebooks.BaseURL = ebooksBase
+			cur.Readarr.Ebooks.APIKey = preserveSecretField(cur.Readarr.Ebooks.APIKey, ebooksBase, r.FormValue("ra_ebooks_key"))
+			cur.Readarr.Ebooks.InsecureSkipVerify = readarrTruthy(r.FormValue("ra_ebooks_insecure"))
+		}
+		if _, ok := r.Form["ra_audio_base"]; ok {
+			audioBase := strings.TrimSpace(r.FormValue("ra_audio_base"))
+			cur.Readarr.Audiobooks.BaseURL = audioBase
+			cur.Readarr.Audiobooks.APIKey = preserveSecretField(cur.Readarr.Audiobooks.APIKey, audioBase, r.FormValue("ra_audio_key"))
+			cur.Readarr.Audiobooks.InsecureSkipVerify = readarrTruthy(r.FormValue("ra_audio_insecure"))
+		}
 		if v := strings.TrimSpace(r.FormValue("ra_ebooks_qp")); v != "" {
 			if i, err := strconv.Atoi(v); err == nil {
 				cur.Readarr.Ebooks.DefaultQualityProfileID = i
@@ -184,6 +222,53 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 		providers.Debug = cur.Debug
 		_ = s.initOIDC()
 		http.Redirect(w, r, "/settings", http.StatusFound)
+	}
+}
+
+// apiChaptarrCapabilities validates a Chaptarr endpoint and returns the typed
+// profiles and roots needed by both the settings page and onboarding wizard.
+func (s *Server) apiChaptarrCapabilities() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_ = r.ParseForm()
+		cfg := s.settings.Get()
+		base := cfg.Chaptarr.BaseURL
+		key := cfg.Chaptarr.APIKey
+		insecure := cfg.Chaptarr.InsecureSkipVerify
+		if readarrTruthy(r.FormValue("use_overrides")) {
+			base = strings.TrimSpace(r.FormValue("base_url"))
+			key = preserveSecretField(key, base, r.FormValue("api_key"))
+			insecure = readarrTruthy(r.FormValue("insecure"))
+		}
+		if strings.TrimSpace(base) == "" || strings.TrimSpace(key) == "" {
+			http.Error(w, "Chaptarr is not fully configured yet. Add the Base URL and API key first.", http.StatusBadRequest)
+			return
+		}
+		client := providers.NewReadarrWithDB(providers.ReadarrInstance{
+			BaseURL: base, APIKey: key, InsecureSkipVerify: insecure || s.outboundTLSInsecure(), Backend: "chaptarr",
+		}, s.db.SQL())
+		caps, err := client.ChaptarrCapabilities(r.Context())
+		if err != nil {
+			http.Error(w, chaptarrProbeMessage(err), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, caps, http.StatusOK)
+	}
+}
+
+func chaptarrProbeMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	switch {
+	case strings.Contains(msg, "http 401"), strings.Contains(msg, "http 403"), strings.Contains(msg, "unauthorized"), strings.Contains(msg, "forbidden"):
+		return "Could not connect to Chaptarr. Check the API key."
+	case strings.Contains(msg, "x509"), strings.Contains(msg, "tls"), strings.Contains(msg, "certificate"), strings.Contains(msg, "handshake"):
+		return "Could not connect to Chaptarr. Check the certificate or enable Skip TLS verification if you trust it."
+	case strings.Contains(msg, "not chaptarr"):
+		return "The configured URL is not a Chaptarr server."
+	default:
+		return "Could not connect to Chaptarr. Check the Base URL, API key, and TLS setting."
 	}
 }
 

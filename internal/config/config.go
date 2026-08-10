@@ -142,6 +142,13 @@ type Config struct {
 
 	// Audiobookshelf integration removed
 
+	// Chaptarr is the preferred book backend. Unlike Readarr, one Chaptarr
+	// instance manages both ebook and audiobook libraries. The format-specific
+	// profile and root selections below are applied to that shared instance.
+	Chaptarr ChaptarrConfig `yaml:"chaptarr"`
+
+	// Readarr is retained for backwards compatibility. When Chaptarr is fully
+	// configured it takes precedence for both formats.
 	Readarr struct {
 		Ebooks     ReadarrInstance `yaml:"ebooks"`
 		Audiobooks ReadarrInstance `yaml:"audiobooks"`
@@ -229,6 +236,22 @@ type ReadarrInstance struct {
 	DefaultTags             []string `yaml:"default_tags"`
 	// If true, the Readarr HTTP client will skip TLS certificate verification.
 	InsecureSkipVerify bool `yaml:"insecure_skip_verify"`
+}
+
+type ChaptarrConfig struct {
+	BaseURL            string              `yaml:"base_url"`
+	APIKey             string              `yaml:"api_key"`
+	InsecureSkipVerify bool                `yaml:"insecure_skip_verify"`
+	SyncInterval       string              `yaml:"sync_interval"`
+	Ebooks             ChaptarrMediaConfig `yaml:"ebooks"`
+	Audiobooks         ChaptarrMediaConfig `yaml:"audiobooks"`
+}
+
+type ChaptarrMediaConfig struct {
+	QualityProfileID  int      `yaml:"quality_profile_id"`
+	MetadataProfileID int      `yaml:"metadata_profile_id"`
+	RootFolderPath    string   `yaml:"root_folder_path"`
+	Tags              []string `yaml:"tags"`
 }
 
 func Load(path string) (*Config, error) {

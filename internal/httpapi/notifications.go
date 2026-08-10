@@ -188,28 +188,7 @@ type ApprovalResult struct {
 
 // processApproval handles the approval logic shared between API and notification approval
 func (s *Server) processApproval(ctx context.Context, req *db.Request, username string) *ApprovalResult {
-	var inst providers.ReadarrInstance
-	if req.Format == "audiobook" {
-		c := s.settings.Get().Readarr.Audiobooks
-		inst = providers.ReadarrInstance{
-			BaseURL:                 c.BaseURL,
-			APIKey:                  c.APIKey,
-			DefaultQualityProfileID: c.DefaultQualityProfileID,
-			DefaultRootFolderPath:   c.DefaultRootFolderPath,
-			DefaultTags:             c.DefaultTags,
-			InsecureSkipVerify:      c.InsecureSkipVerify,
-		}
-	} else {
-		c := s.settings.Get().Readarr.Ebooks
-		inst = providers.ReadarrInstance{
-			BaseURL:                 c.BaseURL,
-			APIKey:                  c.APIKey,
-			DefaultQualityProfileID: c.DefaultQualityProfileID,
-			DefaultRootFolderPath:   c.DefaultRootFolderPath,
-			DefaultTags:             c.DefaultTags,
-			InsecureSkipVerify:      c.InsecureSkipVerify,
-		}
-	}
+	inst, _ := s.readarrInstanceForFormat(req.Format)
 
 	// If Readarr not configured, approve without sending
 	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
@@ -224,7 +203,11 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 
 	ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 
-	reqCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	timeout := 12 * time.Second
+	if strings.EqualFold(inst.Backend, "chaptarr") {
+		timeout = 3 * time.Minute
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	if matched, err := s.tryCompleteApprovalFromCatalogMatch(reqCtx, req, inst, username, " via notification", true); matched {

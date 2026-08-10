@@ -85,19 +85,23 @@ type LookupBook struct {
 		RemoteUrl string `json:"remoteUrl"`
 	} `json:"images"`
 	// Additional enriched fields from Readarr API
-	SeriesTitle    string                 `json:"seriesTitle"`
-	Disambiguation string                 `json:"disambiguation"`
-	Monitored      bool                   `json:"monitored"`
-	AnyEditionOk   bool                   `json:"anyEditionOk"`
-	Ratings        map[string]interface{} `json:"ratings"`
-	ReleaseDate    string                 `json:"releaseDate"`
-	PageCount      int                    `json:"pageCount"`
-	Genres         []string               `json:"genres"`
-	Links          []map[string]any       `json:"links"`
-	Added          string                 `json:"added"`
-	LastSearchTime string                 `json:"lastSearchTime"`
-	Grabbed        bool                   `json:"grabbed"`
-	ID             int                    `json:"id"`
+	SeriesTitle        string                 `json:"seriesTitle"`
+	Disambiguation     string                 `json:"disambiguation"`
+	Monitored          bool                   `json:"monitored"`
+	AnyEditionOk       bool                   `json:"anyEditionOk"`
+	Ratings            map[string]interface{} `json:"ratings"`
+	ReleaseDate        string                 `json:"releaseDate"`
+	PageCount          int                    `json:"pageCount"`
+	Genres             []string               `json:"genres"`
+	Links              []map[string]any       `json:"links"`
+	Added              string                 `json:"added"`
+	LastSearchTime     string                 `json:"lastSearchTime"`
+	Grabbed            bool                   `json:"grabbed"`
+	ID                 int                    `json:"id"`
+	MediaType          string                 `json:"mediaType"`
+	EbookMonitored     bool                   `json:"ebookMonitored"`
+	AudiobookMonitored bool                   `json:"audiobookMonitored"`
+	HasFiles           bool                   `json:"hasFiles"`
 	// Description/summary fields that might be available
 	Description string `json:"description"`
 	Overview    string `json:"overview"`
@@ -114,6 +118,16 @@ type ReadarrInstance struct {
 	DefaultRootFolderPath   string
 	DefaultTags             []string
 	InsecureSkipVerify      bool
+	// Backend is "chaptarr" for the shared dual-format Chaptarr API. It is
+	// intentionally optional so existing Readarr callers remain compatible.
+	Backend                    string
+	MediaType                  string
+	EbookQualityProfileID      int
+	AudiobookQualityProfileID  int
+	EbookMetadataProfileID     int
+	AudiobookMetadataProfileID int
+	EbookRootFolderPath        string
+	AudiobookRootFolderPath    string
 }
 
 type Readarr struct {
@@ -510,10 +524,18 @@ func (r *Readarr) sanitizeAndEnrichPayload(ctx context.Context, pmap map[string]
 }
 
 func NewReadarrWithDB(i ReadarrInstance, db *sql.DB) *Readarr {
-	r := &Readarr{inst: normalize(i), cl: &http.Client{Timeout: 12 * time.Second}, db: db}
+	i = normalize(i)
+	timeout := 12 * time.Second
+	// A combined Chaptarr catalog can be substantially larger than either
+	// legacy Readarr catalog. Live 0.9.x instances commonly take more than 12
+	// seconds to serialize /book, so allow bounded headroom for syncs.
+	if strings.EqualFold(strings.TrimSpace(i.Backend), "chaptarr") {
+		timeout = 60 * time.Second
+	}
+	r := &Readarr{inst: i, cl: &http.Client{Timeout: timeout}, db: db}
 	if r.inst.InsecureSkipVerify {
 		tr := &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
-		r.cl = &http.Client{Timeout: 12 * time.Second, Transport: tr}
+		r.cl = &http.Client{Timeout: timeout, Transport: tr}
 	}
 	if db != nil {
 		r.initCacheTables()
@@ -570,6 +592,10 @@ func (r *Readarr) newJSONRequest(ctx context.Context, method, path string, query
 }
 
 func (r *Readarr) PingLookup(ctx context.Context) error {
+	if r.isChaptarr() {
+		_, err := r.ChaptarrCapabilities(ctx)
+		return err
+	}
 	req, u, err := r.newRequest(ctx, http.MethodGet, readarrLookupEndpoint, url.Values{"term": {"test"}}, nil)
 	if err != nil {
 		return err
@@ -661,6 +687,13 @@ func (r *Readarr) GetAuthorByID(ctx context.Context, id int) (map[string]any, er
 }
 
 func (r *Readarr) AddBook(ctx context.Context, candidate Candidate, opts AddOpts) ([]byte, []byte, error) {
+	if r.isChaptarr() {
+		raw, err := json.Marshal(candidate)
+		if err != nil {
+			return nil, nil, err
+		}
+		return r.requestChaptarrBook(ctx, raw)
+	}
 	tpl, err := template.New("payload").Funcs(template.FuncMap{
 		"toJSON": func(v any) string { b, _ := json.Marshal(v); return string(b) },
 	}).Parse(readarrAddPayloadTemplate)
@@ -703,6 +736,9 @@ func (r *Readarr) AddBook(ctx context.Context, candidate Candidate, opts AddOpts
 // POSTs it to the configured AddEndpoint. Returns the sent payload and the
 // Readarr response body.
 func (r *Readarr) AddBookRaw(ctx context.Context, raw json.RawMessage) ([]byte, []byte, error) {
+	if r.isChaptarr() {
+		return r.requestChaptarrBook(ctx, raw)
+	}
 	// Sanitize authorId like AddBook
 	var pmap map[string]any
 	payload := raw
@@ -813,6 +849,13 @@ func addPayloadMatchesCatalogBook(match addPayloadMatch, book CatalogBook) bool 
 func (r *Readarr) MonitorBooks(ctx context.Context, ids []int, monitored bool) ([]byte, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("no ids provided")
+	}
+	if r.isChaptarr() && monitored {
+		for _, id := range ids {
+			if _, err := r.prepareChaptarrBook(ctx, id); err != nil {
+				return nil, err
+			}
+		}
 	}
 	// build payload
 	payload := map[string]any{

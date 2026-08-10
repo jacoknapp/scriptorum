@@ -394,6 +394,38 @@ Search for books across all enabled providers.
 - Amazon results are prioritized for metadata quality
 - Cover images are proxied through Scriptorum
 
+#### GET/POST /api/chaptarr/capabilities
+Validate the shared Chaptarr connection and return the format-typed profiles
+and root folders used by Settings. Admin authentication is required.
+
+For `POST`, form fields `use_overrides=true`, `base_url`, `api_key`, and
+`insecure` test unsaved values without persisting them. A blank `api_key`
+retains the saved key when the base URL is unchanged.
+
+```json
+{
+  "version": "0.9.911.0",
+  "qualityProfiles": [
+    {"id": 1, "name": "E-Book", "profileType": "ebook"},
+    {"id": 2, "name": "Audiobook", "profileType": "audiobook"}
+  ],
+  "metadataProfiles": [
+    {"id": 1, "name": "Audiobook Default", "profileType": 1},
+    {"id": 2, "name": "Ebook Default", "profileType": 2}
+  ],
+  "rootFolders": [
+    {"id": 1, "name": "Books", "path": "/books", "accessible": true}
+  ]
+}
+```
+
+The legacy `/api/readarr/*` endpoints below remain available when Chaptarr is
+not configured.
+
+#### POST /api/chaptarr/sync
+Refresh Scriptorum's local Chaptarr catalog and reconcile request state. The
+optional `kind` query value is `ebooks`, `audiobooks`, or `all`.
+
 #### GET /api/readarr/profiles
 Get Readarr quality profiles.
 
@@ -658,12 +690,13 @@ Save application settings.
 **Request Body (Form Data):**
 - `debug` - Enable debug mode ("on"/"off")
 - `server_url` - Base server URL
-- `ra_ebooks_base` - Readarr ebooks base URL
-- `ra_ebooks_key` - Readarr ebooks API key
-- `ra_ebooks_insecure` - Skip TLS verification for ebooks ("on"/"off")
-- `ra_audiobooks_base` - Readarr audiobooks base URL
-- `ra_audiobooks_key` - Readarr audiobooks API key
-- `ra_audiobooks_insecure` - Skip TLS verification for audiobooks ("on"/"off")
+- `chaptarr_base` - Shared Chaptarr base URL
+- `chaptarr_key` - Chaptarr API key (blank preserves the saved key)
+- `chaptarr_insecure` - Skip TLS verification ("on"/"off")
+- `chaptarr_ebook_qp` / `chaptarr_audiobook_qp` - Format-compatible quality profile IDs
+- `chaptarr_ebook_mp` / `chaptarr_audiobook_mp` - Format-compatible metadata profile IDs
+- `chaptarr_ebook_root` / `chaptarr_audiobook_root` - Format-specific root paths
+- Legacy `ra_*` form fields are still accepted for backwards compatibility
 - And many other configuration options...
 
 **Response:**

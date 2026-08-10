@@ -1,59 +1,78 @@
 <div class="grid gap-4">
-  <h2 class="text-lg font-semibold text-slate-100">Readarr Configuration (Optional)</h2>
-  <p class="text-sm text-slate-300">Configure your Readarr instances for automated book downloads. This step is completely optional - you can skip it and configure Readarr later in the settings page if needed.</p>
-  
-  <form id="readarr-form" hx-post="/setup/save" hx-target="#readarr-status" hx-swap="outerHTML" class="grid gap-4">
+  <h2 class="text-lg font-semibold text-slate-100">Chaptarr Libraries (Optional)</h2>
+  <p class="text-sm text-slate-300">Connect one Chaptarr instance for both eBooks and audiobooks. Scriptorum will use the selected format-specific profiles and root folders when requests are approved.</p>
+
+  <form id="chaptarr-form" hx-post="/setup/save" hx-target="#chaptarr-save-status" hx-swap="outerHTML" class="grid gap-4">
+    <div class="rounded p-3 bg-night-900/40 border border-white/5 grid gap-2">
+      <input name="chaptarr_base" placeholder="Base URL (e.g. http://chaptarr:8789)" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.Chaptarr.BaseURL}}">
+      <input name="chaptarr_key" placeholder="{{ if .Chaptarr.APIKey }}Leave blank to keep saved API key{{ else }}API Key{{ end }}" type="password" autocomplete="new-password" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100">
+      <label class="inline-flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" name="chaptarr_insecure" {{ if .Chaptarr.InsecureSkipVerify }}checked{{ end }}> Skip TLS verification</label>
+      <div class="flex items-center gap-2 mt-1">
+        <button type="button" class="px-3 py-1.5 rounded-lg bg-night-800 text-royal-200 ring-1 ring-white/5 hover:bg-night-700" onclick="discoverChaptarr()">Test &amp; Discover</button>
+        <span id="chaptarr-probe" class="text-sm text-slate-400">—</span>
+      </div>
+    </div>
+
     <div class="grid md:grid-cols-2 gap-4">
-      
-      <!-- eBooks Section -->
-      <div class="rounded p-3 bg-night-900/40 border border-white/5">
-        <h3 class="font-medium mb-3 text-slate-100">eBooks Readarr</h3>
-        <div class="grid gap-2">
-          <input name="ra_ebooks_base" placeholder="Base URL (e.g. https://readarr.example.com)" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.Readarr.Ebooks.BaseURL}}">
-          <input name="ra_ebooks_key" placeholder="{{ if .Readarr.Ebooks.APIKey }}Leave blank to keep saved API key{{ else }}API Key{{ end }}" type="password" autocomplete="new-password" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100">
-          <label class="inline-flex items-center gap-2 text-sm text-slate-200">
-            <input type="checkbox" name="ra_ebooks_insecure" {{ if .Readarr.Ebooks.InsecureSkipVerify }}checked{{ end }}> Skip TLS verification
-          </label>
-        </div>
+      <div class="rounded p-3 bg-night-900/40 border border-white/5 grid gap-2">
+        <h3 class="font-medium text-slate-100">eBooks</h3>
+        <label class="text-sm text-slate-300">Quality profile</label>
+        <select id="setup-chaptarr-ebook-qp" name="chaptarr_ebook_qp" data-selected="{{.Chaptarr.Ebooks.QualityProfileID}}" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100"><option value="{{.Chaptarr.Ebooks.QualityProfileID}}">Profile {{.Chaptarr.Ebooks.QualityProfileID}}</option></select>
+        <label class="text-sm text-slate-300">Metadata profile</label>
+        <select id="setup-chaptarr-ebook-mp" name="chaptarr_ebook_mp" data-selected="{{.Chaptarr.Ebooks.MetadataProfileID}}" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100"><option value="{{.Chaptarr.Ebooks.MetadataProfileID}}">Profile {{.Chaptarr.Ebooks.MetadataProfileID}}</option></select>
+        <label class="text-sm text-slate-300">Root folder</label>
+        <select id="setup-chaptarr-ebook-root" name="chaptarr_ebook_root" data-selected="{{.Chaptarr.Ebooks.RootFolderPath}}" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100"><option value="{{.Chaptarr.Ebooks.RootFolderPath}}">{{.Chaptarr.Ebooks.RootFolderPath}}</option></select>
       </div>
-
-      <!-- Audiobooks Section -->
-      <div class="rounded p-3 bg-night-900/40 border border-white/5">
-        <h3 class="font-medium mb-3 text-slate-100">Audiobooks Readarr</h3>
-        <div class="grid gap-2">
-          <input name="ra_audio_base" placeholder="Base URL (e.g. https://audiobookarr.example.com)" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.Readarr.Audiobooks.BaseURL}}">
-          <input name="ra_audio_key" placeholder="{{ if .Readarr.Audiobooks.APIKey }}Leave blank to keep saved API key{{ else }}API Key{{ end }}" type="password" autocomplete="new-password" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100">
-          <label class="inline-flex items-center gap-2 text-sm text-slate-200">
-            <input type="checkbox" name="ra_audio_insecure" {{ if .Readarr.Audiobooks.InsecureSkipVerify }}checked{{ end }}> Skip TLS verification
-          </label>
-        </div>
+      <div class="rounded p-3 bg-night-900/40 border border-white/5 grid gap-2">
+        <h3 class="font-medium text-slate-100">Audiobooks</h3>
+        <label class="text-sm text-slate-300">Quality profile</label>
+        <select id="setup-chaptarr-audiobook-qp" name="chaptarr_audiobook_qp" data-selected="{{.Chaptarr.Audiobooks.QualityProfileID}}" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100"><option value="{{.Chaptarr.Audiobooks.QualityProfileID}}">Profile {{.Chaptarr.Audiobooks.QualityProfileID}}</option></select>
+        <label class="text-sm text-slate-300">Metadata profile</label>
+        <select id="setup-chaptarr-audiobook-mp" name="chaptarr_audiobook_mp" data-selected="{{.Chaptarr.Audiobooks.MetadataProfileID}}" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100"><option value="{{.Chaptarr.Audiobooks.MetadataProfileID}}">Profile {{.Chaptarr.Audiobooks.MetadataProfileID}}</option></select>
+        <label class="text-sm text-slate-300">Root folder</label>
+        <select id="setup-chaptarr-audiobook-root" name="chaptarr_audiobook_root" data-selected="{{.Chaptarr.Audiobooks.RootFolderPath}}" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100"><option value="{{.Chaptarr.Audiobooks.RootFolderPath}}">{{.Chaptarr.Audiobooks.RootFolderPath}}</option></select>
       </div>
+    </div>
 
-    </div>
-    
-    <div class="bg-night-900/30 border border-white/5 rounded p-3 text-sm text-slate-300">
-      <strong>Note:</strong> You can leave both sections blank and configure Readarr later in the settings page. Scriptorum will work without Readarr for manual book management.
-    </div>
-    
+    <div class="bg-night-900/30 border border-white/5 rounded p-3 text-sm text-slate-300">You may leave Chaptarr blank and configure it later in Settings.</div>
     <button class="px-4 py-2 rounded-lg bg-gradient-to-r from-royal-600 to-royal-500 text-white justify-self-start">Save Configuration</button>
   </form>
-
-  <!-- Test buttons -->
-  <div class="grid md:grid-cols-2 gap-4">
-    <div class="rounded p-3 bg-night-900/30 border border-white/5">
-      <div class="flex items-center gap-2">
-  <button class="px-3 py-1.5 rounded-lg bg-night-900 text-royal-200 ring-1 ring-white/5 hover:bg-night-800" hx-post="/setup/test/readarr?tag=ebooks" hx-include="#readarr-form" hx-target="#rebooks-probe" hx-swap="innerHTML">Test eBooks</button>
-        <div id="rebooks-probe" class="text-sm text-slate-400">—</div>
-      </div>
-    </div>
-    
-    <div class="rounded p-3 bg-night-900/30 border border-white/5">
-      <div class="flex items-center gap-2">
-  <button class="px-3 py-1.5 rounded-lg bg-night-900 text-royal-200 ring-1 ring-white/5 hover:bg-night-800" hx-post="/setup/test/readarr?tag=audio" hx-include="#readarr-form" hx-target="#raudio-probe" hx-swap="innerHTML">Test Audiobooks</button>
-        <div id="raudio-probe" class="text-sm text-slate-400">—</div>
-      </div>
-    </div>
-  </div>
-
-  <div id="readarr-status"></div>
+  <div id="chaptarr-save-status"></div>
 </div>
+
+<script>
+function setupFillSelect(id, entries, selected, valueKey, labelKey) {
+  const select = document.getElementById(id);
+  if (!select) return;
+  select.options.length = 0;
+  entries.forEach(entry => {
+    const option = document.createElement('option');
+    option.value = entry[valueKey];
+    option.textContent = entry[labelKey] + (valueKey === 'id' ? ' (' + entry.id + ')' : '');
+    if (String(entry[valueKey]) === String(selected)) option.selected = true;
+    select.appendChild(option);
+  });
+}
+async function discoverChaptarr() {
+  const form = document.getElementById('chaptarr-form');
+  const probe = document.getElementById('chaptarr-probe');
+  probe.textContent = 'testing...';
+  try {
+    const response = await fetch('/setup/test/chaptarr', {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: new URLSearchParams(new FormData(form)).toString()});
+    if (!response.ok) throw new Error((await response.text()).trim());
+    const caps = await response.json();
+    const roots = (caps.rootFolders || []).filter(root => root.accessible !== false);
+    setupFillSelect('setup-chaptarr-ebook-qp', (caps.qualityProfiles || []).filter(p => p.profileType === 'ebook'), document.getElementById('setup-chaptarr-ebook-qp').dataset.selected, 'id', 'name');
+    setupFillSelect('setup-chaptarr-audiobook-qp', (caps.qualityProfiles || []).filter(p => p.profileType === 'audiobook'), document.getElementById('setup-chaptarr-audiobook-qp').dataset.selected, 'id', 'name');
+    setupFillSelect('setup-chaptarr-ebook-mp', (caps.metadataProfiles || []).filter(p => p.profileType === 2), document.getElementById('setup-chaptarr-ebook-mp').dataset.selected, 'id', 'name');
+    setupFillSelect('setup-chaptarr-audiobook-mp', (caps.metadataProfiles || []).filter(p => p.profileType === 1), document.getElementById('setup-chaptarr-audiobook-mp').dataset.selected, 'id', 'name');
+    setupFillSelect('setup-chaptarr-ebook-root', roots, document.getElementById('setup-chaptarr-ebook-root').dataset.selected, 'path', 'path');
+    setupFillSelect('setup-chaptarr-audiobook-root', roots, document.getElementById('setup-chaptarr-audiobook-root').dataset.selected, 'path', 'path');
+    probe.textContent = 'OK — Chaptarr ' + caps.version;
+    probe.className = 'text-sm text-emerald-300';
+  } catch (error) {
+    probe.textContent = error.message || 'Could not connect to Chaptarr.';
+    probe.className = 'text-sm text-rose-300';
+  }
+}
+</script>

@@ -1201,14 +1201,7 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var inst providers.ReadarrInstance
-	if req.Format == "audiobook" {
-		c := s.settings.Get().Readarr.Audiobooks
-		inst = s.toProviderInstance(c)
-	} else {
-		c := s.settings.Get().Readarr.Ebooks
-		inst = s.toProviderInstance(c)
-	}
+	inst, _ := s.readarrInstanceForFormat(req.Format)
 	// If Readarr not configured, approve without sending
 	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
 		actor := r.Context().Value(ctxUser).(*session).Username
@@ -1384,7 +1377,11 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.
 	ctx := context.Background()
 	ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 
-	reqCtx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	timeout := 12 * time.Second
+	if strings.EqualFold(inst.Backend, "chaptarr") {
+		timeout = 3 * time.Minute
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	if matched, err := s.tryCompleteApprovalFromCatalogMatch(reqCtx, req, inst, username, "", true); matched {

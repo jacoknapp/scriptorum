@@ -84,6 +84,18 @@ func defaultConfig(dbPath string) *config.Config {
 
 	c.AmazonPublic.Enabled = true
 
+	// Chaptarr manages both media types through one API endpoint. The setup
+	// wizard fills in the URL/key and can discover these defaults from the
+	// server; the numeric defaults match a fresh Chaptarr installation.
+	c.Chaptarr.Ebooks.QualityProfileID = 1
+	c.Chaptarr.Ebooks.MetadataProfileID = 2
+	c.Chaptarr.Ebooks.RootFolderPath = "/books"
+	c.Chaptarr.Ebooks.Tags = []string{}
+	c.Chaptarr.Audiobooks.QualityProfileID = 2
+	c.Chaptarr.Audiobooks.MetadataProfileID = 1
+	c.Chaptarr.Audiobooks.RootFolderPath = "/audiobooks"
+	c.Chaptarr.Audiobooks.Tags = []string{}
+
 	// Readarr instances (values taken from your scriptorum.yaml)
 	c.Readarr.Ebooks.BaseURL = ""
 	c.Readarr.Ebooks.APIKey = ""
