@@ -14,6 +14,21 @@ import (
 	"gitea.knapp/jacoknapp/scriptorum/internal/db"
 )
 
+// waitForReadarrSyncIdle blocks until an in-flight sync (started via
+// apiReadarrSync, which now kicks off work in a goroutine and returns
+// immediately) finishes, or fails the test if it doesn't within 2s.
+func waitForReadarrSyncIdle(t *testing.T, s *Server) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if !s.readarrSyncSnapshot().Running {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for readarr sync to finish")
+}
+
 func TestReadarrSyncReconcilesAndBlocksDuplicates(t *testing.T) {
 	readarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
@@ -54,9 +69,10 @@ func TestReadarrSyncReconcilesAndBlocksDuplicates(t *testing.T) {
 	syncReq.Header.Set("HX-Request", "true")
 	syncRec := httptest.NewRecorder()
 	r.ServeHTTP(syncRec, syncReq)
-	if syncRec.Code != http.StatusOK {
+	if syncRec.Code != http.StatusAccepted {
 		t.Fatalf("sync code=%d body=%s", syncRec.Code, syncRec.Body.String())
 	}
+	waitForReadarrSyncIdle(t, s)
 
 	count, err := s.db.CountReadarrBooks(syncReq.Context(), "ebook")
 	if err != nil {
@@ -200,9 +216,10 @@ func TestReadarrSyncResolvesStaleErrorThroughCatalogMatch(t *testing.T) {
 	syncReq.Header.Set("HX-Request", "true")
 	syncRec := httptest.NewRecorder()
 	r.ServeHTTP(syncRec, syncReq)
-	if syncRec.Code != http.StatusOK {
+	if syncRec.Code != http.StatusAccepted {
 		t.Fatalf("sync code=%d body=%s", syncRec.Code, syncRec.Body.String())
 	}
+	waitForReadarrSyncIdle(t, s)
 	if !monitorCalled {
 		t.Fatal("expected sync to enable monitoring for the matched Readarr book")
 	}

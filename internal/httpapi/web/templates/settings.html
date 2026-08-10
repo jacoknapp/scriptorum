@@ -409,19 +409,50 @@ document.addEventListener('DOMContentLoaded', () => {
 		});
 	});
 });
-function formatReadarrSyncSummary(data) {
-	if (!data || !data.length) {
-		return 'No configured Chaptarr libraries were available to sync.';
-	}
-	return data.map(function(item) {
-		const label = item.kind === 'audiobook' ? 'Audiobooks' : 'eBooks';
-		return label + ': ' + item.imported + ' imported, ' + item.matchedRequests + ' matched';
-	}).join(' | ');
+function sleep(ms) {
+	return new Promise(resolve => setTimeout(resolve, ms));
 }
-async function syncReadarrCatalog(kind, button) {
+async function pollReadarrSyncStatus() {
 	const status = document.getElementById('readarr_sync_status');
 	const lastRun = document.getElementById('readarr_sync_last_run');
 	const lastResult = document.getElementById('readarr_sync_last_result');
+	// The sync itself can take minutes against a large catalog, so poll
+	// rather than waiting on a single request tied to this page's connection.
+	for (let attempt = 0; attempt < 300; attempt++) {
+		await sleep(2000);
+		let view;
+		try {
+			const res = await fetch('/api/readarr/sync/status');
+			if (!res.ok) continue;
+			view = await res.json();
+		} catch (e) {
+			continue;
+		}
+		if (view.Running) {
+			if (status) {
+				status.textContent = view.LastResultLabel || 'Syncing...';
+				status.className = 'text-sm text-blue-300 mt-3';
+			}
+			continue;
+		}
+		if (lastRun) lastRun.textContent = view.LastRunLabel;
+		if (lastResult) {
+			lastResult.textContent = view.LastResultLabel;
+			lastResult.className = 'text-sm ' + (view.LastResultClass || 'text-slate-400') + ' mt-2';
+		}
+		if (status) {
+			status.textContent = view.LastResultLabel;
+			status.className = 'text-sm ' + (view.LastResultClass || 'text-slate-400') + ' mt-3';
+		}
+		return;
+	}
+	if (status) {
+		status.textContent = 'Still syncing — check back in a bit.';
+		status.className = 'text-sm text-yellow-400 mt-3';
+	}
+}
+async function syncReadarrCatalog(kind, button) {
+	const status = document.getElementById('readarr_sync_status');
 	const buttons = Array.from(document.querySelectorAll('[data-readarr-sync-button]'));
 	buttons.forEach(function(btn) {
 		if (!btn.dataset.originalLabel) {
@@ -437,7 +468,6 @@ async function syncReadarrCatalog(kind, button) {
 		status.textContent = 'Syncing Chaptarr and reconciling requests...';
 		status.className = 'text-sm text-blue-300 mt-3';
 	}
-	const timestamp = new Date().toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 	try {
 		const res = await fetch('/api/chaptarr/sync?kind='+encodeURIComponent(kind), {
 			method: 'POST',
@@ -448,32 +478,13 @@ async function syncReadarrCatalog(kind, button) {
 			err.status = res.status;
 			throw err;
 		}
-		const data = await res.json();
-		const summary = formatReadarrSyncSummary(data || []);
-		if (status) {
-			status.textContent = summary || 'Sync completed.';
-			status.className = 'text-sm text-emerald-300 mt-3';
-		}
-		if (lastRun) {
-			lastRun.textContent = 'Last manual sync: ' + timestamp;
-		}
-		if (lastResult) {
-			lastResult.textContent = summary || 'Manual sync completed.';
-			lastResult.className = 'text-sm text-emerald-300 mt-2';
-		}
+		await pollReadarrSyncStatus();
 	} catch (e) {
 		const busy = e && e.status === 409;
-		const message = busy ? 'A sync is already running. Try again in a minute.' : 'Sync failed: ' + String(e.message || e);
+		const message = busy ? 'A sync is already running. Try again in a minute.' : 'Sync failed to start: ' + String(e.message || e);
 		if (status) {
 			status.textContent = message;
 			status.className = 'text-sm ' + (busy ? 'text-yellow-400' : 'text-rose-300') + ' mt-3';
-		}
-		if (lastRun) {
-			lastRun.textContent = 'Last manual sync attempt: ' + timestamp;
-		}
-		if (lastResult) {
-			lastResult.textContent = message;
-			lastResult.className = 'text-sm ' + (busy ? 'text-yellow-400' : 'text-rose-300') + ' mt-2';
 		}
 	} finally {
 		buttons.forEach(function(btn) {

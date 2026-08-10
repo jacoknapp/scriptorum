@@ -82,6 +82,7 @@ func (s *Server) mountSettings(r chi.Router) {
 		rt.Post("/api/readarr/profiles", s.apiReadarrProfiles())
 		rt.Post("/api/readarr/sync", s.apiReadarrSync())
 		rt.Post("/api/chaptarr/sync", s.apiReadarrSync())
+		rt.Get("/api/readarr/sync/status", s.apiReadarrSyncStatus())
 		rt.Get("/api/chaptarr/capabilities", s.apiChaptarrCapabilities())
 		rt.Post("/api/chaptarr/capabilities", s.apiChaptarrCapabilities())
 		// Debug endpoint for admins to inspect runtime Readarr settings (API keys redacted)

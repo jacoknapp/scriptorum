@@ -335,6 +335,15 @@ func (s *Server) readarrSyncView() readarrSyncViewData {
 	return view
 }
 
+// apiReadarrSync kicks off a manual sync and returns immediately. The sync
+// itself can take minutes against a large Chaptarr catalog (16k+ audiobooks
+// on the live instance) — running it synchronously inside the request meant
+// it lived and died with the client's HTTP connection. Any reverse proxy
+// with a shorter response timeout than the sync takes would close that
+// connection, canceling r.Context() and killing the in-flight Chaptarr call
+// mid-download with "context canceled". The automatic background sync never
+// hit this because it already ran on its own context.Background(), detached
+// from any request. Progress is polled via apiReadarrSyncStatus.
 func (s *Server) apiReadarrSync() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		kind := strings.TrimSpace(r.URL.Query().Get("kind"))
@@ -342,19 +351,30 @@ func (s *Server) apiReadarrSync() http.HandlerFunc {
 		if u, ok := r.Context().Value(ctxUser).(*session); ok && strings.TrimSpace(u.Username) != "" {
 			actor = u.Username
 		}
-		summaries, err := s.runReadarrSync(r.Context(), kind, "manual", actor)
-		if err != nil {
-			if errors.Is(err, errReadarrSyncInProgress) {
-				http.Error(w, "readarr sync already in progress", http.StatusConflict)
-				return
-			}
-			if s.settings.Get().Debug {
-				fmt.Printf("DEBUG: readarr sync failed: %v\n", err)
-			}
-			http.Error(w, "readarr sync failed; check configuration and server logs", http.StatusBadGateway)
+		if !s.readarrSyncMu.TryLock() {
+			http.Error(w, "readarr sync already in progress", http.StatusConflict)
 			return
 		}
-		writeJSON(w, summaries, http.StatusOK)
+		s.markReadarrSyncStart("manual")
+		go func() {
+			defer s.readarrSyncMu.Unlock()
+			ctx, cancel := context.WithTimeout(context.Background(), readarrAutoSyncTimeout)
+			defer cancel()
+			summaries, err := s.syncReadarrCatalog(ctx, kind, actor)
+			s.markReadarrSyncComplete("manual", summaries, err)
+			if err != nil && s.settings.Get().Debug {
+				fmt.Printf("DEBUG: manual readarr sync failed: %v\n", err)
+			}
+		}()
+		writeJSON(w, map[string]any{"status": "started"}, http.StatusAccepted)
+	}
+}
+
+// apiReadarrSyncStatus reports the current/last sync state so the settings
+// page can poll for completion after apiReadarrSync returns immediately.
+func (s *Server) apiReadarrSyncStatus() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, s.readarrSyncView(), http.StatusOK)
 	}
 }
 

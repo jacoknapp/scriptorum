@@ -69,9 +69,10 @@ func TestAvailableNotificationFiresOnceOnTransition(t *testing.T) {
 		syncReq.AddCookie(makeCookie(t, s, "admin", true))
 		syncRec := httptest.NewRecorder()
 		r.ServeHTTP(syncRec, syncReq)
-		if syncRec.Code != http.StatusOK {
+		if syncRec.Code != http.StatusAccepted {
 			t.Fatalf("sync code=%d body=%s", syncRec.Code, syncRec.Body.String())
 		}
+		waitForReadarrSyncIdle(t, s)
 	}
 
 	// First sync: pending -> available, should fire request.available.
