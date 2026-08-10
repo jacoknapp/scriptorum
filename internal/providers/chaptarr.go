@@ -265,6 +265,12 @@ func (r *Readarr) buildChaptarrAddPayload(raw json.RawMessage, author map[string
 	if id := positiveInt(author["id"]); id > 0 {
 		authorPayload["id"] = id
 	}
+	editions, _ := selected["editions"].([]any)
+	if len(editions) == 0 {
+		if fe := strings.TrimSpace(stringFromMap(selected, "foreignEditionId")); fe != "" {
+			editions = []any{map[string]any{"foreignEditionId": fe, "monitored": true}}
+		}
+	}
 	payload := map[string]any{
 		"title": stringFromMap(selected, "title"), "foreignBookId": stringFromMap(selected, "foreignBookId"),
 		"mediaType": format, "monitored": false, "ebookMonitored": false, "audiobookMonitored": false,
@@ -273,6 +279,7 @@ func (r *Readarr) buildChaptarrAddPayload(raw json.RawMessage, author map[string
 		"ebookMetadataProfileId":     r.inst.EbookMetadataProfileID,
 		"audiobookMetadataProfileId": r.inst.AudiobookMetadataProfileID,
 		"author":                     authorPayload, "addOptions": map[string]any{"searchForNewBook": false},
+		"editions": editions,
 	}
 	if id := positiveInt(author["id"]); id > 0 {
 		payload["authorId"] = id
@@ -309,13 +316,18 @@ func (r *Readarr) chaptarrBooksForAuthor(ctx context.Context, authorID int) ([]m
 	return books, err
 }
 
+// findChaptarrBook matches by media type + normalized title, then prefers
+// (but does not require) a foreignBookId match. Chaptarr's metadata pipeline
+// canonicalizes a book's foreignBookId to whichever source (Goodreads,
+// Hardcover, ...) it trusts most once the full author bibliography syncs,
+// which frequently differs from the id the original search result carried.
+// Requiring an exact match here caused every add to time out: the book was
+// present under the same title but a re-mapped foreignBookId, so it was
+// never found and requestChaptarrBook kept polling until the deadline.
 func (r *Readarr) findChaptarrBook(books []map[string]any, title, foreignID, format string) map[string]any {
 	var candidates []map[string]any
 	for _, book := range books {
 		if !strings.EqualFold(stringFromMap(book, "mediaType"), format) {
-			continue
-		}
-		if foreignID != "" && stringFromMap(book, "foreignBookId") != "" && !strings.EqualFold(stringFromMap(book, "foreignBookId"), foreignID) {
 			continue
 		}
 		if normalizeBookTitle(stringFromMap(book, "title")) != normalizeBookTitle(title) {
@@ -323,11 +335,18 @@ func (r *Readarr) findChaptarrBook(books []map[string]any, title, foreignID, for
 		}
 		candidates = append(candidates, book)
 	}
-	sort.SliceStable(candidates, func(i, j int) bool { return positiveInt(candidates[i]["id"]) < positiveInt(candidates[j]["id"]) })
-	if len(candidates) > 0 {
-		return candidates[0]
+	if len(candidates) == 0 {
+		return nil
 	}
-	return nil
+	if foreignID != "" {
+		for _, book := range candidates {
+			if strings.EqualFold(stringFromMap(book, "foreignBookId"), foreignID) {
+				return book
+			}
+		}
+	}
+	sort.SliceStable(candidates, func(i, j int) bool { return positiveInt(candidates[i]["id"]) < positiveInt(candidates[j]["id"]) })
+	return candidates[0]
 }
 
 func chaptarrBookResolved(book map[string]any) bool {
