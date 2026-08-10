@@ -152,3 +152,41 @@ func TestChaptarrCapabilitiesRejectWrongProfileType(t *testing.T) {
 		t.Fatalf("expected typed profile validation error, got %v", err)
 	}
 }
+
+func TestPositiveInt(t *testing.T) {
+	tests := []struct {
+		name string
+		v    any
+		want int
+	}{
+		{"int", 42, 42},
+		{"int64", int64(100), 100},
+		{"float64", float64(3.14), 3},
+		{"json.Number", json.Number("99"), 99},
+		{"string", "77", 77},
+		{"string trim", " 88 ", 88},
+		{"invalid string", "abc", 0},
+		{"nil bool", true, 0},
+	}
+	for _, tt := range tests {
+		got := positiveInt(tt.v)
+		if got != tt.want {
+			t.Errorf("%s: positiveInt(%v) = %d, want %d", tt.name, tt.v, got, tt.want)
+		}
+	}
+}
+
+func TestNormalizeBookTitle(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"The Hobbit", "the hobbit"},
+		{"  THE FELLOWSHIP OF THE RING  ", "the fellowship of the ring"},
+		{"A\tStorm of\nSwords", "a storm of swords"},
+		{"", ""},
+	}
+	for _, tt := range tests {
+		got := normalizeBookTitle(tt.in)
+		if got != tt.want {
+			t.Errorf("normalizeBookTitle(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
