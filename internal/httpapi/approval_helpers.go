@@ -44,7 +44,7 @@ func (s *Server) completeRequestFromCatalogMatch(ctx context.Context, req *db.Re
 		if _, err := ra.MonitorBooks(ctx, []int{int(match.ReadarrID)}, true); err == nil {
 			if strings.EqualFold(inst.Backend, "chaptarr") {
 				if _, searchErr := ra.SearchBooks(ctx, []int{int(match.ReadarrID)}); searchErr != nil {
-					return fmt.Errorf("Chaptarr monitoring was enabled but its search could not be queued: %w", searchErr)
+					return fmt.Errorf("chaptarr monitoring was enabled but its search could not be queued: %w", searchErr)
 				}
 			}
 			if externalStatus == "" {

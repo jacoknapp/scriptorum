@@ -144,7 +144,7 @@ func (r *Readarr) validateChaptarrSelections(c *ChaptarrCapabilities) error {
 	}
 	for _, check := range checks {
 		if check.id != 0 && !check.set[check.id] {
-			return fmt.Errorf("Chaptarr %s %d does not exist or has the wrong media type", check.label, check.id)
+			return fmt.Errorf("chaptarr %s %d does not exist or has the wrong media type", check.label, check.id)
 		}
 	}
 	for label, path := range map[string]string{
@@ -152,7 +152,7 @@ func (r *Readarr) validateChaptarrSelections(c *ChaptarrCapabilities) error {
 		"audiobook root folder": r.inst.AudiobookRootFolderPath,
 	} {
 		if strings.TrimSpace(path) != "" && !paths[strings.TrimSpace(path)] {
-			return fmt.Errorf("Chaptarr %s %q is missing or inaccessible", label, path)
+			return fmt.Errorf("chaptarr %s %q is missing or inaccessible", label, path)
 		}
 	}
 	return nil
@@ -186,7 +186,7 @@ func (r *Readarr) validateChaptarrRequestConfig() error {
 	}
 	for _, check := range checks {
 		if !check.set {
-			return fmt.Errorf("Chaptarr %s is not configured", check.label)
+			return fmt.Errorf("chaptarr %s is not configured", check.label)
 		}
 	}
 	return nil
@@ -247,7 +247,7 @@ func (r *Readarr) buildChaptarrAddPayload(raw json.RawMessage, author map[string
 		}
 	}
 	if strings.TrimSpace(stringFromMap(selected, "title")) == "" || authorName == "" {
-		return nil, fmt.Errorf("Chaptarr selection is missing title or author identity")
+		return nil, fmt.Errorf("chaptarr selection is missing title or author identity")
 	}
 	root := r.chaptarrRoot(format)
 	authorPayload := map[string]any{
@@ -349,7 +349,7 @@ func (r *Readarr) waitForChaptarrBook(ctx context.Context, authorID int, title, 
 		}
 		select {
 		case <-ctx.Done():
-			return nil, fmt.Errorf("Chaptarr metadata did not resolve the selected %s before the deadline: %w", format, ctx.Err())
+			return nil, fmt.Errorf("chaptarr metadata did not resolve the selected %s before the deadline: %w", format, ctx.Err())
 		case <-ticker.C:
 		}
 	}
@@ -378,7 +378,7 @@ func (r *Readarr) enableChaptarrAuthorFormat(ctx context.Context, authorID int) 
 		return err
 	}
 	if enabled, _ := verified[flag].(bool); !enabled {
-		return fmt.Errorf("Chaptarr did not retain the %s author monitor setting", r.chaptarrFormat())
+		return fmt.Errorf("chaptarr did not retain the %s author monitor setting", r.chaptarrFormat())
 	}
 	return nil
 }
@@ -391,7 +391,7 @@ func (r *Readarr) prepareChaptarrBook(ctx context.Context, bookID int) (map[stri
 	}
 	authorID := positiveInt(book["authorId"])
 	if authorID <= 0 {
-		return nil, fmt.Errorf("Chaptarr book %d has no author id", bookID)
+		return nil, fmt.Errorf("chaptarr book %d has no author id", bookID)
 	}
 	if err := r.enableChaptarrAuthorFormat(ctx, authorID); err != nil {
 		return nil, err
@@ -409,7 +409,7 @@ func (r *Readarr) prepareChaptarrBook(ctx context.Context, bookID int) (map[stri
 		}
 	}
 	if chosen < 0 {
-		return nil, fmt.Errorf("Chaptarr has no usable %s edition for %q", format, stringFromMap(book, "title"))
+		return nil, fmt.Errorf("chaptarr has no usable %s edition for %q", format, stringFromMap(book, "title"))
 	}
 	chosenID := positiveInt(editions[chosen]["id"])
 	chosenForeignID := stringFromMap(editions[chosen], "foreignEditionId")
@@ -440,7 +440,7 @@ func (r *Readarr) prepareChaptarrBook(ctx context.Context, bookID int) (map[stri
 		}
 	}
 	if monitoredCount != 1 || !selectedPersisted {
-		return nil, fmt.Errorf("Chaptarr did not retain exactly one selected %s edition for %q", format, stringFromMap(book, "title"))
+		return nil, fmt.Errorf("chaptarr did not retain exactly one selected %s edition for %q", format, stringFromMap(book, "title"))
 	}
 	return book, nil
 }
@@ -496,7 +496,7 @@ func (r *Readarr) requestChaptarrBook(ctx context.Context, raw json.RawMessage) 
 	if authorID <= 0 {
 		author, err = r.findChaptarrAuthor(ctx, selected)
 		if err != nil || author == nil {
-			return payload, postResponse, fmt.Errorf("Chaptarr accepted the book but did not return a resolvable author")
+			return payload, postResponse, fmt.Errorf("chaptarr accepted the book but did not return a resolvable author")
 		}
 		authorID = positiveInt(author["id"])
 	}
@@ -521,7 +521,7 @@ func (r *Readarr) requestChaptarrBook(ctx context.Context, raw json.RawMessage) 
 	monitored, _ := verified["monitored"].(bool)
 	formatMonitored, _ := verified[format+"Monitored"].(bool)
 	if !monitored || !formatMonitored {
-		return payload, postResponse, fmt.Errorf("Chaptarr did not retain %s monitoring for %q", format, title)
+		return payload, postResponse, fmt.Errorf("chaptarr did not retain %s monitoring for %q", format, title)
 	}
 	command := map[string]any{"name": "BookSearch", "bookIds": []int{bookID}}
 	if _, err := r.chaptarrJSON(ctx, http.MethodPost, "/api/v1/command", nil, command, nil); err != nil {
