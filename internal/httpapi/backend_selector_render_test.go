@@ -22,7 +22,12 @@ func TestBackendSelectorRendersOnSettingsAndSetup(t *testing.T) {
 		t.Fatalf("GET /settings code=%d body=%s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{`name="book_backend" value="chaptarr"`, `name="book_backend" value="readarr"`, `name="ra_ebooks_base"`, `name="ra_audio_base"`, `onclick="testReadarr('ebooks')"`} {
+	for _, want := range []string{
+		`name="book_backend" value="chaptarr"`, `name="book_backend" value="readarr"`,
+		`name="ra_ebooks_base"`, `name="ra_audio_base"`, `onclick="testReadarr('ebooks')"`,
+		`data-backend-radio`, `data-backend-section="chaptarr"`, `data-backend-section="readarr"`,
+		`function applyBackendSectionVisibility`,
+	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("settings.html missing %q", want)
 		}
@@ -38,7 +43,12 @@ func TestBackendSelectorRendersOnSettingsAndSetup(t *testing.T) {
 		t.Fatalf("GET /setup/step/3 code=%d body=%s", stepRec.Code, stepRec.Body.String())
 	}
 	stepBody := stepRec.Body.String()
-	for _, want := range []string{`name="book_backend" value="chaptarr"`, `name="book_backend" value="readarr"`, `name="ra_ebooks_base"`, `name="ra_audio_base"`, `hx-post="/setup/test/readarr?tag=ebooks"`} {
+	for _, want := range []string{
+		`name="book_backend" value="chaptarr"`, `name="book_backend" value="readarr"`,
+		`name="ra_ebooks_base"`, `name="ra_audio_base"`, `hx-post="/setup/test/readarr?tag=ebooks"`,
+		`data-backend-radio`, `data-backend-section="chaptarr"`, `data-backend-section="readarr"`,
+		`function applyBackendSectionVisibility`,
+	} {
 		if !strings.Contains(stepBody, want) {
 			t.Fatalf("step_readarr.html missing %q", want)
 		}

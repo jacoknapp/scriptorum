@@ -3,11 +3,12 @@
   <p class="text-sm text-slate-300">Choose which system Scriptorum sends approved requests to, then configure it below. You may leave this step blank and configure it later in Settings.</p>
 
   <form hx-post="/setup/save" hx-target="#backend-save-status" hx-swap="outerHTML" class="rounded p-3 bg-night-900/40 border border-white/5 flex flex-wrap gap-x-6 gap-y-2">
-    <label class="inline-flex items-center gap-2 text-slate-100"><input type="radio" name="book_backend" value="chaptarr" {{ if ne .BookBackend "readarr" }}checked{{ end }}> Chaptarr</label>
-    <label class="inline-flex items-center gap-2 text-slate-100"><input type="radio" name="book_backend" value="readarr" {{ if eq .BookBackend "readarr" }}checked{{ end }}> Readarr</label>
+    <label class="inline-flex items-center gap-2 text-slate-100"><input type="radio" name="book_backend" value="chaptarr" data-backend-radio {{ if ne .BookBackend "readarr" }}checked{{ end }}> Chaptarr</label>
+    <label class="inline-flex items-center gap-2 text-slate-100"><input type="radio" name="book_backend" value="readarr" data-backend-radio {{ if eq .BookBackend "readarr" }}checked{{ end }}> Readarr</label>
   </form>
   <div id="backend-save-status"></div>
 
+  <div data-backend-section="chaptarr" class="grid gap-4">
   <h3 class="text-md font-semibold text-slate-100">Chaptarr</h3>
   <p class="text-sm text-slate-300">Connect one Chaptarr instance for both eBooks and audiobooks. Scriptorum will use the selected format-specific profiles and root folders when requests are approved.</p>
 
@@ -47,7 +48,9 @@
     <button class="px-4 py-2 rounded-lg bg-gradient-to-r from-royal-600 to-royal-500 text-white justify-self-start">Save Configuration</button>
   </form>
   <div id="chaptarr-save-status"></div>
+  </div>
 
+  <div data-backend-section="readarr" class="grid gap-4">
   <h3 class="text-md font-semibold text-slate-100">Readarr</h3>
   <p class="text-sm text-slate-300">Configure your Readarr instances for automated book downloads.</p>
 
@@ -100,9 +103,21 @@
   </div>
 
   <div id="readarr-status"></div>
+  </div>
 </div>
 
 <script>
+function applyBackendSectionVisibility() {
+  const checked = document.querySelector('[data-backend-radio]:checked');
+  const selected = checked ? checked.value : 'chaptarr';
+  document.querySelectorAll('[data-backend-section]').forEach(section => {
+    section.classList.toggle('hidden', section.dataset.backendSection !== selected);
+  });
+}
+document.querySelectorAll('[data-backend-radio]').forEach(radio => {
+  radio.addEventListener('change', applyBackendSectionVisibility);
+});
+document.addEventListener('DOMContentLoaded', applyBackendSectionVisibility);
 function setupFillSelect(id, entries, selected, valueKey, labelKey) {
   const select = document.getElementById(id);
   if (!select) return;
