@@ -1144,7 +1144,30 @@ func readarrHTTPError(prefix, u, apiKey string, resp *http.Response, body []byte
 }
 
 // fetchQualityProfiles queries Readarr for quality profiles and returns a map[id->name]
+// fetchQualityProfiles returns the server's quality profiles, cached briefly
+// so a single AddBook call doesn't fetch the same profile list several times
+// over (sanitizeAndEnrichPayload and its helpers call this from multiple
+// places). The TTL is short enough that admin changes to profiles still show
+// up within a minute.
 func (r *Readarr) fetchQualityProfiles(ctx context.Context) (map[int]string, error) {
+	const cacheKey = "qualityprofiles"
+	if cached, found := r.getCachedData(cacheKey, "qualityprofile"); found {
+		var out map[int]string
+		if err := json.Unmarshal([]byte(cached), &out); err == nil {
+			return out, nil
+		}
+	}
+	out, err := r.fetchQualityProfilesUncached(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if data, merr := json.Marshal(out); merr == nil {
+		r.setCachedData(cacheKey, "qualityprofile", string(data), 60*time.Second)
+	}
+	return out, nil
+}
+
+func (r *Readarr) fetchQualityProfilesUncached(ctx context.Context) (map[int]string, error) {
 	req, u, err := r.newRequest(ctx, http.MethodGet, "/api/v1/qualityprofile", nil, nil)
 	if err != nil {
 		return nil, err
@@ -1235,8 +1258,28 @@ func (r *Readarr) GetQualityProfilesByID(ctx context.Context) (map[int]string, e
 	return out, nil
 }
 
-// fetchRootFolders queries Readarr for root folders and returns a slice of paths
+// fetchRootFolders queries Readarr for root folders, cached briefly for the
+// same reason as fetchQualityProfiles: getValidRootFolderPath is called from
+// up to half a dozen places while building a single add payload.
 func (r *Readarr) fetchRootFolders(ctx context.Context) ([]string, error) {
+	const cacheKey = "rootfolders"
+	if cached, found := r.getCachedData(cacheKey, "rootfolder"); found {
+		var out []string
+		if err := json.Unmarshal([]byte(cached), &out); err == nil {
+			return out, nil
+		}
+	}
+	out, err := r.fetchRootFoldersUncached(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if data, merr := json.Marshal(out); merr == nil {
+		r.setCachedData(cacheKey, "rootfolder", string(data), 60*time.Second)
+	}
+	return out, nil
+}
+
+func (r *Readarr) fetchRootFoldersUncached(ctx context.Context) ([]string, error) {
 	req, u, err := r.newRequest(ctx, http.MethodGet, "/api/v1/rootfolder", nil, nil)
 	if err != nil {
 		return nil, err

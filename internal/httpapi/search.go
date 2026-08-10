@@ -245,150 +245,104 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 		if inst, ok := s.readarrInstanceForFormat("audiobook"); ok {
 			instA = inst
 		}
+		term := q
+		if asin != "" {
+			term = asin
+		}
 
-		// Query Readarr ebooks
-		if strings.TrimSpace(instE.BaseURL) != "" && strings.TrimSpace(instE.APIKey) != "" && (asin != "" || q != "") {
-			ra := providers.NewReadarrWithDB(instE, s.db.SQL())
-			term := q
-			if asin != "" {
-				term = asin
-			}
-			if list, err := ra.LookupByTerm(r.Context(), term); err == nil {
-				for _, b := range list {
-					if !isRenderableSearchBook(b.Title, b.Disambiguation) {
-						continue
+		// processReadarrLookup builds search items from a single Readarr/Chaptarr
+		// lookup response for one format (ebook or audiobook).
+		processReadarrLookup := func(list []providers.LookupBook, inst providers.ReadarrInstance, kind string, ebook bool) {
+			for _, b := range list {
+				if !isRenderableSearchBook(b.Title, b.Disambiguation) {
+					continue
+				}
+				var author map[string]any
+				if b.Author != nil {
+					author = b.Author
+				} else if len(b.Authors) > 0 {
+					author = b.Authors[0]
+				} else if b.AuthorId > 0 {
+					author = map[string]any{"id": b.AuthorId}
+				} else if b.AuthorTitle != "" {
+					author = map[string]any{"name": parseAuthorNameFromTitle(b.AuthorTitle)}
+				}
+				// Build canonical Readarr Book schema candidate. Include a single monitored edition to pin to this foreignEditionId.
+				cand := map[string]any{
+					"title":            b.Title,
+					"titleSlug":        b.TitleSlug,
+					"author":           author,
+					"editions":         []any{map[string]any{"foreignEditionId": b.ForeignEditionId, "monitored": true}},
+					"foreignBookId":    b.ForeignBookId,
+					"foreignEditionId": b.ForeignEditionId,
+					// provider will backfill these defaults if missing
+					"monitored":         true,
+					"metadataProfileId": 1,
+				}
+				cjson, _ := json.Marshal(cand)
+				dispAuthor := ""
+				if author != nil {
+					dispAuthor, _ = author["name"].(string)
+					if dispAuthor == "" {
+						dispAuthor, _ = author["authorName"].(string)
 					}
-					var author map[string]any
-					if b.Author != nil {
-						author = b.Author
-					} else if len(b.Authors) > 0 {
-						author = b.Authors[0]
-					} else if b.AuthorId > 0 {
-						author = map[string]any{"id": b.AuthorId}
-					} else if b.AuthorTitle != "" {
-						author = map[string]any{"name": parseAuthorNameFromTitle(b.AuthorTitle)}
-					}
-					// Build canonical Readarr Book schema candidate. Include a single monitored edition to pin to this foreignEditionId.
-					cand := map[string]any{
-						"title":            b.Title,
-						"titleSlug":        b.TitleSlug,
-						"author":           author,
-						"editions":         []any{map[string]any{"foreignEditionId": b.ForeignEditionId, "monitored": true}},
-						"foreignBookId":    b.ForeignBookId,
-						"foreignEditionId": b.ForeignEditionId,
-						// provider will backfill these defaults if missing
-						"monitored":         true,
-						"metadataProfileId": 1,
-					}
-					cjson, _ := json.Marshal(cand)
-					dispAuthor := ""
-					if author != nil {
-						dispAuthor, _ = author["name"].(string)
-						if dispAuthor == "" {
-							dispAuthor, _ = author["authorName"].(string)
-						}
-					}
-					var authors []string
-					if dispAuthor != "" {
-						authors = []string{dispAuthor}
-					}
-					// Derive cover URL if available. Prefer remote/absolute URLs so
-					// the browser can reliably fetch images. If Readarr returned a
-					// proxy-relative path (e.g. /MediaCover/...), convert it to an
-					// absolute URL using the instance BaseURL.
-					cover := util.FirstNonEmpty(b.RemoteCover, b.RemotePoster, b.CoverUrl)
-					if cover == "" && len(b.Images) > 0 {
-						for _, im := range b.Images {
-							if strings.EqualFold(im.CoverType, "cover") || strings.EqualFold(im.CoverType, "poster") {
-								// prefer remoteUrl when available
-								cover = util.FirstNonEmpty(im.RemoteUrl, im.Url)
-								if cover != "" {
-									break
-								}
+				}
+				var authors []string
+				if dispAuthor != "" {
+					authors = []string{dispAuthor}
+				}
+				// Derive cover URL if available. Prefer remote/absolute URLs so
+				// the browser can reliably fetch images. If Readarr returned a
+				// proxy-relative path (e.g. /MediaCover/...), convert it to an
+				// absolute URL using the instance BaseURL.
+				cover := util.FirstNonEmpty(b.RemoteCover, b.RemotePoster, b.CoverUrl)
+				if cover == "" && len(b.Images) > 0 {
+					for _, im := range b.Images {
+						if strings.EqualFold(im.CoverType, "cover") || strings.EqualFold(im.CoverType, "poster") {
+							// prefer remoteUrl when available
+							cover = util.FirstNonEmpty(im.RemoteUrl, im.Url)
+							if cover != "" {
+								break
 							}
 						}
 					}
-					// If the cover is a proxy-relative path, make it absolute
-					if strings.HasPrefix(cover, "/") && strings.TrimSpace(instE.BaseURL) != "" {
-						cover = strings.TrimRight(instE.BaseURL, "/") + cover
-					}
-					cover = s.normalizeRequestCover("ebook", cover)
-					lbIsbn10, lbIsbn13, _ := extractIdentifiers(b)
-					cover = appendCoverIsbnFallback(cover, lbIsbn13, lbIsbn10)
-					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover, Series: b.SeriesTitle}, Provider: "readarr-ebook"}, true, string(cjson))
+				}
+				// If the cover is a proxy-relative path, make it absolute
+				if strings.HasPrefix(cover, "/") && strings.TrimSpace(inst.BaseURL) != "" {
+					cover = strings.TrimRight(inst.BaseURL, "/") + cover
+				}
+				cover = s.normalizeRequestCover(kind, cover)
+				lbIsbn10, lbIsbn13, _ := extractIdentifiers(b)
+				cover = appendCoverIsbnFallback(cover, lbIsbn13, lbIsbn10)
+				upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover, Series: b.SeriesTitle}, Provider: "readarr-" + kind}, ebook, string(cjson))
+			}
+		}
+
+		// When ebook and audiobook resolve to the same server (always true for
+		// a shared Chaptarr backend, and possible if a legacy Readarr admin
+		// points both slots at one instance), issuing the lookup twice just
+		// doubles load on that server for an identical response. Fetch once
+		// and feed both legs from the same list.
+		sameServer := strings.TrimSpace(instE.BaseURL) != "" &&
+			strings.EqualFold(strings.TrimSpace(instE.BaseURL), strings.TrimSpace(instA.BaseURL)) &&
+			instE.APIKey == instA.APIKey
+
+		haveEbook := strings.TrimSpace(instE.BaseURL) != "" && strings.TrimSpace(instE.APIKey) != "" && (asin != "" || q != "")
+		haveAudio := strings.TrimSpace(instA.BaseURL) != "" && strings.TrimSpace(instA.APIKey) != "" && (asin != "" || q != "")
+
+		if haveEbook {
+			ra := providers.NewReadarrWithDB(instE, s.db.SQL())
+			if list, err := ra.LookupByTerm(r.Context(), term); err == nil {
+				processReadarrLookup(list, instE, "ebook", true)
+				if sameServer && haveAudio {
+					processReadarrLookup(list, instA, "audiobook", false)
 				}
 			}
 		}
-		// Query Readarr audiobooks
-		if strings.TrimSpace(instA.BaseURL) != "" && strings.TrimSpace(instA.APIKey) != "" && (asin != "" || q != "") {
+		if haveAudio && !(sameServer && haveEbook) {
 			ra := providers.NewReadarrWithDB(instA, s.db.SQL())
-			term := q
-			if asin != "" {
-				term = asin
-			}
 			if list, err := ra.LookupByTerm(r.Context(), term); err == nil {
-				for _, b := range list {
-					if !isRenderableSearchBook(b.Title, b.Disambiguation) {
-						continue
-					}
-					var author map[string]any
-					if b.Author != nil {
-						author = b.Author
-					} else if len(b.Authors) > 0 {
-						author = b.Authors[0]
-					} else if b.AuthorId > 0 {
-						author = map[string]any{"id": b.AuthorId}
-					} else if b.AuthorTitle != "" {
-						author = map[string]any{"name": parseAuthorNameFromTitle(b.AuthorTitle)}
-					}
-					// Build canonical Readarr Book schema candidate for audiobooks
-					cand := map[string]any{
-						"title":             b.Title,
-						"titleSlug":         b.TitleSlug,
-						"author":            author,
-						"editions":          []any{map[string]any{"foreignEditionId": b.ForeignEditionId, "monitored": true}},
-						"foreignBookId":     b.ForeignBookId,
-						"foreignEditionId":  b.ForeignEditionId,
-						"monitored":         true,
-						"metadataProfileId": 1,
-					}
-					cjson, _ := json.Marshal(cand)
-					dispAuthor := ""
-					if author != nil {
-						dispAuthor, _ = author["name"].(string)
-						if dispAuthor == "" {
-							dispAuthor, _ = author["authorName"].(string)
-						}
-					}
-					var authors []string
-					if dispAuthor != "" {
-						authors = []string{dispAuthor}
-					}
-					// Derive cover URL if available. Prefer remote/absolute URLs so
-					// the browser can reliably fetch images. If Readarr returned a
-					// proxy-relative path (e.g. /MediaCover/...), convert it to an
-					// absolute URL using the instance BaseURL.
-					cover := util.FirstNonEmpty(b.RemoteCover, b.RemotePoster, b.CoverUrl)
-					if cover == "" && len(b.Images) > 0 {
-						for _, im := range b.Images {
-							if strings.EqualFold(im.CoverType, "cover") || strings.EqualFold(im.CoverType, "poster") {
-								// prefer remoteUrl when available
-								cover = util.FirstNonEmpty(im.RemoteUrl, im.Url)
-								if cover != "" {
-									break
-								}
-							}
-						}
-					}
-					// If the cover is a proxy-relative path, make it absolute
-					if strings.HasPrefix(cover, "/") && strings.TrimSpace(instA.BaseURL) != "" {
-						cover = strings.TrimRight(instA.BaseURL, "/") + cover
-					}
-					cover = s.normalizeRequestCover("audiobook", cover)
-					lbIsbn10, lbIsbn13, _ := extractIdentifiers(b)
-					cover = appendCoverIsbnFallback(cover, lbIsbn13, lbIsbn10)
-					upsert(searchItem{BookItem: providers.BookItem{Title: b.Title, Authors: authors, CoverSmall: cover, CoverMedium: cover, Series: b.SeriesTitle}, Provider: "readarr-audiobook"}, false, string(cjson))
-				}
+				processReadarrLookup(list, instA, "audiobook", false)
 			}
 		}
 

@@ -52,15 +52,18 @@ type readarrSyncViewData struct {
 }
 
 func (s *Server) readarrSyncInterval() time.Duration {
-	if cfg := s.settings.Get(); cfg != nil {
-		if strings.TrimSpace(cfg.Chaptarr.BaseURL) != "" && strings.TrimSpace(cfg.Chaptarr.APIKey) != "" {
-			if d, err := time.ParseDuration(cfg.Chaptarr.SyncInterval); err == nil && d >= time.Minute {
-				return d
-			}
-		}
-		if d, err := time.ParseDuration(cfg.Readarr.SyncInterval); err == nil && d >= time.Minute {
+	cfg := s.settings.Get()
+	if cfg == nil {
+		return readarrAutoSyncInterval
+	}
+	if activeBookBackend(cfg) == "chaptarr" {
+		if d, err := time.ParseDuration(cfg.Chaptarr.SyncInterval); err == nil && d >= time.Minute {
 			return d
 		}
+		return readarrAutoSyncInterval
+	}
+	if d, err := time.ParseDuration(cfg.Readarr.SyncInterval); err == nil && d >= time.Minute {
+		return d
 	}
 	return readarrAutoSyncInterval
 }
@@ -525,20 +528,27 @@ func (s *Server) toProviderInstance(c config.ReadarrInstance) providers.ReadarrI
 	}
 }
 
+// activeBookBackend resolves the admin's book backend choice for cfg. Every
+// call site that needs to know "chaptarr" vs "readarr" must go through this
+// so the two backends can't drift out of sync the way readarrSyncInterval
+// once did by re-deriving the same decision with its own presence check.
+func activeBookBackend(cfg *config.Config) string {
+	backend := strings.ToLower(strings.TrimSpace(cfg.BookBackend))
+	if backend != "" {
+		return backend
+	}
+	// Configs are migrated to set this on Load(); this is only a safety net
+	// for callers that construct a Config without going through Load()
+	// (e.g. tests).
+	if strings.TrimSpace(cfg.Chaptarr.BaseURL) != "" && strings.TrimSpace(cfg.Chaptarr.APIKey) != "" {
+		return "chaptarr"
+	}
+	return "readarr"
+}
+
 func (s *Server) readarrInstanceForFormat(format string) (providers.ReadarrInstance, bool) {
 	cfg := s.settings.Get()
-	backend := strings.ToLower(strings.TrimSpace(cfg.BookBackend))
-	if backend == "" {
-		// Configs are migrated to set this on Load(); this is only a safety
-		// net for callers that construct a Config without going through
-		// Load() (e.g. tests).
-		if strings.TrimSpace(cfg.Chaptarr.BaseURL) != "" && strings.TrimSpace(cfg.Chaptarr.APIKey) != "" {
-			backend = "chaptarr"
-		} else {
-			backend = "readarr"
-		}
-	}
-	if backend == "chaptarr" {
+	if activeBookBackend(cfg) == "chaptarr" {
 		if strings.TrimSpace(cfg.Chaptarr.BaseURL) == "" || strings.TrimSpace(cfg.Chaptarr.APIKey) == "" {
 			return providers.ReadarrInstance{}, false
 		}
