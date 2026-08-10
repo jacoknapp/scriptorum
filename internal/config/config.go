@@ -142,13 +142,19 @@ type Config struct {
 
 	// Audiobookshelf integration removed
 
+	// BookBackend is the admin's explicit choice of book management backend:
+	// "chaptarr" or "readarr". Set via the setup wizard or settings page.
+	// Empty only on configs written before this field existed; Load()
+	// migrates those in place by inferring from what's already configured.
+	BookBackend string `yaml:"book_backend"`
+
 	// Chaptarr is the preferred book backend. Unlike Readarr, one Chaptarr
 	// instance manages both ebook and audiobook libraries. The format-specific
 	// profile and root selections below are applied to that shared instance.
 	Chaptarr ChaptarrConfig `yaml:"chaptarr"`
 
-	// Readarr is retained for backwards compatibility. When Chaptarr is fully
-	// configured it takes precedence for both formats.
+	// Readarr is the legacy book backend, kept for admins who haven't
+	// migrated to Chaptarr. Selected via BookBackend == "readarr".
 	Readarr struct {
 		Ebooks     ReadarrInstance `yaml:"ebooks"`
 		Audiobooks ReadarrInstance `yaml:"audiobooks"`
@@ -266,6 +272,16 @@ func Load(path string) (*Config, error) {
 	// Migrate legacy admin emails to usernames if needed
 	if len(cfg.Admins.Usernames) == 0 && len(cfg.Admins.Emails) > 0 {
 		cfg.Admins.Usernames = append(cfg.Admins.Usernames, cfg.Admins.Emails...)
+	}
+	// Migrate configs written before BookBackend existed: infer the backend
+	// that was already active under the old implicit "Chaptarr wins if
+	// configured" rule, so upgrading doesn't silently change behavior.
+	if strings.TrimSpace(cfg.BookBackend) == "" {
+		if strings.TrimSpace(cfg.Chaptarr.BaseURL) != "" && strings.TrimSpace(cfg.Chaptarr.APIKey) != "" {
+			cfg.BookBackend = "chaptarr"
+		} else {
+			cfg.BookBackend = "readarr"
+		}
 	}
 	cfg.Discovery.Languages = NormalizeDiscoveryLanguages(cfg.Discovery.Languages)
 	return &cfg, nil

@@ -527,7 +527,21 @@ func (s *Server) toProviderInstance(c config.ReadarrInstance) providers.ReadarrI
 
 func (s *Server) readarrInstanceForFormat(format string) (providers.ReadarrInstance, bool) {
 	cfg := s.settings.Get()
-	if strings.TrimSpace(cfg.Chaptarr.BaseURL) != "" && strings.TrimSpace(cfg.Chaptarr.APIKey) != "" {
+	backend := strings.ToLower(strings.TrimSpace(cfg.BookBackend))
+	if backend == "" {
+		// Configs are migrated to set this on Load(); this is only a safety
+		// net for callers that construct a Config without going through
+		// Load() (e.g. tests).
+		if strings.TrimSpace(cfg.Chaptarr.BaseURL) != "" && strings.TrimSpace(cfg.Chaptarr.APIKey) != "" {
+			backend = "chaptarr"
+		} else {
+			backend = "readarr"
+		}
+	}
+	if backend == "chaptarr" {
+		if strings.TrimSpace(cfg.Chaptarr.BaseURL) == "" || strings.TrimSpace(cfg.Chaptarr.APIKey) == "" {
+			return providers.ReadarrInstance{}, false
+		}
 		kind := normalizeSyncKind(format)
 		media := cfg.Chaptarr.Ebooks
 		if kind == "audiobook" {

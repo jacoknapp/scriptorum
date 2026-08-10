@@ -84,6 +84,13 @@ func defaultConfig(dbPath string) *config.Config {
 
 	c.AmazonPublic.Enabled = true
 
+	// BookBackend is left empty here: the setup wizard's selector defaults
+	// its Chaptarr radio to checked when BookBackend isn't "readarr", and
+	// readarrInstanceForFormat falls back to inferring from what's actually
+	// configured when BookBackend is unset. Forcing "chaptarr" here would
+	// override that inference for configs built in-memory (tests, or any
+	// caller that mutates Config without a config.Load() round-trip).
+
 	// Chaptarr manages both media types through one API endpoint. The setup
 	// wizard fills in the URL/key and can discover these defaults from the
 	// server; the numeric defaults match a fresh Chaptarr installation.

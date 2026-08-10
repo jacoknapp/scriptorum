@@ -11,6 +11,7 @@ import (
 func TestReadarrInstanceForFormatPrefersSharedChaptarr(t *testing.T) {
 	s := newServerForTest(t)
 	cfg := s.settings.Get()
+	cfg.BookBackend = "chaptarr"
 	cfg.Chaptarr.BaseURL = "https://chaptarr.example"
 	cfg.Chaptarr.APIKey = "secret"
 	cfg.Chaptarr.Ebooks.QualityProfileID = 11
@@ -32,6 +33,29 @@ func TestReadarrInstanceForFormatPrefersSharedChaptarr(t *testing.T) {
 	audio, ok := s.readarrInstanceForFormat("audiobook")
 	if !ok || audio.Backend != "chaptarr" || audio.MediaType != "audiobook" || audio.DefaultQualityProfileID != 12 || audio.DefaultRootFolderPath != "/audio" {
 		t.Fatalf("unexpected audiobook instance: %+v", audio)
+	}
+}
+
+// TestReadarrInstanceForFormatRespectsExplicitReadarrSelection ensures the
+// admin's BookBackend choice is authoritative: even with Chaptarr fully
+// configured, explicitly selecting Readarr must use the Readarr instance,
+// not silently fall back to whichever backend happens to be configured.
+func TestReadarrInstanceForFormatRespectsExplicitReadarrSelection(t *testing.T) {
+	s := newServerForTest(t)
+	cfg := s.settings.Get()
+	cfg.BookBackend = "readarr"
+	cfg.Chaptarr.BaseURL = "https://chaptarr.example"
+	cfg.Chaptarr.APIKey = "secret"
+	cfg.Readarr.Ebooks.BaseURL = "https://readarr.example"
+	cfg.Readarr.Ebooks.APIKey = "readarr-key"
+	cfg.Readarr.Ebooks.DefaultQualityProfileID = 7
+	if err := s.settings.Update(cfg); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	ebook, ok := s.readarrInstanceForFormat("ebook")
+	if !ok || ebook.Backend == "chaptarr" || ebook.BaseURL != "https://readarr.example" || ebook.DefaultQualityProfileID != 7 {
+		t.Fatalf("unexpected ebook instance: %+v", ebook)
 	}
 }
 

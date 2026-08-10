@@ -55,6 +55,9 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		cur := *s.settings.Get()
 		// General settings
 		cur.ServerURL = strings.TrimSpace(r.FormValue("server_url"))
+		if v := strings.ToLower(strings.TrimSpace(r.FormValue("book_backend"))); v == "chaptarr" || v == "readarr" {
+			cur.BookBackend = v
+		}
 		// Ensure we have a config salt for password hashing
 		if strings.TrimSpace(cur.Auth.Salt) == "" {
 			cur.Auth.Salt = genSalt()
@@ -154,9 +157,15 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 			stepFlags["admin"] = false
 		}
 
-		// Set Readarr step flags based on whether configurations are saved
-		stepFlags["rebooks"] = (strings.TrimSpace(cur.Chaptarr.BaseURL) != "" && strings.TrimSpace(cur.Chaptarr.APIKey) != "")
-		stepFlags["raudio"] = stepFlags["rebooks"]
+		// Set the book-backend step flags based on whichever backend is
+		// selected, so the step gates on the config the admin actually chose.
+		if strings.EqualFold(cur.BookBackend, "readarr") {
+			stepFlags["rebooks"] = strings.TrimSpace(cur.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cur.Readarr.Ebooks.APIKey) != ""
+			stepFlags["raudio"] = strings.TrimSpace(cur.Readarr.Audiobooks.BaseURL) != "" && strings.TrimSpace(cur.Readarr.Audiobooks.APIKey) != ""
+		} else {
+			stepFlags["rebooks"] = strings.TrimSpace(cur.Chaptarr.BaseURL) != "" && strings.TrimSpace(cur.Chaptarr.APIKey) != ""
+			stepFlags["raudio"] = stepFlags["rebooks"]
+		}
 
 		// HTMX: trigger a refresh of gating and reload the current step; no content body
 		w.Header().Set("HX-Trigger", "setup-saved")

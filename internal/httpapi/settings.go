@@ -116,6 +116,9 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 		// General
 		cur.Debug = (r.FormValue("debug") == "on")
 		cur.ServerURL = strings.TrimSpace(r.FormValue("server_url"))
+		if v := strings.ToLower(strings.TrimSpace(r.FormValue("book_backend"))); v == "chaptarr" || v == "readarr" {
+			cur.BookBackend = v
+		}
 		// Preserve Chaptarr settings when an older form that does not know about
 		// Chaptarr is submitted.
 		if _, ok := r.Form["chaptarr_base"]; ok {
