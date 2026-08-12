@@ -116,6 +116,8 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 			chaptarrKey := preserveSecretField(cur.Chaptarr.APIKey, chaptarrBase, r.FormValue("chaptarr_key"))
 			cur.Chaptarr.BaseURL = chaptarrBase
 			cur.Chaptarr.APIKey = chaptarrKey
+			cur.Chaptarr.BasicAuthUser = strings.TrimSpace(r.FormValue("chaptarr_basic_user"))
+			cur.Chaptarr.BasicAuthPassword = preserveSecretField(cur.Chaptarr.BasicAuthPassword, chaptarrBase, r.FormValue("chaptarr_basic_password"))
 			cur.Chaptarr.InsecureSkipVerify = readarrTruthy(r.FormValue("chaptarr_insecure"))
 			if id, err := strconv.Atoi(strings.TrimSpace(r.FormValue("chaptarr_ebook_qp"))); err == nil && id > 0 {
 				cur.Chaptarr.Ebooks.QualityProfileID = id
@@ -180,7 +182,10 @@ func (u *setupUI) handleTestChaptarr(s *Server) http.HandlerFunc {
 		base := strings.TrimSpace(r.FormValue("chaptarr_base"))
 		key := preserveSecretField(cfg.Chaptarr.APIKey, base, r.FormValue("chaptarr_key"))
 		client := providers.NewReadarrWithDB(providers.ReadarrInstance{
-			BaseURL: base, APIKey: key, InsecureSkipVerify: readarrTruthy(r.FormValue("chaptarr_insecure")) || s.outboundTLSInsecure(), Backend: "chaptarr",
+			BaseURL: base, APIKey: key,
+			BasicAuthUser:      strings.TrimSpace(r.FormValue("chaptarr_basic_user")),
+			BasicAuthPass:      preserveSecretField(cfg.Chaptarr.BasicAuthPassword, base, r.FormValue("chaptarr_basic_password")),
+			InsecureSkipVerify: readarrTruthy(r.FormValue("chaptarr_insecure")) || s.outboundTLSInsecure(), Backend: "chaptarr",
 		}, s.db.SQL())
 		ctx, cancel := context.WithTimeout(r.Context(), 12*time.Second)
 		defer cancel()

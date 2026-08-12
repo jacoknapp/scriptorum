@@ -245,8 +245,14 @@ type ReadarrInstance struct {
 }
 
 type ChaptarrConfig struct {
-	BaseURL            string              `yaml:"base_url"`
-	APIKey             string              `yaml:"api_key"`
+	BaseURL string `yaml:"base_url"`
+	APIKey  string `yaml:"api_key"`
+	// BasicAuthUser/BasicAuthPassword are Chaptarr's own login credentials.
+	// They are only needed for the image paths (/MediaCover,
+	// /MediaCoverProxy), which reject the API key; leave blank when Chaptarr
+	// runs without authentication.
+	BasicAuthUser      string              `yaml:"basic_auth_user"`
+	BasicAuthPassword  string              `yaml:"basic_auth_password"`
 	InsecureSkipVerify bool                `yaml:"insecure_skip_verify"`
 	SyncInterval       string              `yaml:"sync_interval"`
 	Ebooks             ChaptarrMediaConfig `yaml:"ebooks"`

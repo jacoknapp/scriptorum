@@ -27,6 +27,7 @@ func TestBackendSelectorRendersOnSettingsAndSetup(t *testing.T) {
 		`name="ra_ebooks_base"`, `name="ra_audio_base"`, `onclick="testReadarr('ebooks')"`,
 		`data-backend-radio`, `data-backend-section="chaptarr"`, `data-backend-section="readarr"`,
 		`function applyBackendSectionVisibility`,
+		`name="chaptarr_basic_user"`, `name="chaptarr_basic_password"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("settings.html missing %q", want)
@@ -48,6 +49,7 @@ func TestBackendSelectorRendersOnSettingsAndSetup(t *testing.T) {
 		`name="ra_ebooks_base"`, `name="ra_audio_base"`, `hx-post="/setup/test/readarr?tag=ebooks"`,
 		`data-backend-radio`, `data-backend-section="chaptarr"`, `data-backend-section="readarr"`,
 		`function applyBackendSectionVisibility`,
+		`name="chaptarr_basic_user"`, `name="chaptarr_basic_password"`,
 	} {
 		if !strings.Contains(stepBody, want) {
 			t.Fatalf("step_readarr.html missing %q", want)

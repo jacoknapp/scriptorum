@@ -118,6 +118,12 @@ type ReadarrInstance struct {
 	DefaultRootFolderPath   string
 	DefaultTags             []string
 	InsecureSkipVerify      bool
+	// BasicAuthUser/BasicAuthPass authenticate requests to paths the API key
+	// does not cover. Chaptarr accepts X-Api-Key only under /api; its
+	// /MediaCover and /MediaCoverProxy image paths answer 401 to everything
+	// but a Basic credential, which is what blanked out all cover art.
+	BasicAuthUser string
+	BasicAuthPass string
 	// Backend is "chaptarr" for the shared dual-format Chaptarr API. It is
 	// intentionally optional so existing Readarr callers remain compatible.
 	Backend                    string
@@ -576,6 +582,9 @@ func (r *Readarr) newRequest(ctx context.Context, method, path string, query url
 	}
 	if strings.TrimSpace(r.inst.APIKey) != "" {
 		req.Header.Set("X-Api-Key", r.inst.APIKey)
+	}
+	if u := strings.TrimSpace(r.inst.BasicAuthUser); u != "" {
+		req.SetBasicAuth(u, r.inst.BasicAuthPass)
 	}
 	req.Header.Set("User-Agent", "Scriptorum/1.0")
 	req.Header.Set("Accept", "application/json")

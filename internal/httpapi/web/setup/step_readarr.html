@@ -16,6 +16,11 @@
     <div class="rounded p-3 bg-night-900/40 border border-white/5 grid gap-2">
       <input name="chaptarr_base" placeholder="Base URL (e.g. http://chaptarr:8789)" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.Chaptarr.BaseURL}}">
       <input name="chaptarr_key" placeholder="{{ if .Chaptarr.APIKey }}Leave blank to keep saved API key{{ else }}API Key{{ end }}" type="password" autocomplete="new-password" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100">
+      <div class="grid md:grid-cols-2 gap-2">
+        <input name="chaptarr_basic_user" placeholder="Basic auth username (optional)" autocomplete="off" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100" value="{{.Chaptarr.BasicAuthUser}}">
+        <input name="chaptarr_basic_password" placeholder="{{ if .Chaptarr.BasicAuthPassword }}Leave blank to keep saved password{{ else }}Basic auth password (optional){{ end }}" type="password" autocomplete="new-password" class="border rounded px-3 py-2 w-full bg-night-900 text-slate-100">
+      </div>
+      <div class="text-sm text-slate-300">Only needed when Chaptarr requires a login. Cover images are served outside its API, so without these they load blank.</div>
       <label class="inline-flex items-center gap-2 text-sm text-slate-200"><input type="checkbox" name="chaptarr_insecure" {{ if .Chaptarr.InsecureSkipVerify }}checked{{ end }}> Skip TLS verification</label>
       <div class="flex items-center gap-2 mt-1">
         <button type="button" class="px-3 py-1.5 rounded-lg bg-night-800 text-royal-200 ring-1 ring-white/5 hover:bg-night-700" onclick="discoverChaptarr()">Test &amp; Discover</button>

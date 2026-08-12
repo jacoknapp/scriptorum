@@ -1219,6 +1219,12 @@ func (s *Server) serveReadarrCover() http.HandlerFunc {
 		if key := strings.TrimSpace(inst.APIKey); key != "" {
 			req.Header.Set("X-Api-Key", key)
 		}
+		// Chaptarr serves cover images outside /api, where the API key is not
+		// accepted, so these fetches need the Basic credential or they 401 and
+		// every cover renders blank.
+		if user := strings.TrimSpace(inst.BasicAuthUser); user != "" {
+			req.SetBasicAuth(user, inst.BasicAuthPass)
+		}
 		req.Header.Set("User-Agent", "Scriptorum/1.0")
 		req.Header.Set("Accept", "image/*,*/*;q=0.8")
 

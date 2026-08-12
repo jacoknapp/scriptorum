@@ -127,6 +127,8 @@ func (u *settingsUI) handleSettingsSave(s *Server) http.HandlerFunc {
 			chaptarrKey := preserveSecretField(cur.Chaptarr.APIKey, chaptarrBase, r.FormValue("chaptarr_key"))
 			cur.Chaptarr.BaseURL = chaptarrBase
 			cur.Chaptarr.APIKey = chaptarrKey
+			cur.Chaptarr.BasicAuthUser = strings.TrimSpace(r.FormValue("chaptarr_basic_user"))
+			cur.Chaptarr.BasicAuthPassword = preserveSecretField(cur.Chaptarr.BasicAuthPassword, chaptarrBase, r.FormValue("chaptarr_basic_password"))
 			cur.Chaptarr.InsecureSkipVerify = readarrTruthy(r.FormValue("chaptarr_insecure"))
 			// Save Chaptarr's format-specific profiles and roots.
 			if v := strings.TrimSpace(r.FormValue("chaptarr_ebook_qp")); v != "" {
@@ -237,10 +239,14 @@ func (s *Server) apiChaptarrCapabilities() http.HandlerFunc {
 		cfg := s.settings.Get()
 		base := cfg.Chaptarr.BaseURL
 		key := cfg.Chaptarr.APIKey
+		basicUser := cfg.Chaptarr.BasicAuthUser
+		basicPass := cfg.Chaptarr.BasicAuthPassword
 		insecure := cfg.Chaptarr.InsecureSkipVerify
 		if readarrTruthy(r.FormValue("use_overrides")) {
 			base = strings.TrimSpace(r.FormValue("base_url"))
 			key = preserveSecretField(key, base, r.FormValue("api_key"))
+			basicUser = strings.TrimSpace(r.FormValue("basic_user"))
+			basicPass = preserveSecretField(basicPass, base, r.FormValue("basic_password"))
 			insecure = readarrTruthy(r.FormValue("insecure"))
 		}
 		if strings.TrimSpace(base) == "" || strings.TrimSpace(key) == "" {
@@ -248,7 +254,10 @@ func (s *Server) apiChaptarrCapabilities() http.HandlerFunc {
 			return
 		}
 		client := providers.NewReadarrWithDB(providers.ReadarrInstance{
-			BaseURL: base, APIKey: key, InsecureSkipVerify: insecure || s.outboundTLSInsecure(), Backend: "chaptarr",
+			BaseURL: base, APIKey: key,
+			BasicAuthUser:      basicUser,
+			BasicAuthPass:      basicPass,
+			InsecureSkipVerify: insecure || s.outboundTLSInsecure(), Backend: "chaptarr",
 		}, s.db.SQL())
 		caps, err := client.ChaptarrCapabilities(r.Context())
 		if err != nil {

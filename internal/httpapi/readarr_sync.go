@@ -580,6 +580,8 @@ func (s *Server) readarrInstanceForFormat(format string) (providers.ReadarrInsta
 		return providers.ReadarrInstance{
 			BaseURL:                    cfg.Chaptarr.BaseURL,
 			APIKey:                     cfg.Chaptarr.APIKey,
+			BasicAuthUser:              cfg.Chaptarr.BasicAuthUser,
+			BasicAuthPass:              cfg.Chaptarr.BasicAuthPassword,
 			DefaultQualityProfileID:    media.QualityProfileID,
 			DefaultRootFolderPath:      media.RootFolderPath,
 			DefaultTags:                media.Tags,

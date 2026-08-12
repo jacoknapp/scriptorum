@@ -103,6 +103,11 @@
 						<input name="chaptarr_base" placeholder="Base URL (e.g. http://chaptarr:8789)" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Chaptarr.BaseURL }}">
 						<input type="password" name="chaptarr_key" placeholder="{{ if .Cfg.Chaptarr.APIKey }}Leave blank to keep saved API key{{ else }}API Key{{ end }}" autocomplete="new-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full">
 					</div>
+					<div class="grid md:grid-cols-2 gap-3 mt-3">
+						<input name="chaptarr_basic_user" placeholder="Basic auth username (optional)" autocomplete="off" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full" value="{{ .Cfg.Chaptarr.BasicAuthUser }}">
+						<input type="password" name="chaptarr_basic_password" placeholder="{{ if .Cfg.Chaptarr.BasicAuthPassword }}Leave blank to keep saved password{{ else }}Basic auth password (optional){{ end }}" autocomplete="new-password" class="border border-white/10 bg-night-900 text-slate-100 rounded px-3 py-2 w-full">
+					</div>
+					<div class="text-sm text-slate-400 mt-1">Only needed when Chaptarr requires a login. Cover images are served outside its API, so without these they load blank.</div>
 					<label class="inline-flex items-center gap-2 text-sm text-slate-200 mt-3"><input type="checkbox" name="chaptarr_insecure" {{ if .Cfg.Chaptarr.InsecureSkipVerify }}checked{{ end }}> Skip TLS verification</label>
 					<div class="mt-3 flex items-center gap-2">
 						<button type="button" class="px-3 py-1 rounded bg-royal-600 text-white hover:bg-royal-500" onclick="loadChaptarrCapabilities(true)">Test &amp; Discover</button>
@@ -277,10 +282,15 @@ async function loadChaptarrCapabilities(showStatus) {
 	if (showStatus && status) status.textContent = 'testing...';
 	const base = document.querySelector('[name="chaptarr_base"]');
 	const key = document.querySelector('[name="chaptarr_key"]');
+	const basicUser = document.querySelector('[name="chaptarr_basic_user"]');
+	const basicPassword = document.querySelector('[name="chaptarr_basic_password"]');
 	const insecure = document.querySelector('[name="chaptarr_insecure"]');
 	const body = new URLSearchParams({
 		use_overrides: 'true', base_url: base ? base.value : '',
-		api_key: key ? key.value : '', insecure: insecure && insecure.checked ? 'true' : 'false'
+		api_key: key ? key.value : '',
+		basic_user: basicUser ? basicUser.value : '',
+		basic_password: basicPassword ? basicPassword.value : '',
+		insecure: insecure && insecure.checked ? 'true' : 'false'
 	});
 	try {
 		const response = await fetch('/api/chaptarr/capabilities', {method: 'POST', headers: {'Content-Type': 'application/x-www-form-urlencoded'}, body: body.toString()});
