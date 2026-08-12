@@ -1033,16 +1033,9 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 		req.ReadarrReq = json.RawMessage([]byte(p.ProviderPayload))
 		req.CoverURL = s.requestCoverFromPayload(format, req.ReadarrReq)
 	} else {
-		// Attempt server-side attach for convenience/fallback
-		// Pick instance based on format
-		var inst providers.ReadarrInstance
-		if format == "audiobook" {
-			c := s.settings.Get().Readarr.Audiobooks
-			inst = s.toProviderInstance(c)
-		} else {
-			c := s.settings.Get().Readarr.Ebooks
-			inst = s.toProviderInstance(c)
-		}
+		// Attempt server-side attach for convenience/fallback, using whichever
+		// backend the book_backend selector currently points at.
+		inst, _ := s.readarrInstanceForFormat(format)
 		if strings.TrimSpace(inst.BaseURL) != "" && strings.TrimSpace(inst.APIKey) != "" {
 			ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 			term := util.FirstNonEmpty(p.ASIN, p.ISBN13, p.ISBN10)
@@ -1129,15 +1122,8 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if autoApprove {
-		// If Readarr not configured for this format, mark approved; else set processing and kick off async approval
-		var inst providers.ReadarrInstance
-		if format == "audiobook" {
-			c := s.settings.Get().Readarr.Audiobooks
-			inst = s.toProviderInstance(c)
-		} else {
-			c := s.settings.Get().Readarr.Ebooks
-			inst = s.toProviderInstance(c)
-		}
+		// If no backend is configured for this format, mark approved; else set processing and kick off async approval
+		inst, _ := s.readarrInstanceForFormat(format)
 
 		if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
 			// Approve without Readarr
@@ -1262,18 +1248,11 @@ func (s *Server) apiRetryRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pick Readarr instance based on format
-	var inst providers.ReadarrInstance
-	if req.Format == "audiobook" {
-		c := s.settings.Get().Readarr.Audiobooks
-		inst = s.toProviderInstance(c)
-	} else {
-		c := s.settings.Get().Readarr.Ebooks
-		inst = s.toProviderInstance(c)
-	}
+	// Resolve the backend the book_backend selector currently points at.
+	inst, _ := s.readarrInstanceForFormat(req.Format)
 
 	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
-		http.Error(w, "readarr not configured", 400)
+		http.Error(w, "book backend not configured", 400)
 		return
 	}
 
@@ -1328,16 +1307,9 @@ func (s *Server) apiSearchRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var inst providers.ReadarrInstance
-	if req.Format == "audiobook" {
-		c := s.settings.Get().Readarr.Audiobooks
-		inst = s.toProviderInstance(c)
-	} else {
-		c := s.settings.Get().Readarr.Ebooks
-		inst = s.toProviderInstance(c)
-	}
+	inst, _ := s.readarrInstanceForFormat(req.Format)
 	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
-		http.Error(w, "readarr not configured", 400)
+		http.Error(w, "book backend not configured", 400)
 		return
 	}
 
@@ -1741,14 +1713,7 @@ func (s *Server) apiApproveAllRequests(w http.ResponseWriter, r *http.Request) {
 	username := r.Context().Value(ctxUser).(*session).Username
 	for _, pendingReq := range pendingRequests {
 		req := pendingReq
-		var inst providers.ReadarrInstance
-		if req.Format == "audiobook" {
-			c := s.settings.Get().Readarr.Audiobooks
-			inst = s.toProviderInstance(c)
-		} else {
-			c := s.settings.Get().Readarr.Ebooks
-			inst = s.toProviderInstance(c)
-		}
+		inst, _ := s.readarrInstanceForFormat(req.Format)
 
 		if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
 			if err := s.db.ApproveRequest(r.Context(), req.ID, username); err != nil {
@@ -1799,17 +1764,10 @@ func (s *Server) apiHydrateRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pick instance based on format
-	var inst providers.ReadarrInstance
-	if strings.ToLower(req.Format) == "audiobook" {
-		c := s.settings.Get().Readarr.Audiobooks
-		inst = s.toProviderInstance(c)
-	} else {
-		c := s.settings.Get().Readarr.Ebooks
-		inst = s.toProviderInstance(c)
-	}
+	// Resolve the backend the book_backend selector currently points at.
+	inst, _ := s.readarrInstanceForFormat(req.Format)
 	if strings.TrimSpace(inst.BaseURL) == "" || strings.TrimSpace(inst.APIKey) == "" {
-		http.Error(w, "readarr not configured", http.StatusBadRequest)
+		http.Error(w, "book backend not configured", http.StatusBadRequest)
 		return
 	}
 
