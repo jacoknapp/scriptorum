@@ -1147,7 +1147,7 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 		} else {
 			// Mark processing and start async approval using stored payload
 			_ = s.db.UpdateRequestStatus(r.Context(), id, "processing", "auto-approval in progress", u.Username, nil, nil)
-			if err := s.enqueueAsyncApproval(id, req, inst, u.Username); err != nil {
+			if err := s.enqueueAsyncApproval(id, req, u.Username); err != nil {
 				_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", nil, nil)
 			}
 		}
@@ -1222,7 +1222,7 @@ func (s *Server) apiApproveRequest(w http.ResponseWriter, r *http.Request) {
 	_ = s.db.UpdateRequestStatus(r.Context(), id, "processing", "approval in progress", username, nil, nil)
 
 	// Process approval asynchronously through the Readarr submission queue.
-	if err := s.enqueueAsyncApproval(id, req, inst, username); err != nil {
+	if err := s.enqueueAsyncApproval(id, req, username); err != nil {
 		_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", nil, nil)
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -1282,7 +1282,7 @@ func (s *Server) apiRetryRequest(w http.ResponseWriter, r *http.Request) {
 	_ = s.db.UpdateRequestStatus(r.Context(), id, "processing", "retrying approval", username, nil, nil)
 
 	// Re-run async approval using the stored request payload.
-	if err := s.enqueueAsyncApproval(id, req, inst, username); err != nil {
+	if err := s.enqueueAsyncApproval(id, req, username); err != nil {
 		_ = s.db.UpdateRequestStatus(r.Context(), id, "error", err.Error(), "system", nil, nil)
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -1373,8 +1373,19 @@ func (s *Server) apiSearchRequest(w http.ResponseWriter, r *http.Request) {
 }
 
 // processAsyncApproval handles the long-running approval process asynchronously
-func (s *Server) processAsyncApproval(id int64, req *db.Request, inst providers.ReadarrInstance, username string) {
+func (s *Server) processAsyncApproval(id int64, req *db.Request, username string) {
 	ctx := context.Background()
+	// Resolve the backend fresh right now, not whatever was configured when
+	// this job was enqueued. The approval queue paces jobs out (see
+	// nextApprovalQueueDelay), so a job can sit for a while before running;
+	// if the admin changes the book_backend selector in that window, the
+	// currently-selected backend must win, not the stale one captured at
+	// click time.
+	inst, ok := s.readarrInstanceForFormat(req.Format)
+	if !ok {
+		_ = s.db.UpdateRequestStatus(ctx, id, "error", "no book backend configured", "system", nil, nil)
+		return
+	}
 	ra := providers.NewReadarrWithDB(inst, s.db.SQL())
 
 	timeout := 12 * time.Second
@@ -1757,7 +1768,7 @@ func (s *Server) apiApproveAllRequests(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf("failed to approve request %d", req.ID), 500)
 			return
 		}
-		if err := s.enqueueAsyncApproval(req.ID, &req, inst, username); err != nil {
+		if err := s.enqueueAsyncApproval(req.ID, &req, username); err != nil {
 			_ = s.db.UpdateRequestStatus(r.Context(), req.ID, "error", err.Error(), "system", nil, nil)
 			http.Error(w, fmt.Sprintf("failed to queue request %d: %v", req.ID, err), http.StatusServiceUnavailable)
 			return

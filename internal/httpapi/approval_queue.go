@@ -7,13 +7,11 @@ import (
 	"time"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/db"
-	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 )
 
 type approvalJob struct {
 	id       int64
 	req      *db.Request
-	inst     providers.ReadarrInstance
 	username string
 }
 
@@ -34,7 +32,11 @@ func approvalQueueCapacity(interval, jitter, maxWait time.Duration) int {
 	return capacity
 }
 
-func (s *Server) enqueueAsyncApproval(id int64, req *db.Request, inst providers.ReadarrInstance, username string) error {
+// enqueueAsyncApproval queues a request for background processing. It does
+// not take a resolved backend instance — processAsyncApproval resolves that
+// itself right before use, so the backend actually selected at run time
+// wins even if the job sat in the queue for a while.
+func (s *Server) enqueueAsyncApproval(id int64, req *db.Request, username string) error {
 	s.approvalQueueOnce.Do(func() {
 		go s.runApprovalQueue()
 	})
@@ -42,7 +44,6 @@ func (s *Server) enqueueAsyncApproval(id int64, req *db.Request, inst providers.
 	job := approvalJob{
 		id:       id,
 		req:      req,
-		inst:     inst,
 		username: username,
 	}
 
@@ -63,7 +64,7 @@ func (s *Server) runApprovalQueue() {
 			}
 		}
 		lastStarted = time.Now()
-		s.processAsyncApproval(job.id, job.req, job.inst, job.username)
+		s.processAsyncApproval(job.id, job.req, job.username)
 	}
 }
 

@@ -19,8 +19,7 @@ func (s *Server) recoverProcessingApprovals(ctx context.Context) {
 	}
 	for i := range requests {
 		req := requests[i]
-		inst, ok := s.readarrInstanceForFormat(req.Format)
-		if !ok {
+		if _, ok := s.readarrInstanceForFormat(req.Format); !ok {
 			_ = s.db.UpdateRequestStatus(ctxOrBackground(ctx), req.ID, "error", "readarr not configured; could not restore queued approval after restart", "system", nil, nil)
 			continue
 		}
@@ -28,7 +27,7 @@ func (s *Server) recoverProcessingApprovals(ctx context.Context) {
 		if username == "" {
 			username = "system"
 		}
-		if err := s.enqueueAsyncApproval(req.ID, &req, inst, username); err != nil {
+		if err := s.enqueueAsyncApproval(req.ID, &req, username); err != nil {
 			_ = s.db.UpdateRequestStatus(ctxOrBackground(ctx), req.ID, "error", err.Error(), "system", nil, nil)
 		}
 	}
