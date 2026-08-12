@@ -127,6 +127,9 @@ type searchDispatchJob struct {
 	readarrID int
 	format    string
 	username  string
+	// attempts counts dispatch attempts that failed with a transient error.
+	// The job is retried on later ticks until maxSearchDispatchAttempts.
+	attempts int
 }
 
 // Search dispatch waits a randomized interval between ticks so repeated searches
@@ -134,6 +137,14 @@ type searchDispatchJob struct {
 const (
 	searchDispatchMinInterval = 30 * time.Second
 	searchDispatchMaxInterval = 90 * time.Second
+	// maxSearchDispatchAttempts bounds how many times a failing search command
+	// is retried before the request is finally marked as an error. Dispatch is
+	// batched, so a single transient failure (a DNS blip, the backend
+	// restarting) previously flipped every request in the batch straight to
+	// "error" — including requests that were perfectly healthy and were only
+	// being re-dispatched because the server had restarted. Retrying across
+	// ticks rides out those blips instead of mislabelling good requests.
+	maxSearchDispatchAttempts = 4
 )
 
 func nextSearchDispatchInterval() time.Duration {
@@ -244,9 +255,23 @@ drained:
 		for _, job := range formatJobs {
 			if err != nil {
 				if s.settings.Get().Debug {
-					fmt.Printf("DEBUG: search dispatch: SearchBooks failed for request %d: %v\n", job.requestID, err)
+					fmt.Printf("DEBUG: search dispatch: SearchBooks failed for request %d (attempt %d): %v\n", job.requestID, job.attempts+1, err)
 				}
-				_ = s.db.UpdateRequestStatus(ctx, job.requestID, "error", fmt.Sprintf("search dispatch failed: %v", err), "system", nil, body)
+				job.attempts++
+				if job.attempts < maxSearchDispatchAttempts {
+					// Transient failure: keep the request queued and try again
+					// on a later tick rather than declaring it broken.
+					select {
+					case s.searchDispatchQueue <- job:
+					default:
+						// Queue is full; the request stays "queued" in the DB
+						// and is picked up by the next reload.
+					}
+					reason := fmt.Sprintf("search dispatch retrying (attempt %d of %d)", job.attempts, maxSearchDispatchAttempts)
+					_ = s.db.UpdateRequestStatus(ctx, job.requestID, "queued", reason, job.username, nil, nil)
+					continue
+				}
+				_ = s.db.UpdateRequestStatus(ctx, job.requestID, "error", fmt.Sprintf("search dispatch failed after %d attempts: %v", job.attempts, err), "system", nil, body)
 			} else {
 				reason := fmt.Sprintf("Readarr search dispatched for id %d", job.readarrID)
 				_ = s.db.UpdateRequestStatus(ctx, job.requestID, "queued", reason, job.username, nil, body)
