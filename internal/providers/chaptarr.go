@@ -265,10 +265,16 @@ func (r *Readarr) buildChaptarrAddPayload(raw json.RawMessage, author map[string
 	if id := positiveInt(author["id"]); id > 0 {
 		authorPayload["id"] = id
 	}
-	editions, _ := selected["editions"].([]any)
-	if len(editions) == 0 {
-		if fe := strings.TrimSpace(stringFromMap(selected, "foreignEditionId")); fe != "" {
-			editions = []any{map[string]any{"foreignEditionId": fe, "monitored": true}}
+	// Chaptarr's add validation rejects the whole POST when any edition lacks a
+	// Title ("Cannot add book: one or more editions are missing Title"), and
+	// search payloads routinely carry id-only edition stubs. Send only fully
+	// hydrated editions; with none, Chaptarr hydrates the edition list from its
+	// metadata server itself and prepareChaptarrBook pins the right one later.
+	rawEditions, _ := selected["editions"].([]any)
+	editions := make([]any, 0, len(rawEditions))
+	for _, e := range rawEditions {
+		if em, ok := e.(map[string]any); ok && strings.TrimSpace(stringFromMap(em, "title")) != "" {
+			editions = append(editions, em)
 		}
 	}
 	payload := map[string]any{
