@@ -262,3 +262,81 @@ func TestNextSearchDispatchIntervalWithinRange(t *testing.T) {
 		}
 	}
 }
+
+// TestReadarrSyncKeepsCatalogWhenBackendReturnsEmpty covers the reindex case:
+// the backend answers HTTP 200 with an empty book list, which previously wiped
+// the local catalog and then blanked external_status on every request.
+func TestReadarrSyncKeepsCatalogWhenBackendReturnsEmpty(t *testing.T) {
+	readarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/book" {
+			w.Header().Set("Content-Type", "application/json")
+			w.Write([]byte(`[]`))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer readarr.Close()
+
+	s := newServerForTest(t)
+	cfg := s.settings.Get()
+	cfg.Readarr.Ebooks.BaseURL = readarr.URL
+	cfg.Readarr.Ebooks.APIKey = "test-key"
+	cfg.Setup.Completed = true
+	if err := s.settings.Update(cfg); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := s.db.ReplaceReadarrBooks(ctx, "ebook", []db.ReadarrBook{{
+		SourceKind:    "ebook",
+		ReadarrID:     77,
+		Title:         "Burn for Me",
+		AuthorName:    "ilona andrews",
+		ISBN13:        "9780316274147",
+		ForeignBookID: "fb-1",
+		BookFileCount: 1,
+	}}); err != nil {
+		t.Fatalf("seed catalog: %v", err)
+	}
+
+	reqID, err := s.db.CreateRequest(ctx, &db.Request{
+		RequesterEmail:   "user@example.com",
+		Title:            "Burn for Me",
+		Authors:          []string{"Ilona Andrews"},
+		ISBN13:           "9780316274147",
+		Format:           "ebook",
+		Status:           "queued",
+		ExternalStatus:   "available",
+		MatchedReadarrID: 77,
+	})
+	if err != nil {
+		t.Fatalf("create request: %v", err)
+	}
+
+	summaries, err := s.syncReadarrCatalog(ctx, "ebook", "tester")
+	if err != nil {
+		t.Fatalf("syncReadarrCatalog returned error: %v", err)
+	}
+	if len(summaries) != 1 || summaries[0].Imported != 0 || summaries[0].Reconciled != 0 {
+		t.Fatalf("expected a zero-work summary for the guarded kind, got %+v", summaries)
+	}
+
+	count, err := s.db.CountReadarrBooks(ctx, "ebook")
+	if err != nil {
+		t.Fatalf("count catalog: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected catalog to survive an empty sync, got %d books", count)
+	}
+
+	items, err := s.db.ListRequests(ctx, "", 10)
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+	if len(items) != 1 || items[0].ID != reqID {
+		t.Fatalf("expected the seeded request back, got %+v", items)
+	}
+	if items[0].ExternalStatus != "available" || items[0].MatchedReadarrID != 77 {
+		t.Fatalf("expected request status to be preserved, got status=%q matched=%d", items[0].ExternalStatus, items[0].MatchedReadarrID)
+	}
+}

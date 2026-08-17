@@ -252,11 +252,14 @@ func (s *Server) apiBookDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pick := list[0]
-	// prefer exact title match
-	for _, b := range list {
-		if strings.EqualFold(strings.TrimSpace(b.Title), strings.TrimSpace(in["title"].(string))) && strings.TrimSpace(b.Title) != "" {
-			pick = b
-			break
+	// prefer exact title match; skip entirely when the request carried no title
+	// (an unguarded type assertion here panics on bodies like {"asin":"..."})
+	if titleStr, ok := in["title"].(string); ok && strings.TrimSpace(titleStr) != "" {
+		for _, b := range list {
+			if strings.EqualFold(strings.TrimSpace(b.Title), strings.TrimSpace(titleStr)) && strings.TrimSpace(b.Title) != "" {
+				pick = b
+				break
+			}
 		}
 	}
 	out := map[string]any{}

@@ -42,3 +42,28 @@ func TestRateLimiterCleanupEvictsStaleKeys(t *testing.T) {
 		t.Fatal("expected stale rate-limit key to be evicted by cleanup")
 	}
 }
+
+func TestPruneApprovalTokensRemovesOnlyExpired(t *testing.T) {
+	s := makeTestServer(t)
+
+	s.tokenMutex.Lock()
+	s.approvalTokens["live"] = approvalTokenData{RequestID: 1, Action: "approve", ExpiresAt: time.Now().Add(time.Hour)}
+	s.approvalTokens["stale"] = approvalTokenData{RequestID: 2, Action: "decline", ExpiresAt: time.Now().Add(-time.Minute)}
+	s.tokenMutex.Unlock()
+
+	if removed := s.pruneApprovalTokens(); removed != 1 {
+		t.Fatalf("expected 1 pruned token, got %d", removed)
+	}
+
+	s.tokenMutex.RLock()
+	_, liveExists := s.approvalTokens["live"]
+	_, staleExists := s.approvalTokens["stale"]
+	s.tokenMutex.RUnlock()
+
+	if !liveExists {
+		t.Fatal("expected unexpired approval token to survive pruning")
+	}
+	if staleExists {
+		t.Fatal("expected expired approval token to be pruned")
+	}
+}

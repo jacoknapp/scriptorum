@@ -419,3 +419,63 @@ func TestListSearchableRequestsOnlyReturnsQueued(t *testing.T) {
 		t.Fatalf("expected queued status, got %q", items[0].Status)
 	}
 }
+
+func TestReplaceReadarrBooksGuardsEmptyResult(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	d := openMigratedDB(t)
+
+	// A legitimately empty library must still be representable: replacing an
+	// already-empty catalog with an empty list is a plain no-op, not an error.
+	if err := d.ReplaceReadarrBooks(ctx, "ebook", nil); err != nil {
+		t.Fatalf("empty import into empty catalog: %v", err)
+	}
+
+	if err := d.ReplaceReadarrBooks(ctx, "ebook", []ReadarrBook{{
+		SourceKind:    "ebook",
+		ReadarrID:     101,
+		Title:         "Dune",
+		AuthorName:    "Frank Herbert",
+		ForeignBookID: "book-1",
+	}}); err != nil {
+		t.Fatalf("seed catalog: %v", err)
+	}
+
+	// The "was non-empty, now empty" transition is refused and leaves the rows
+	// in place, so a backend mid-reindex cannot wipe the cache.
+	if err := d.ReplaceReadarrBooks(ctx, "ebook", nil); !errors.Is(err, ErrEmptyCatalogGuard) {
+		t.Fatalf("expected ErrEmptyCatalogGuard, got %v", err)
+	}
+	count, err := d.CountReadarrBooks(ctx, "ebook")
+	if err != nil {
+		t.Fatalf("CountReadarrBooks: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("expected guarded catalog to keep 1 book, got %d", count)
+	}
+
+	// The guard is per source kind: an empty audiobook catalog is unaffected by
+	// a populated ebook catalog.
+	if err := d.ReplaceReadarrBooks(ctx, "audiobook", nil); err != nil {
+		t.Fatalf("empty audiobook import: %v", err)
+	}
+
+	// A non-empty result still replaces the catalog wholesale.
+	if err := d.ReplaceReadarrBooks(ctx, "ebook", []ReadarrBook{{
+		SourceKind:    "ebook",
+		ReadarrID:     202,
+		Title:         "Neuromancer",
+		AuthorName:    "William Gibson",
+		ForeignBookID: "book-2",
+	}}); err != nil {
+		t.Fatalf("replace catalog: %v", err)
+	}
+	replaced, err := d.FindReadarrBookMatch(ctx, ReadarrMatchQuery{SourceKind: "ebook", ForeignBookID: "book-2"})
+	if err != nil || replaced.ReadarrID != 202 {
+		t.Fatalf("expected replacement book 202, got book=%+v err=%v", replaced, err)
+	}
+	if _, err := d.FindReadarrBookMatch(ctx, ReadarrMatchQuery{SourceKind: "ebook", ForeignBookID: "book-1"}); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("expected old book to be gone, got %v", err)
+	}
+}

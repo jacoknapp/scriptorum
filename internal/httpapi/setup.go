@@ -9,13 +9,57 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 	"github.com/go-chi/chi/v5"
 )
 
-var stepFlags = map[string]bool{"admin": false, "oauth": false, "rebooks": false, "raudio": false}
+// stepFlagsState tracks which setup-wizard steps have been satisfied. The setup
+// handlers below are ordinary HTTP handlers, so several of them can write to it
+// concurrently; an unsynchronized map write is a Go runtime throw that
+// middleware.Recoverer cannot catch and would take the whole process down.
+// Access it only through stepFlag/setStepFlag/resetStepFlags.
+var (
+	stepFlagsMu    sync.RWMutex
+	stepFlagsState = map[string]bool{"admin": false, "oauth": false, "rebooks": false, "raudio": false}
+)
+
+// stepFlag reads a wizard step flag under the read lock.
+func stepFlag(name string) bool {
+	stepFlagsMu.RLock()
+	defer stepFlagsMu.RUnlock()
+	return stepFlagsState[name]
+}
+
+// setStepFlag writes a wizard step flag under the write lock.
+func setStepFlag(name string, value bool) {
+	stepFlagsMu.Lock()
+	defer stepFlagsMu.Unlock()
+	stepFlagsState[name] = value
+}
+
+// setStepFlags applies several wizard step flags in one critical section so a
+// group of related flags is never observed half-updated.
+func setStepFlags(values map[string]bool) {
+	stepFlagsMu.Lock()
+	defer stepFlagsMu.Unlock()
+	for name, value := range values {
+		stepFlagsState[name] = value
+	}
+}
+
+// resetStepFlags replaces the whole flag set. Used by tests to get a known
+// starting state without racing the accessors.
+func resetStepFlags(values map[string]bool) {
+	stepFlagsMu.Lock()
+	defer stepFlagsMu.Unlock()
+	stepFlagsState = make(map[string]bool, len(values))
+	for name, value := range values {
+		stepFlagsState[name] = value
+	}
+}
 
 func (s *Server) mountSetup(r chi.Router) {
 	// If setup is already completed, don't register the setup routes so
@@ -153,21 +197,20 @@ func (u *setupUI) handleSetupSave(s *Server) http.HandlerFunc {
 		_ = s.initOIDC()
 
 		// Admin step satisfied if at least one local admin user exists
-		if n, err := s.db.CountAdmins(r.Context()); err == nil && n > 0 {
-			stepFlags["admin"] = true
-		} else {
-			stepFlags["admin"] = false
-		}
+		n, err := s.db.CountAdmins(r.Context())
+		adminOK := err == nil && n > 0
 
 		// Set the book-backend step flags based on whichever backend is
 		// selected, so the step gates on the config the admin actually chose.
+		var ebooksOK, audioOK bool
 		if strings.EqualFold(cur.BookBackend, "readarr") {
-			stepFlags["rebooks"] = strings.TrimSpace(cur.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cur.Readarr.Ebooks.APIKey) != ""
-			stepFlags["raudio"] = strings.TrimSpace(cur.Readarr.Audiobooks.BaseURL) != "" && strings.TrimSpace(cur.Readarr.Audiobooks.APIKey) != ""
+			ebooksOK = strings.TrimSpace(cur.Readarr.Ebooks.BaseURL) != "" && strings.TrimSpace(cur.Readarr.Ebooks.APIKey) != ""
+			audioOK = strings.TrimSpace(cur.Readarr.Audiobooks.BaseURL) != "" && strings.TrimSpace(cur.Readarr.Audiobooks.APIKey) != ""
 		} else {
-			stepFlags["rebooks"] = strings.TrimSpace(cur.Chaptarr.BaseURL) != "" && strings.TrimSpace(cur.Chaptarr.APIKey) != ""
-			stepFlags["raudio"] = stepFlags["rebooks"]
+			ebooksOK = strings.TrimSpace(cur.Chaptarr.BaseURL) != "" && strings.TrimSpace(cur.Chaptarr.APIKey) != ""
+			audioOK = ebooksOK
 		}
+		setStepFlags(map[string]bool{"admin": adminOK, "rebooks": ebooksOK, "raudio": audioOK})
 
 		// HTMX: trigger a refresh of gating and reload the current step; no content body
 		w.Header().Set("HX-Trigger", "setup-saved")
@@ -194,8 +237,7 @@ func (u *setupUI) handleTestChaptarr(s *Server) http.HandlerFunc {
 			http.Error(w, chaptarrProbeMessage(err), http.StatusBadGateway)
 			return
 		}
-		stepFlags["rebooks"] = true
-		stepFlags["raudio"] = true
+		setStepFlags(map[string]bool{"rebooks": true, "raudio": true})
 		writeJSON(w, caps, http.StatusOK)
 	}
 }
@@ -261,7 +303,7 @@ func (u *setupUI) handleTestOAuth(s *Server) http.HandlerFunc {
 		_ = s.settings.Update(oldCfg)
 
 		ok := err == nil
-		stepFlags["oauth"] = ok
+		setStepFlag("oauth", ok)
 		writeProbeHTML(w, ok, errString(err))
 	}
 }
@@ -306,9 +348,9 @@ func (u *setupUI) handleTestReadarr(s *Server) http.HandlerFunc {
 		err := ra.PingLookup(ctx)
 		ok := err == nil
 		if tag == "ebooks" {
-			stepFlags["rebooks"] = ok
+			setStepFlag("rebooks", ok)
 		} else {
-			stepFlags["raudio"] = ok
+			setStepFlag("raudio", ok)
 		}
 		w.Header().Set("HX-Trigger", "setup-saved")
 		writeProbeHTML(w, ok, readarrProbeMessage(err))
@@ -376,9 +418,9 @@ func (u *setupUI) handleCanAdvance(s *Server) http.HandlerFunc {
 		ok := false
 		switch n {
 		case "1":
-			ok = stepFlags["admin"]
+			ok = stepFlag("admin")
 		case "2":
-			ok = stepFlags["oauth"] || !s.settings.Get().OAuth.Enabled
+			ok = stepFlag("oauth") || !s.settings.Get().OAuth.Enabled
 		case "3":
 			ok = true // Readarr configuration is completely optional
 		case "4":

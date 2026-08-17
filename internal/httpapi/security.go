@@ -243,8 +243,9 @@ func (rl *rateLimiter) cleanup(maxAge time.Duration) {
 	}
 }
 
-// runSecurityJanitor periodically purges expired CSRF tokens and stale
-// rate-limiter entries until the context is cancelled.
+// runSecurityJanitor periodically purges expired CSRF tokens, stale
+// rate-limiter entries and expired approval tokens until the context is
+// cancelled.
 func (s *Server) runSecurityJanitor(ctx context.Context) {
 	ticker := time.NewTicker(10 * time.Minute)
 	defer ticker.Stop()
@@ -256,9 +257,32 @@ func (s *Server) runSecurityJanitor(ctx context.Context) {
 			s.csrf.cleanup()
 			// Largest rate-limit window is 15 minutes; drop anything older.
 			s.rateLimiter.cleanup(15 * time.Minute)
+			s.pruneApprovalTokens()
 			s.pruneAuditEvents(ctx)
 		}
 	}
+}
+
+// pruneApprovalTokens drops one-click approval/decline tokens whose expiry has
+// already passed. Without this, tokens for notifications nobody ever clicks are
+// only removed on access and accumulate for the lifetime of the process. It uses
+// the same expiry predicate as handleApprovalToken, so only tokens that would
+// already be rejected are removed.
+func (s *Server) pruneApprovalTokens() int {
+	now := time.Now()
+	s.tokenMutex.Lock()
+	removed := 0
+	for token, data := range s.approvalTokens {
+		if now.After(data.ExpiresAt) {
+			delete(s.approvalTokens, token)
+			removed++
+		}
+	}
+	s.tokenMutex.Unlock()
+	if removed > 0 {
+		fmt.Printf("approval tokens: pruned %d expired token(s)\n", removed)
+	}
+	return removed
 }
 
 // pruneAuditEvents enforces the configured audit retention policy. A retention

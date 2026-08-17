@@ -125,7 +125,7 @@ func TestSetupHelpersAndFinish(t *testing.T) {
 		t.Fatal("unexpected errString behavior")
 	}
 
-	stepFlags = map[string]bool{"admin": true, "oauth": false, "rebooks": false, "raudio": false}
+	resetStepFlags(map[string]bool{"admin": true, "oauth": false, "rebooks": false, "raudio": false})
 	canAdvanceReq := withURLParam(httptest.NewRequest(http.MethodGet, "/setup/can-advance/2", nil), "n", "2")
 	canAdvanceRec := httptest.NewRecorder()
 	ui.handleCanAdvance(s)(canAdvanceRec, canAdvanceReq)

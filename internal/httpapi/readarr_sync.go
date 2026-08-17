@@ -443,6 +443,15 @@ func (s *Server) syncReadarrCatalog(ctx context.Context, requestedKind, actor st
 			})
 		}
 		if err := s.db.ReplaceReadarrBooks(ctx, kind, books); err != nil {
+			if errors.Is(err, db.ErrEmptyCatalogGuard) {
+				// The backend answered successfully but with zero books while we
+				// still hold a populated catalog — almost certainly a reindex in
+				// progress. Keep the existing catalog and skip reconciliation so
+				// requests do not get their external status blanked.
+				fmt.Printf("readarr sync: %s backend returned 0 books but the local catalog is not empty; keeping the existing catalog and skipping reconcile (suspected backend reindex)\n", kind)
+				summaries = append(summaries, readarrSyncSummary{Kind: kind})
+				continue
+			}
 			return nil, fmt.Errorf("%s import failed: %w", kind, err)
 		}
 		s.clearCatalogMatchCache()

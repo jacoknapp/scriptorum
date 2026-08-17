@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 )
@@ -53,14 +54,36 @@ func (b ReadarrBook) Availability() string {
 	}
 }
 
+// ErrEmptyCatalogGuard is returned by ReplaceReadarrBooks when it refuses to
+// replace an existing, non-empty catalog with an empty result set. A backend
+// that answers HTTP 200 with zero books (typically mid-reindex) would otherwise
+// wipe the local cache and blank the external status of every request.
+var ErrEmptyCatalogGuard = errors.New("refusing to replace a non-empty readarr catalog with an empty result")
+
 func (d *DB) ReplaceReadarrBooks(ctx context.Context, sourceKind string, books []ReadarrBook) error {
+	kind := strings.ToLower(strings.TrimSpace(sourceKind))
+
 	tx, err := d.sql.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM readarr_books WHERE source_kind=?`, strings.ToLower(strings.TrimSpace(sourceKind))); err != nil {
+	// Guard only the "was non-empty, now empty" transition. A genuinely empty
+	// library still imports fine (0 -> 0 is a no-op) and any non-empty result
+	// replaces the catalog as before. The count runs inside the transaction so
+	// it cannot race a concurrent writer.
+	if len(books) == 0 {
+		var existing int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM readarr_books WHERE source_kind=?`, kind).Scan(&existing); err != nil {
+			return err
+		}
+		if existing > 0 {
+			return ErrEmptyCatalogGuard
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM readarr_books WHERE source_kind=?`, kind); err != nil {
 		return err
 	}
 

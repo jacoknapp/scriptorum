@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
@@ -28,7 +29,7 @@ func TestHandleTestReadarrUsesSavedSettings(t *testing.T) {
 		t.Fatalf("update settings: %v", err)
 	}
 
-	stepFlags = map[string]bool{"rebooks": false}
+	resetStepFlags(map[string]bool{"rebooks": false})
 	req := httptest.NewRequest(http.MethodPost, "/setup/test-readarr?tag=ebooks", nil)
 	rec := httptest.NewRecorder()
 	ui.handleTestReadarr(s)(rec, req)
@@ -42,7 +43,7 @@ func TestHandleTestReadarrUsesSavedSettings(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "OK") {
 		t.Fatalf("expected success body, got %q", rec.Body.String())
 	}
-	if !stepFlags["rebooks"] {
+	if !stepFlag("rebooks") {
 		t.Fatal("expected ebooks step flag to be set")
 	}
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
@@ -60,7 +61,7 @@ func TestHandleTestReadarrUsesSavedSettings(t *testing.T) {
 		t.Fatalf("update settings: %v", err)
 	}
 
-	stepFlags["raudio"] = true
+	setStepFlag("raudio", true)
 	audioReq := httptest.NewRequest(http.MethodPost, "/setup/test-readarr?tag=audiobooks", nil)
 	audioRec := httptest.NewRecorder()
 	ui.handleTestReadarr(s)(audioRec, audioReq)
@@ -72,7 +73,7 @@ func TestHandleTestReadarrUsesSavedSettings(t *testing.T) {
 	if strings.Contains(body, "audio-key") || strings.Contains(body, "boom") {
 		t.Fatalf("expected error body to avoid sensitive details, got %q", body)
 	}
-	if stepFlags["raudio"] {
+	if stepFlag("raudio") {
 		t.Fatal("expected audiobook step flag to be cleared on failure")
 	}
 }
@@ -154,5 +155,33 @@ func TestExtractIdentifiersVariants(t *testing.T) {
 	isbn10, isbn13, asin = extractIdentifiers(fallbackBook)
 	if isbn10 != "alt10" || isbn13 != "alt13" || asin != "altasin" {
 		t.Fatalf("unexpected fallback identifiers: isbn10=%q isbn13=%q asin=%q", isbn10, isbn13, asin)
+	}
+}
+
+// TestStepFlagsConcurrentAccess exercises the wizard step flags from several
+// goroutines at once. Before the accessors were introduced these were raw map
+// writes, which is a Go runtime throw that middleware.Recoverer cannot catch;
+// this test fails under -race if the synchronization is ever removed.
+func TestStepFlagsConcurrentAccess(t *testing.T) {
+	resetStepFlags(map[string]bool{"admin": false, "oauth": false, "rebooks": false, "raudio": false})
+
+	names := []string{"admin", "oauth", "rebooks", "raudio"}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			for j := 0; j < 200; j++ {
+				name := names[(i+j)%len(names)]
+				setStepFlag(name, j%2 == 0)
+				setStepFlags(map[string]bool{"rebooks": true, "raudio": true})
+				_ = stepFlag(name)
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	if !stepFlag("rebooks") || !stepFlag("raudio") {
+		t.Fatal("expected grouped flag writes to be visible after concurrent access")
 	}
 }

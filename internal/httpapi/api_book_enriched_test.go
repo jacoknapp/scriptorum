@@ -332,3 +332,46 @@ func TestBookEnrichedNormalizesReadarrMediaCoverForReaderModal(t *testing.T) {
 		t.Fatalf("unexpected normalized cover %q want %q", got, want)
 	}
 }
+
+// TestBookDetailsWithoutTitleDoesNotPanic covers a body that carries an
+// identifier but no "title". The exact-title-match loop used to do an unguarded
+// in["title"].(string), which panicked and surfaced as a 500 from Recoverer.
+func TestBookDetailsWithoutTitleDoesNotPanic(t *testing.T) {
+	readarr := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/v1/book/lookup") {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`[{"id":9,"title":"Project Hail Mary","author":{"name":"Andy Weir"},"identifiers":[{"type":"asin","value":"B08GB58KD5"}]}]`))
+	}))
+	defer readarr.Close()
+
+	s := newServerForTest(t)
+	cfg := s.settings.Get()
+	cfg.BookBackend = "readarr"
+	cfg.Readarr.Ebooks.BaseURL = readarr.URL
+	cfg.Readarr.Ebooks.APIKey = "test-key"
+	if err := s.settings.Update(cfg); err != nil {
+		t.Fatalf("update settings: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]any{"asin": "B08GB58KD5", "format": "ebook"})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/book/details", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.AddCookie(makeCookie(t, s, "user", false))
+	rec := httptest.NewRecorder()
+
+	s.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for a title-less body, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("json: %v", err)
+	}
+	if out["title"] != "Project Hail Mary" {
+		t.Fatalf("expected the first lookup result to be picked, got %+v", out)
+	}
+}
