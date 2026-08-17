@@ -316,20 +316,22 @@ func (r *Readarr) chaptarrBooksForAuthor(ctx context.Context, authorID int) ([]m
 	return books, err
 }
 
-// findChaptarrBook matches by media type + normalized title, then prefers
-// (but does not require) a foreignBookId match. Chaptarr's metadata pipeline
+// findChaptarrBook matches by normalized title, then prefers (but does not
+// require) the requested media type and a foreignBookId match.
+//
+// Two things forced this to be lenient. First, Chaptarr's metadata pipeline
 // canonicalizes a book's foreignBookId to whichever source (Goodreads,
 // Hardcover, ...) it trusts most once the full author bibliography syncs,
 // which frequently differs from the id the original search result carried.
-// Requiring an exact match here caused every add to time out: the book was
-// present under the same title but a re-mapped foreignBookId, so it was
-// never found and requestChaptarrBook kept polling until the deadline.
+// Second, Chaptarr's metadata models most titles as ebook/physical editions
+// only -- audiobook rows usually do not exist at all. Requiring mediaType to
+// equal the requested format meant every audiobook request found no match and
+// waitForChaptarrBook polled until the deadline, erroring the request and
+// leaving the book unmonitored (the user then had to toggle it by hand). So
+// mediaType is now a preference used only to rank otherwise-equal candidates.
 func (r *Readarr) findChaptarrBook(books []map[string]any, title, foreignID, format string) map[string]any {
 	var candidates []map[string]any
 	for _, book := range books {
-		if !strings.EqualFold(stringFromMap(book, "mediaType"), format) {
-			continue
-		}
 		if normalizeBookTitle(stringFromMap(book, "title")) != normalizeBookTitle(title) {
 			continue
 		}
@@ -338,11 +340,24 @@ func (r *Readarr) findChaptarrBook(books []map[string]any, title, foreignID, for
 	if len(candidates) == 0 {
 		return nil
 	}
+	// Prefer an exact foreignBookId match of the requested media type, then any
+	// foreignBookId match, then the requested media type, then lowest id.
 	if foreignID != "" {
+		for _, book := range candidates {
+			if strings.EqualFold(stringFromMap(book, "foreignBookId"), foreignID) &&
+				strings.EqualFold(stringFromMap(book, "mediaType"), format) {
+				return book
+			}
+		}
 		for _, book := range candidates {
 			if strings.EqualFold(stringFromMap(book, "foreignBookId"), foreignID) {
 				return book
 			}
+		}
+	}
+	for _, book := range candidates {
+		if strings.EqualFold(stringFromMap(book, "mediaType"), format) {
+			return book
 		}
 	}
 	sort.SliceStable(candidates, func(i, j int) bool { return positiveInt(candidates[i]["id"]) < positiveInt(candidates[j]["id"]) })
@@ -402,22 +417,29 @@ func (r *Readarr) enableChaptarrAuthorFormat(ctx context.Context, authorID int) 
 	return nil
 }
 
-func (r *Readarr) prepareChaptarrBook(ctx context.Context, bookID int) (map[string]any, error) {
+// prepareChaptarrBook pins the single edition of the requested format so
+// Chaptarr searches for exactly that. Its second return value reports whether a
+// format-specific edition was pinned. When Chaptarr's metadata exposes no
+// edition of the requested format (routine for audiobooks, whose metadata is
+// usually ebook/physical only), it cannot pin one; rather than erroring it
+// leaves the book editable-any and lets the caller monitor the book at book
+// level so the request still completes and a search still runs.
+func (r *Readarr) prepareChaptarrBook(ctx context.Context, bookID int) (map[string]any, bool, error) {
 	var book map[string]any
 	bookPath := fmt.Sprintf("/api/v1/book/%d", bookID)
 	if _, err := r.chaptarrJSON(ctx, http.MethodGet, bookPath, nil, nil, &book); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	authorID := positiveInt(book["authorId"])
 	if authorID <= 0 {
-		return nil, fmt.Errorf("chaptarr book %d has no author id", bookID)
+		return nil, false, fmt.Errorf("chaptarr book %d has no author id", bookID)
 	}
 	if err := r.enableChaptarrAuthorFormat(ctx, authorID); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var editions []map[string]any
 	if _, err := r.chaptarrJSON(ctx, http.MethodGet, "/api/v1/edition", url.Values{"bookId": {fmt.Sprint(bookID)}}, nil, &editions); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	format := r.chaptarrFormat()
 	chosen := -1
@@ -428,7 +450,15 @@ func (r *Readarr) prepareChaptarrBook(ctx context.Context, bookID int) (map[stri
 		}
 	}
 	if chosen < 0 {
-		return nil, fmt.Errorf("chaptarr has no usable %s edition for %q", format, stringFromMap(book, "title"))
+		// No edition of the requested format exists. Monitor the book at book
+		// level with anyEditionOk so Chaptarr can grab whatever edition it can
+		// find, instead of failing the request.
+		book["anyEditionOk"] = true
+		book["monitored"] = true
+		if _, err := r.chaptarrJSON(ctx, http.MethodPut, bookPath, nil, book, nil); err != nil {
+			return nil, false, err
+		}
+		return book, false, nil
 	}
 	chosenID := positiveInt(editions[chosen]["id"])
 	chosenForeignID := stringFromMap(editions[chosen], "foreignEditionId")
@@ -439,11 +469,11 @@ func (r *Readarr) prepareChaptarrBook(ctx context.Context, bookID int) (map[stri
 	book["anyEditionOk"] = false
 	book["editions"] = editions
 	if _, err := r.chaptarrJSON(ctx, http.MethodPut, bookPath, nil, book, nil); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	var verifiedEditions []map[string]any
 	if _, err := r.chaptarrJSON(ctx, http.MethodGet, "/api/v1/edition", url.Values{"bookId": {fmt.Sprint(bookID)}}, nil, &verifiedEditions); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	monitoredCount := 0
 	selectedPersisted := false
@@ -459,9 +489,9 @@ func (r *Readarr) prepareChaptarrBook(ctx context.Context, bookID int) (map[stri
 		}
 	}
 	if monitoredCount != 1 || !selectedPersisted {
-		return nil, fmt.Errorf("chaptarr did not retain exactly one selected %s edition for %q", format, stringFromMap(book, "title"))
+		return nil, false, fmt.Errorf("chaptarr did not retain exactly one selected %s edition for %q", format, stringFromMap(book, "title"))
 	}
-	return book, nil
+	return book, true, nil
 }
 
 func (r *Readarr) requestChaptarrBook(ctx context.Context, raw json.RawMessage) ([]byte, []byte, error) {
@@ -526,7 +556,8 @@ func (r *Readarr) requestChaptarrBook(ctx context.Context, raw json.RawMessage) 
 		}
 	}
 	bookID := positiveInt(target["id"])
-	if _, err := r.prepareChaptarrBook(ctx, bookID); err != nil {
+	_, pinnedFormatEdition, err := r.prepareChaptarrBook(ctx, bookID)
+	if err != nil {
 		return payload, postResponse, err
 	}
 	monitorBody := map[string]any{"bookIds": []int{bookID}, "monitored": true}
@@ -538,9 +569,17 @@ func (r *Readarr) requestChaptarrBook(ctx context.Context, raw json.RawMessage) 
 		return payload, postResponse, err
 	}
 	monitored, _ := verified["monitored"].(bool)
-	formatMonitored, _ := verified[format+"Monitored"].(bool)
-	if !monitored || !formatMonitored {
-		return payload, postResponse, fmt.Errorf("chaptarr did not retain %s monitoring for %q", format, title)
+	if !monitored {
+		return payload, postResponse, fmt.Errorf("chaptarr did not retain monitoring for %q", title)
+	}
+	// When a format-specific edition was pinned, also require the per-format
+	// monitor flag to have stuck. When none existed (e.g. an audiobook with no
+	// audiobook edition), book-level monitoring is all Chaptarr can offer, so
+	// don't demand the per-format flag -- the book is monitored and searchable.
+	if pinnedFormatEdition {
+		if formatMonitored, _ := verified[format+"Monitored"].(bool); !formatMonitored {
+			return payload, postResponse, fmt.Errorf("chaptarr did not retain %s monitoring for %q", format, title)
+		}
 	}
 	command := map[string]any{"name": "BookSearch", "bookIds": []int{bookID}}
 	if _, err := r.chaptarrJSON(ctx, http.MethodPost, "/api/v1/command", nil, command, nil); err != nil {

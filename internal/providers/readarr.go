@@ -861,7 +861,7 @@ func (r *Readarr) MonitorBooks(ctx context.Context, ids []int, monitored bool) (
 	}
 	if r.isChaptarr() && monitored {
 		for _, id := range ids {
-			if _, err := r.prepareChaptarrBook(ctx, id); err != nil {
+			if _, _, err := r.prepareChaptarrBook(ctx, id); err != nil {
 				return nil, err
 			}
 		}
