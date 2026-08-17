@@ -15,6 +15,8 @@ import (
 	"strings"
 	"text/template"
 	"time"
+
+	"gitea.knapp/jacoknapp/scriptorum/internal/bookidentity"
 )
 
 const (
@@ -653,15 +655,14 @@ func (r *Readarr) LookupForeignAuthorIDString(ctx context.Context, name string) 
 	if err := json.Unmarshal(body, &arr); err != nil {
 		return ""
 	}
+	var matches []map[string]any
 	for _, a := range arr {
-		if nm, _ := a["name"].(string); nm != "" && strings.EqualFold(strings.TrimSpace(nm), name) {
-			if fid, _ := a["foreignAuthorId"].(string); strings.TrimSpace(fid) != "" {
-				return fid
-			}
+		if nm, _ := a["name"].(string); nm != "" && bookidentity.AuthorNamesMatch(name, nm) {
+			matches = append(matches, a)
 		}
 	}
-	// fallback to first with foreignAuthorId
-	for _, a := range arr {
+	if len(matches) == 1 {
+		a := matches[0]
 		if fid, _ := a["foreignAuthorId"].(string); strings.TrimSpace(fid) != "" {
 			return fid
 		}
@@ -1066,51 +1067,20 @@ func (r *Readarr) FindAuthorIDByName(ctx context.Context, name string) (int, err
 		return 0, fmt.Errorf("invalid JSON from author lookup: %v", err)
 	}
 
-	var foundID int
+	var exactMatches []map[string]any
 	for _, a := range arr {
-		if nm, _ := a["name"].(string); nm != "" && strings.EqualFold(strings.TrimSpace(nm), name) {
-			if idv, ok := a["id"]; ok {
-				switch v := idv.(type) {
-				case float64:
-					foundID = int(v)
-				case int:
-					foundID = v
-				case int64:
-					foundID = int(v)
-				case string:
-					if i, err := strconv.Atoi(v); err == nil {
-						foundID = i
-					}
-				}
-				if foundID > 0 {
-					r.setCachedAuthor(name, foundID)
-					return foundID, nil
-				}
-			}
+		if nm, _ := a["name"].(string); nm != "" && bookidentity.AuthorNamesMatch(name, nm) {
+			exactMatches = append(exactMatches, a)
 		}
 	}
-	// no exact match found; if we have results, prefer the first with an id
-	for _, a := range arr {
-		if idv, ok := a["id"]; ok {
-			switch v := idv.(type) {
-			case float64:
-				foundID = int(v)
-			case int:
-				foundID = v
-			case int64:
-				foundID = int(v)
-			case string:
-				if i, err := strconv.Atoi(v); err == nil {
-					foundID = i
-				}
-			}
-			if foundID > 0 {
-				r.setCachedAuthor(name, foundID)
-				return foundID, nil
-			}
-		}
+	if len(exactMatches) != 1 {
+		return 0, nil
 	}
-	return 0, nil
+	foundID := positiveInt(exactMatches[0]["id"])
+	if foundID > 0 {
+		r.setCachedAuthor(name, foundID)
+	}
+	return foundID, nil
 }
 
 // redactAPIKey hides apikey query param values from logs/errors

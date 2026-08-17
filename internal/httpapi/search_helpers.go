@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 
+	"gitea.knapp/jacoknapp/scriptorum/internal/bookidentity"
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 )
 
@@ -12,7 +14,6 @@ var (
 	searchBookListPattern       = regexp.MustCompile(`\b(?:books?|vol(?:ume)?s?)\.?\s*\d+(?:\s*,\s*\d+)+(?:\s*(?:and|&)\s*\d+)?\b`)
 	searchInOnePattern          = regexp.MustCompile(`\b\d+\s*(?:-| )?in(?:-| )one\b`)
 	searchBookCollectionPattern = regexp.MustCompile(`\b\d+\s*(?:-| )?book collection\b`)
-	lookupTitleSuffixPattern    = regexp.MustCompile(`\s*(\([^)]*\)|\[[^]]*\])\s*$`)
 )
 
 var blockedSearchTitleSnippets = []string{
@@ -156,44 +157,136 @@ func lookupBookAuthorName(book providers.LookupBook) string {
 // (Mistborn, #7)"). It deliberately does not use arbitrary substring matching:
 // that would make summaries, study guides, and collections look like the book.
 func lookupTitleScore(want, candidate string) int {
-	want = norm(want)
-	candidate = norm(candidate)
-	if want == "" || candidate == "" {
-		return 0
-	}
-	if want == candidate {
-		return 3
-	}
-	for previous := ""; candidate != previous; {
-		previous = candidate
-		candidate = norm(lookupTitleSuffixPattern.ReplaceAllString(candidate, ""))
-		if candidate == want {
-			return 2
-		}
-	}
-	return 0
+	return bookidentity.TitleScore(want, candidate)
 }
 
-// bestLookupBookMatch returns only a safe identity match. When the request has
-// an author, the backend result must have the same author; never fall back to
-// the first text-search hit, which can be a summary or study guide.
+// bestLookupBookMatch returns only a unique safe title-and-author identity;
+// never fall back to the first text-search hit, which can be a summary or
+// study guide. The identifier-aware variant may also accept a strong ID match.
 func bestLookupBookMatch(list []providers.LookupBook, title string, authors []string) (providers.LookupBook, bool) {
-	wantAuthor := ""
-	if len(authors) > 0 {
-		wantAuthor = norm(authors[0])
+	return bestLookupBookMatchWithIdentifiers(list, title, authors, "", "", "", "", "")
+}
+
+func lookupBookAuthorNames(book providers.LookupBook) []string {
+	var names []string
+	if name := lookupBookAuthorName(book); name != "" {
+		names = append(names, name)
 	}
-	bestScore := 0
-	var best providers.LookupBook
-	for _, book := range list {
-		if wantAuthor != "" && norm(lookupBookAuthorName(book)) != wantAuthor {
+	for _, author := range book.Authors {
+		for _, key := range []string{"name", "authorName"} {
+			if name, _ := author[key].(string); strings.TrimSpace(name) != "" {
+				names = append(names, strings.TrimSpace(name))
+			}
+		}
+	}
+	return names
+}
+
+func lookupBookIdentifiers(book providers.LookupBook) map[string][]string {
+	out := map[string][]string{
+		"foreignBookId":    {strings.TrimSpace(book.ForeignBookId)},
+		"foreignEditionId": {strings.TrimSpace(book.ForeignEditionId)},
+	}
+	add := func(kind, value string) {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out[kind] = append(out[kind], value)
+		}
+	}
+	for _, identifier := range book.Identifiers {
+		typ, _ := identifier["type"].(string)
+		value, _ := identifier["value"].(string)
+		switch strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(strings.TrimSpace(typ), "_", ""), "-", "")) {
+		case "isbn10":
+			add("isbn10", value)
+		case "isbn13":
+			add("isbn13", value)
+		case "asin":
+			add("asin", value)
+		}
+		for _, key := range []string{"isbn10", "isbn13", "asin"} {
+			if direct, _ := identifier[key].(string); direct != "" {
+				add(key, direct)
+			}
+		}
+	}
+	for _, rawEdition := range book.Editions {
+		edition, ok := rawEdition.(map[string]any)
+		if !ok {
 			continue
 		}
-		score := lookupTitleScore(title, book.Title)
-		if score > bestScore {
-			best, bestScore = book, score
+		for _, key := range []string{"foreignEditionId", "isbn10", "isbn13", "asin"} {
+			if value, _ := edition[key].(string); value != "" {
+				add(key, value)
+			}
 		}
 	}
-	return best, bestScore > 0
+	return out
+}
+
+func identifierMatchCount(book providers.LookupBook, isbn10, isbn13, asin, foreignBookID, foreignEditionID string) int {
+	want := map[string]string{
+		"isbn10": strings.TrimSpace(isbn10), "isbn13": strings.TrimSpace(isbn13),
+		"asin": strings.TrimSpace(asin), "foreignBookId": strings.TrimSpace(foreignBookID),
+		"foreignEditionId": strings.TrimSpace(foreignEditionID),
+	}
+	got := lookupBookIdentifiers(book)
+	matches := 0
+	for kind, value := range want {
+		if value == "" {
+			continue
+		}
+		for _, candidate := range got[kind] {
+			if strings.EqualFold(strings.TrimSpace(candidate), value) {
+				matches++
+				break
+			}
+		}
+	}
+	return matches
+}
+
+func sameLookupWork(left, right providers.LookupBook) bool {
+	if left.ForeignBookId != "" && right.ForeignBookId != "" {
+		return strings.EqualFold(strings.TrimSpace(left.ForeignBookId), strings.TrimSpace(right.ForeignBookId))
+	}
+	return false
+}
+
+// bestLookupBookMatchWithIdentifiers accepts a strong provider/edition/ISBN
+// identity, or a unique safe title-and-author identity. Equal-confidence
+// results for different works are ambiguous and are rejected.
+func bestLookupBookMatchWithIdentifiers(list []providers.LookupBook, title string, authors []string, isbn10, isbn13, asin, foreignBookID, foreignEditionID string) (providers.LookupBook, bool) {
+	bestScore := 0
+	var best providers.LookupBook
+	ambiguous := false
+	for _, book := range list {
+		identifierMatches := identifierMatchCount(book, isbn10, isbn13, asin, foreignBookID, foreignEditionID)
+		titleScore := lookupTitleScore(title, book.Title)
+		authorMatches := len(authors) == 0 || bookidentity.AuthorsMatch(authors, lookupBookAuthorNames(book))
+
+		// A strong identifier is sufficient. Without one, require title and
+		// every supplied author constraint; never infer identity from rank.
+		if identifierMatches == 0 && (titleScore == 0 || !authorMatches) {
+			continue
+		}
+		score := identifierMatches*100 + titleScore*10
+		if authorMatches && len(authors) > 0 {
+			score += 1
+		}
+		if score > bestScore {
+			best, bestScore, ambiguous = book, score, false
+		} else if score == bestScore && score > 0 {
+			if sameLookupWork(best, book) {
+				if len(book.Editions) > len(best.Editions) {
+					best = book
+				}
+			} else {
+				ambiguous = true
+			}
+		}
+	}
+	return best, bestScore > 0 && !ambiguous
 }
 
 // lookupBookCandidate keeps the metadata server's complete edition objects.
@@ -214,6 +307,61 @@ func lookupBookCandidate(book providers.LookupBook) map[string]any {
 		"monitored":         true,
 		"metadataProfileId": 1,
 	}
+}
+
+func selectionPayloadForFormat(raw []byte, format string) (map[string]any, []byte, bool) {
+	var candidate map[string]any
+	if len(raw) == 0 || json.Unmarshal(raw, &candidate) != nil || candidate == nil {
+		return nil, nil, false
+	}
+	if nested, ok := candidate[normalizeSyncKind(format)].(map[string]any); ok && nested != nil {
+		candidate = nested
+		normalized, err := json.Marshal(candidate)
+		if err != nil {
+			return nil, nil, false
+		}
+		return candidate, normalized, true
+	}
+	return candidate, raw, true
+}
+
+func selectionAuthorNames(candidate map[string]any) []string {
+	var names []string
+	appendName := func(author map[string]any) {
+		for _, key := range []string{"name", "authorName"} {
+			if name, _ := author[key].(string); strings.TrimSpace(name) != "" {
+				names = append(names, strings.TrimSpace(name))
+			}
+		}
+	}
+	if author, ok := candidate["author"].(map[string]any); ok {
+		appendName(author)
+	}
+	if authors, ok := candidate["authors"].([]any); ok {
+		for _, rawAuthor := range authors {
+			if author, ok := rawAuthor.(map[string]any); ok {
+				appendName(author)
+			}
+		}
+	}
+	return names
+}
+
+// selectionPayloadMatchesRequest is the trust boundary for stored provider
+// payloads. A payload may be stale, client-supplied, or left over from an old
+// matching bug; it is never allowed to override the request's book identity.
+func selectionPayloadMatchesRequest(candidate map[string]any, title string, authors []string) bool {
+	candidateTitle, _ := candidate["title"].(string)
+	if strings.TrimSpace(candidateTitle) == "" {
+		return false
+	}
+	if strings.TrimSpace(title) != "" && lookupTitleScore(title, candidateTitle) == 0 {
+		return false
+	}
+	if len(authors) > 0 && !bookidentity.AuthorsMatch(authors, selectionAuthorNames(candidate)) {
+		return false
+	}
+	return true
 }
 
 func isRenderableSearchBook(title string, extras ...string) bool {

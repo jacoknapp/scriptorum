@@ -8,11 +8,11 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
+
+	"gitea.knapp/jacoknapp/scriptorum/internal/bookidentity"
 )
 
 // ChaptarrCapabilities is the small, format-aware portion of the Chaptarr API
@@ -224,21 +224,7 @@ func positiveInt(v any) int {
 }
 
 func normalizeBookTitle(s string) string {
-	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(s))), " ")
-}
-
-// Only strip parenthetical series markers containing a comma or '#'. Broader
-// stripping would collapse distinct works such as "The Lost Metal (1 of 2)",
-// causing a dramatized adaptation to match the canonical novel.
-var chaptarrTitleSuffixPattern = regexp.MustCompile(`\s*\([^)]*(#|,)[^)]*\)\s*$`)
-
-func canonicalChaptarrTitle(s string) string {
-	title := normalizeBookTitle(s)
-	for previous := ""; title != previous; {
-		previous = title
-		title = normalizeBookTitle(chaptarrTitleSuffixPattern.ReplaceAllString(title, ""))
-	}
-	return title
+	return bookidentity.NormalizeText(s)
 }
 
 func (r *Readarr) buildChaptarrAddPayload(raw json.RawMessage, author map[string]any) (map[string]any, error) {
@@ -323,7 +309,7 @@ func (r *Readarr) findChaptarrAuthor(ctx context.Context, selected map[string]an
 		actualForeignID := stringFromMap(author, "foreignAuthorId")
 		actualName := normalizeBookTitle(stringFromMap(author, "authorName", "name"))
 		foreignMatches := foreignID != "" && strings.EqualFold(actualForeignID, foreignID)
-		nameMatches := name != "" && actualName == name
+		nameMatches := name != "" && bookidentity.AuthorNamesMatch(name, actualName)
 		// Chaptarr canonicalizes provider ids (for example Goodreads to
 		// Hardcover) during metadata sync. The stable local id plus either the
 		// same author name or the same provider id is sufficient identity.
@@ -341,7 +327,7 @@ func (r *Readarr) findChaptarrAuthor(ctx context.Context, selected map[string]an
 		if foreignID != "" && strings.EqualFold(stringFromMap(author, "foreignAuthorId"), foreignID) {
 			return author, nil
 		}
-		if name != "" && normalizeBookTitle(stringFromMap(author, "authorName", "name")) == name {
+		if name != "" && bookidentity.AuthorNamesMatch(name, stringFromMap(author, "authorName", "name")) {
 			nameMatches = append(nameMatches, author)
 		}
 	}
@@ -371,38 +357,36 @@ func (r *Readarr) chaptarrBooksForAuthor(ctx context.Context, authorID int) ([]m
 // leaving the book unmonitored (the user then had to toggle it by hand). So
 // mediaType is now a preference used only to rank otherwise-equal candidates.
 func (r *Readarr) findChaptarrBook(books []map[string]any, title, foreignID, format string) map[string]any {
-	var candidates []map[string]any
+	bestRank := 0
+	var best map[string]any
+	ambiguous := false
 	for _, book := range books {
-		if canonicalChaptarrTitle(stringFromMap(book, "title")) != canonicalChaptarrTitle(title) {
+		titleScore := bookidentity.TitleScore(title, stringFromMap(book, "title"))
+		if titleScore == 0 {
 			continue
 		}
-		candidates = append(candidates, book)
+		rank := titleScore * 10
+		if foreignID != "" && strings.EqualFold(stringFromMap(book, "foreignBookId"), foreignID) {
+			rank += 4
+		}
+		if strings.EqualFold(stringFromMap(book, "mediaType"), format) {
+			rank += 2
+		}
+		if rank > bestRank {
+			best, bestRank, ambiguous = book, rank, false
+		} else if rank == bestRank {
+			// Equal-confidence local rows are distinct works until an identifier
+			// proves otherwise. Waiting safely is preferable to monitoring one at
+			// random based on API or database ordering.
+			if positiveInt(best["id"]) != positiveInt(book["id"]) {
+				ambiguous = true
+			}
+		}
 	}
-	if len(candidates) == 0 {
+	if bestRank == 0 || ambiguous {
 		return nil
 	}
-	// Prefer an exact foreignBookId match of the requested media type, then any
-	// foreignBookId match, then the requested media type, then lowest id.
-	if foreignID != "" {
-		for _, book := range candidates {
-			if strings.EqualFold(stringFromMap(book, "foreignBookId"), foreignID) &&
-				strings.EqualFold(stringFromMap(book, "mediaType"), format) {
-				return book
-			}
-		}
-		for _, book := range candidates {
-			if strings.EqualFold(stringFromMap(book, "foreignBookId"), foreignID) {
-				return book
-			}
-		}
-	}
-	for _, book := range candidates {
-		if strings.EqualFold(stringFromMap(book, "mediaType"), format) {
-			return book
-		}
-	}
-	sort.SliceStable(candidates, func(i, j int) bool { return positiveInt(candidates[i]["id"]) < positiveInt(candidates[j]["id"]) })
-	return candidates[0]
+	return best
 }
 
 func chaptarrBookResolved(book map[string]any) bool {

@@ -18,6 +18,7 @@ import (
 	"gitea.knapp/jacoknapp/scriptorum/internal/bootstrap"
 	"gitea.knapp/jacoknapp/scriptorum/internal/config"
 	"gitea.knapp/jacoknapp/scriptorum/internal/db"
+	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 )
 
 func newServerForTest(t *testing.T) *Server {
@@ -112,6 +113,42 @@ func TestCreateRequestPersistsCoverURLFromProviderPayload(t *testing.T) {
 	}
 	if stored.CoverURL != "https://covers.example.test/book.jpg" {
 		t.Fatalf("expected stored cover url, got %q", stored.CoverURL)
+	}
+}
+
+func TestResolveRequestSelectionRepairsMismatchedStoredPayload(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/book/lookup" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[{
+			"title":"The Lost Metal (Mistborn, #7)",
+			"foreignBookId":"correct-work",
+			"foreignEditionId":"correct-edition",
+			"author":{"authorName":"Brandon Sanderson"},
+			"editions":[{"title":"The Lost Metal","foreignEditionId":"correct-edition"}]
+		}]`))
+	}))
+	defer backend.Close()
+
+	s := newServerForTest(t)
+	ra := providers.NewReadarrWithDB(providers.ReadarrInstance{BaseURL: backend.URL, APIKey: "test"}, s.db.SQL())
+	req := &db.Request{
+		Title: "The Lost Metal", Authors: []string{"Brandon Sanderson"}, Format: "audiobook",
+		ReadarrReq: json.RawMessage(`{"title":"Summary of The Lost Metal","foreignBookId":"spam-work","author":{"name":"Dagg Forson"}}`),
+	}
+	payload, candidate, err := s.resolveRequestSelection(context.Background(), req, ra)
+	if err != nil {
+		t.Fatalf("resolve selection: %v", err)
+	}
+	if len(payload) == 0 || candidate["foreignBookId"] != "correct-work" {
+		t.Fatalf("did not replace mismatched payload: %+v", candidate)
+	}
+	editions, _ := candidate["editions"].([]any)
+	if len(editions) != 1 {
+		t.Fatalf("hydrated editions were not retained: %+v", candidate)
 	}
 }
 

@@ -12,7 +12,7 @@ import (
 	"golang.org/x/oauth2"
 )
 
-func TestProcessApprovalStoredPayloadErrors(t *testing.T) {
+func TestProcessApprovalReResolvesMissingOrInvalidPayloads(t *testing.T) {
 	s := makeTestServer(t)
 	cfg := s.settings.Get()
 	cfg.Readarr.Ebooks.BaseURL = "https://readarr.example"
@@ -26,8 +26,8 @@ func TestProcessApprovalStoredPayloadErrors(t *testing.T) {
 		Title:  "Missing Payload",
 		Format: "ebook",
 	}, "admin")
-	if resMissing == nil || resMissing.Error == nil || !strings.Contains(resMissing.Error.Error(), "could not be matched to the backend system") {
-		t.Fatalf("expected missing payload error, got %+v", resMissing)
+	if resMissing == nil || resMissing.Error == nil || !strings.Contains(resMissing.Error.Error(), "could not re-resolve") {
+		t.Fatalf("expected missing payload re-resolution error, got %+v", resMissing)
 	}
 
 	resInvalid := s.processApproval(context.Background(), &db.Request{
@@ -36,8 +36,8 @@ func TestProcessApprovalStoredPayloadErrors(t *testing.T) {
 		Format:     "ebook",
 		ReadarrReq: []byte("{"),
 	}, "admin")
-	if resInvalid == nil || resInvalid.Error == nil || !strings.Contains(resInvalid.Error.Error(), "invalid stored selection payload") {
-		t.Fatalf("expected invalid payload error, got %+v", resInvalid)
+	if resInvalid == nil || resInvalid.Error == nil || !strings.Contains(resInvalid.Error.Error(), "could not re-resolve") {
+		t.Fatalf("expected invalid payload re-resolution error, got %+v", resInvalid)
 	}
 }
 

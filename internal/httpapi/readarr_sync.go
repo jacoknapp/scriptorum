@@ -746,8 +746,14 @@ func buildCatalogMatchQuery(kind, title string, authors []string, isbn10, isbn13
 		return query
 	}
 
-	var raw map[string]any
-	if json.Unmarshal(providerPayload, &raw) != nil {
+	raw, _, ok := selectionPayloadForFormat(providerPayload, kind)
+	if !ok {
+		return query
+	}
+	if !selectionPayloadMatchesRequest(raw, query.Title, query.Authors) {
+		// A stale or mismatched selection must not supply strong identifiers;
+		// otherwise catalog reconciliation could complete the request against a
+		// different work before approval gets a chance to re-resolve it.
 		return query
 	}
 	query.ForeignBookID = strings.TrimSpace(fmt.Sprint(raw["foreignBookId"]))

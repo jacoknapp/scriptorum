@@ -192,7 +192,7 @@ func TestReadarrFindAuthorIDByNameAndCache(t *testing.T) {
 	}
 }
 
-func TestReadarrFindAuthorIDByNameFallsBackToFirstResult(t *testing.T) {
+func TestReadarrFindAuthorIDByNameRejectsNonMatchingFirstResult(t *testing.T) {
 	ra := NewReadarrWithDB(ReadarrInstance{BaseURL: "http://readarr", APIKey: "secret"}, nil)
 	ra.cl.Transport = rtFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
@@ -203,7 +203,7 @@ func TestReadarrFindAuthorIDByNameFallsBackToFirstResult(t *testing.T) {
 	})
 
 	id, err := ra.FindAuthorIDByName(context.Background(), "Unknown")
-	if err != nil || id != 19 {
+	if err != nil || id != 0 {
 		t.Fatalf("id=%d err=%v", id, err)
 	}
 }

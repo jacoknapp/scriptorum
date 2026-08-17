@@ -237,3 +237,14 @@ func TestFindChaptarrBookMatchesCanonicalSeriesSuffix(t *testing.T) {
 		t.Fatalf("matched wrong Lost Metal rendition: %+v", got)
 	}
 }
+
+func TestFindChaptarrBookRejectsEqualConfidenceDuplicates(t *testing.T) {
+	client := &Readarr{}
+	books := []map[string]any{
+		{"id": 10, "title": "Shared Title", "mediaType": "audiobook"},
+		{"id": 11, "title": "Shared Title", "mediaType": "audiobook"},
+	}
+	if got := client.findChaptarrBook(books, "Shared Title", "provider-id-not-retained", "audiobook"); got != nil {
+		t.Fatalf("picked an ambiguous local row: %+v", got)
+	}
+}

@@ -112,7 +112,7 @@ func TestRetryFailsWhenNotApproved(t *testing.T) {
 	}
 }
 
-func TestRetryFailsWithoutPayload(t *testing.T) {
+func TestRetryReResolvesWithoutPayload(t *testing.T) {
 	s := newServerForRetryTest(t)
 	r := s.Router()
 
@@ -139,8 +139,8 @@ func TestRetryFailsWithoutPayload(t *testing.T) {
 	retryReq.AddCookie(makeCookie(t, s, "admin", true))
 	rec2 := httptest.NewRecorder()
 	r.ServeHTTP(rec2, retryReq)
-	if rec2.Code != 400 {
-		t.Fatalf("expected 400 when retrying without payload, got %d body=%s", rec2.Code, rec2.Body.String())
+	if rec2.Code != 200 {
+		t.Fatalf("expected retry to enqueue identity re-resolution, got %d body=%s", rec2.Code, rec2.Body.String())
 	}
 }
 

@@ -86,6 +86,41 @@ func TestBestLookupBookMatchHasNoArbitraryFirstFallback(t *testing.T) {
 	}
 }
 
+func TestBestLookupBookMatchRejectsDramatizedOnlyResult(t *testing.T) {
+	list := []providers.LookupBook{{
+		Title:  "The Lost Metal (1 of 2) [Dramatized Adaptation]",
+		Author: map[string]any{"authorName": "Brandon Sanderson"},
+	}}
+	if got, ok := bestLookupBookMatch(list, "The Lost Metal", []string{"Brandon Sanderson"}); ok {
+		t.Fatalf("matched a different rendition: %+v", got)
+	}
+}
+
+func TestBestLookupBookMatchUsesIdentifiersAndRejectsAmbiguity(t *testing.T) {
+	list := []providers.LookupBook{
+		{Title: "Shared Title", Author: map[string]any{"name": "Same Author"}, ForeignBookId: "work-1", Identifiers: []map[string]any{{"type": "isbn13", "value": "9780000000001"}}},
+		{Title: "Shared Title", Author: map[string]any{"name": "Same Author"}, ForeignBookId: "work-2", Identifiers: []map[string]any{{"type": "isbn13", "value": "9780000000002"}}},
+	}
+	if got, ok := bestLookupBookMatch(list, "Shared Title", []string{"Same Author"}); ok {
+		t.Fatalf("picked one of two ambiguous works: %+v", got)
+	}
+	got, ok := bestLookupBookMatchWithIdentifiers(list, "Shared Title", []string{"Same Author"}, "", "9780000000002", "", "", "")
+	if !ok || got.ForeignBookId != "work-2" {
+		t.Fatalf("identifier did not resolve the unique work: ok=%v got=%+v", ok, got)
+	}
+}
+
+func TestSelectionPayloadUsesRequestedFormatAndValidatesIdentity(t *testing.T) {
+	raw := []byte(`{"ebook":{"title":"Wrong Book","author":{"name":"Wrong Author"}},"audiobook":{"title":"The Lost Metal (Mistborn, #7)","author":{"authorName":"Brandon Sanderson"}}}`)
+	candidate, normalized, ok := selectionPayloadForFormat(raw, "audiobook")
+	if !ok || len(normalized) == 0 || !selectionPayloadMatchesRequest(candidate, "The Lost Metal", []string{"Brandon Sanderson"}) {
+		t.Fatalf("did not select and validate audiobook payload: ok=%v candidate=%+v", ok, candidate)
+	}
+	if selectionPayloadMatchesRequest(candidate, "The Lost Metal", []string{"Dagg Forson"}) {
+		t.Fatal("accepted a payload for the wrong requested author")
+	}
+}
+
 func TestPickDiscoveryBooksEnforcesMinYearStrictly(t *testing.T) {
 	books := []providers.BookItem{
 		{Title: "Recent", Authors: []string{"A"}, FirstPublishYear: 2024},

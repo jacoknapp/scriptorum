@@ -216,14 +216,9 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 		return &ApprovalResult{Status: "", Error: err}
 	}
 
-	// Require an exact selection payload saved at request-time
-	if len(req.ReadarrReq) == 0 {
-		return &ApprovalResult{Status: "", Error: fmt.Errorf("the originally selected book could not be matched to the backend system")}
-	}
-
-	var cand map[string]any
-	if err := json.Unmarshal(req.ReadarrReq, &cand); err != nil || cand == nil {
-		return &ApprovalResult{Status: "", Error: fmt.Errorf("invalid stored selection payload")}
+	selectionPayload, cand, err := s.resolveRequestSelection(reqCtx, req, ra)
+	if err != nil {
+		return &ApprovalResult{Status: "", Error: err}
 	}
 
 	// Handle author resolution (simplified from API version)
@@ -232,7 +227,7 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 			var name string
 			if n, _ := a["name"].(string); n != "" {
 				name = n
-			} else if n, _ := cand["title"].(string); n != "" {
+			} else if n, _ := a["authorName"].(string); n != "" {
 				name = n
 			}
 			if name != "" {
@@ -243,17 +238,20 @@ func (s *Server) processApproval(ctx context.Context, req *db.Request, username 
 			cand["author"] = a
 		}
 	}
+	if refreshed, marshalErr := json.Marshal(cand); marshalErr == nil {
+		selectionPayload = refreshed
+	}
 
 	// Try to add the book to Readarr
 	var payload []byte
 	var respBody []byte
-	var err error
+	err = nil
 
-	if len(req.ReadarrReq) > 0 {
+	if len(selectionPayload) > 0 {
 		var raw map[string]any
-		if json.Unmarshal(req.ReadarrReq, &raw) == nil {
+		if json.Unmarshal(selectionPayload, &raw) == nil {
 			if _, ok := raw["authorTitle"]; ok || raw["author"] != nil || raw["editions"] != nil || raw["addOptions"] != nil {
-				payload, respBody, err = ra.AddBookRaw(reqCtx, req.ReadarrReq)
+				payload, respBody, err = ra.AddBookRaw(reqCtx, selectionPayload)
 			}
 		}
 	}

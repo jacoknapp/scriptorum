@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"gitea.knapp/jacoknapp/scriptorum/internal/bookidentity"
 	"gitea.knapp/jacoknapp/scriptorum/internal/db"
 	"gitea.knapp/jacoknapp/scriptorum/internal/providers"
 	"gitea.knapp/jacoknapp/scriptorum/internal/util"
@@ -251,17 +252,24 @@ func (s *Server) apiBookDetails(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"error": "no matches from Readarr"}, 404)
 		return
 	}
-	pick := list[0]
+	var pick providers.LookupBook
 	// When title identity is available, do not show details from an arbitrary
 	// first text-search result. Accept canonical series suffixes and require the
 	// requested author, using the same safe matcher as request creation.
 	if titleStr, ok := in["title"].(string); ok && strings.TrimSpace(titleStr) != "" {
-		matched, found := bestLookupBookMatch(list, titleStr, inputStringSlice(in, "authors"))
+		matched, found := bestLookupBookMatchWithIdentifiers(list, titleStr, inputStringSlice(in, "authors"), inputStringValue(in, "isbn10"), inputStringValue(in, "isbn13"), inputStringValue(in, "asin"), "", "")
 		if !found {
 			writeNormalized(map[string]any{
 				"title": titleStr, "authors": inputStringSlice(in, "authors"),
 				"isbn13": in["isbn13"], "isbn10": in["isbn10"], "asin": in["asin"],
 			})
+			return
+		}
+		pick = matched
+	} else {
+		matched, found := bestLookupBookMatchWithIdentifiers(list, "", nil, inputStringValue(in, "isbn10"), inputStringValue(in, "isbn13"), inputStringValue(in, "asin"), "", "")
+		if !found {
+			writeJSON(w, map[string]any{"error": "no safe identifier match from Readarr"}, 404)
 			return
 		}
 		pick = matched
@@ -435,15 +443,22 @@ func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
 
 	// Find a safe identity match. The metadata server commonly appends a series
 	// marker to canonical titles, so exact string equality alone is too strict.
-	pick := list[0]
+	var pick providers.LookupBook
 	if titleStr, ok := in["title"].(string); ok && titleStr != "" {
-		matched, found := bestLookupBookMatch(list, titleStr, inputStringSlice(in, "authors"))
+		matched, found := bestLookupBookMatchWithIdentifiers(list, titleStr, inputStringSlice(in, "authors"), inputStringValue(in, "isbn10"), inputStringValue(in, "isbn13"), inputStringValue(in, "asin"), "", "")
 		if !found {
 			if fallback := s.openLibraryEnrichedData(ctx, in); fallback != nil {
 				writeJSON(w, fallback, 200)
 				return
 			}
 			writeJSON(w, map[string]any{"error": "no safe title and author match from Readarr"}, 404)
+			return
+		}
+		pick = matched
+	} else {
+		matched, found := bestLookupBookMatchWithIdentifiers(list, "", nil, inputStringValue(in, "isbn10"), inputStringValue(in, "isbn13"), inputStringValue(in, "asin"), "", "")
+		if !found {
+			writeJSON(w, map[string]any{"error": "no safe identifier match from Readarr"}, 404)
 			return
 		}
 		pick = matched
@@ -779,23 +794,31 @@ func pickOpenLibraryMatch(matches []providers.BookItem, title string, authors []
 	if len(matches) == 0 {
 		return providers.BookItem{}
 	}
-	title = strings.TrimSpace(title)
-	wantAuthor := ""
-	if len(authors) > 0 {
-		wantAuthor = strings.TrimSpace(authors[0])
-	}
+	bestScore := 0
+	var best providers.BookItem
+	ambiguous := false
 	for _, match := range matches {
-		if title != "" && !strings.EqualFold(strings.TrimSpace(match.Title), title) {
+		titleScore := lookupTitleScore(title, match.Title)
+		if titleScore == 0 {
 			continue
 		}
-		if wantAuthor != "" && len(match.Authors) > 0 && strings.EqualFold(strings.TrimSpace(match.Authors[0]), wantAuthor) {
-			return match
+		if len(authors) > 0 && !bookidentity.AuthorsMatch(authors, match.Authors) {
+			continue
 		}
-		if title != "" {
-			return match
+		if titleScore > bestScore {
+			best, bestScore, ambiguous = match, titleScore, false
+		} else if titleScore == bestScore {
+			// Multiple works with the same title/author require an identifier;
+			// enrichment must not depend on Open Library result ordering.
+			if dedupeKey(best) != dedupeKey(match) {
+				ambiguous = true
+			}
 		}
 	}
-	return matches[0]
+	if bestScore == 0 || ambiguous {
+		return providers.BookItem{}
+	}
+	return best
 }
 
 func inputMapValue(in map[string]any, key string) map[string]any {
@@ -1061,7 +1084,7 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 				ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 				defer cancel()
 				if list, err := ra.LookupByTerm(ctx, term); err == nil && len(list) > 0 {
-					pick, matched := bestLookupBookMatch(list, p.Title, p.Authors)
+					pick, matched := bestLookupBookMatchWithIdentifiers(list, p.Title, p.Authors, p.ISBN10, p.ISBN13, p.ASIN, "", "")
 					if matched {
 						cand := lookupBookCandidate(pick)
 						if b, err := json.Marshal(cand); err == nil {
@@ -1208,9 +1231,10 @@ func (s *Server) apiRetryRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Must have a stored selection payload
-	if len(req.ReadarrReq) == 0 {
-		http.Error(w, "The originally selected book could not be matched to the backend system.", 400)
+	// A stored payload is optional: approval-time resolution can rebuild old
+	// requests. We only need some stable identity to search for.
+	if len(req.ReadarrReq) == 0 && strings.TrimSpace(req.Title) == "" && strings.TrimSpace(req.ISBN10) == "" && strings.TrimSpace(req.ISBN13) == "" {
+		http.Error(w, "request has no book identity to retry", 400)
 		return
 	}
 
@@ -1340,15 +1364,9 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, username string
 		return
 	}
 
-	// Require an exact selection payload saved at request-time
-	if len(req.ReadarrReq) == 0 {
-		_ = s.db.UpdateRequestStatus(ctx, id, "error", "The originally selected book could not be matched to the backend system.", username, nil, nil)
-		return
-	}
-
-	var cand map[string]any
-	if err := json.Unmarshal(req.ReadarrReq, &cand); err != nil || cand == nil {
-		_ = s.db.UpdateRequestStatus(ctx, id, "error", "invalid stored selection payload", username, nil, nil)
+	selectionPayload, cand, err := s.resolveRequestSelection(reqCtx, req, ra)
+	if err != nil {
+		_ = s.db.UpdateRequestStatus(ctx, id, "error", err.Error(), username, nil, nil)
 		return
 	}
 
@@ -1359,7 +1377,7 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, username string
 			var name string
 			if n, _ := a["name"].(string); n != "" {
 				name = n
-			} else if n, _ := cand["title"].(string); n != "" {
+			} else if n, _ := a["authorName"].(string); n != "" {
 				name = n
 			}
 			if s.settings.Get().Debug {
@@ -1384,19 +1402,24 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, username string
 			cand["author"] = a
 		}
 	}
+	// Keep the raw/full-schema path in sync with any author identity repaired
+	// above; otherwise AddBookRaw would still send the stale pre-repair bytes.
+	if refreshed, marshalErr := json.Marshal(cand); marshalErr == nil {
+		selectionPayload = refreshed
+	}
 
 	// Try to add the book to Readarr
 	var payload []byte
 	var respBody []byte
-	var err error
+	err = nil
 
 	// If the stored payload looks like a full Readarr Book schema, send it as-is
-	if len(req.ReadarrReq) > 0 {
+	if len(selectionPayload) > 0 {
 		var raw map[string]any
-		if json.Unmarshal(req.ReadarrReq, &raw) == nil {
+		if json.Unmarshal(selectionPayload, &raw) == nil {
 			// Heuristic: treat as full schema if it contains indicators
 			if _, ok := raw["authorTitle"]; ok || raw["author"] != nil || raw["editions"] != nil || raw["addOptions"] != nil {
-				payload, respBody, err = ra.AddBookRaw(reqCtx, req.ReadarrReq)
+				payload, respBody, err = ra.AddBookRaw(reqCtx, selectionPayload)
 			}
 		}
 	}
@@ -1543,6 +1566,41 @@ func (s *Server) processAsyncApproval(id int64, req *db.Request, username string
 
 	// Trigger UI update via server-sent events or websockets would be ideal,
 	// but for now we'll rely on the existing periodic refresh mechanisms
+}
+
+// resolveRequestSelection validates the stored provider payload against the
+// request identity. Old or mismatched payloads are re-resolved through the
+// active backend, which makes retries self-healing without ever trusting a
+// previous text-search result merely because it was stored.
+func (s *Server) resolveRequestSelection(ctx context.Context, req *db.Request, ra *providers.Readarr) ([]byte, map[string]any, error) {
+	if candidate, normalized, ok := selectionPayloadForFormat(req.ReadarrReq, req.Format); ok && selectionPayloadMatchesRequest(candidate, req.Title, req.Authors) {
+		return normalized, candidate, nil
+	}
+
+	term := util.FirstNonEmpty(req.ISBN13, req.ISBN10)
+	if term == "" {
+		term = strings.TrimSpace(req.Title)
+		if len(req.Authors) > 0 && strings.TrimSpace(req.Authors[0]) != "" {
+			term += " " + strings.TrimSpace(req.Authors[0])
+		}
+	}
+	if term == "" {
+		return nil, nil, fmt.Errorf("the selected book has no identity that can be resolved")
+	}
+	list, err := ra.LookupByTerm(ctx, term)
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not re-resolve the selected book: %w", err)
+	}
+	pick, matched := bestLookupBookMatchWithIdentifiers(list, req.Title, req.Authors, req.ISBN10, req.ISBN13, "", "", "")
+	if !matched {
+		return nil, nil, fmt.Errorf("the selected book could not be uniquely matched to the backend system")
+	}
+	candidate := lookupBookCandidate(pick)
+	normalized, err := json.Marshal(candidate)
+	if err != nil {
+		return nil, nil, fmt.Errorf("could not save the resolved book selection: %w", err)
+	}
+	return normalized, candidate, nil
 }
 
 // backgroundMonitorBook ensures a newly added book stays monitored
@@ -1759,7 +1817,7 @@ func (s *Server) apiHydrateRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no matches from Readarr", http.StatusBadRequest)
 		return
 	}
-	pick, matched := bestLookupBookMatch(list, req.Title, req.Authors)
+	pick, matched := bestLookupBookMatchWithIdentifiers(list, req.Title, req.Authors, req.ISBN10, req.ISBN13, "", "", "")
 	if !matched {
 		http.Error(w, "no safe title and author match from Readarr", http.StatusBadRequest)
 		return

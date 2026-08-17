@@ -69,6 +69,16 @@ func TestBuildCatalogMatchQueryFromPayload(t *testing.T) {
 	if invalid.Title != "Title" || invalid.ISBN10 != "10" || invalid.ISBN13 != "13" || invalid.ASIN != "asin" {
 		t.Fatalf("invalid payload should preserve explicit values: %+v", invalid)
 	}
+
+	mismatched := buildCatalogMatchQuery("ebook", "The Lost Metal", []string{"Brandon Sanderson"}, "", "", "", []byte(`{
+		"title":"Summary of The Lost Metal",
+		"foreignBookId":"spam-work",
+		"foreignEditionId":"spam-edition",
+		"author":{"name":"Dagg Forson"}
+	}`))
+	if mismatched.ForeignBookID != "" || mismatched.ForeignEditionID != "" {
+		t.Fatalf("mismatched payload supplied trusted catalog identifiers: %+v", mismatched)
+	}
 }
 
 func TestCatalogMatchCacheLookup(t *testing.T) {
