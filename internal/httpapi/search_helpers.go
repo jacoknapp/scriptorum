@@ -12,6 +12,7 @@ var (
 	searchBookListPattern       = regexp.MustCompile(`\b(?:books?|vol(?:ume)?s?)\.?\s*\d+(?:\s*,\s*\d+)+(?:\s*(?:and|&)\s*\d+)?\b`)
 	searchInOnePattern          = regexp.MustCompile(`\b\d+\s*(?:-| )?in(?:-| )one\b`)
 	searchBookCollectionPattern = regexp.MustCompile(`\b\d+\s*(?:-| )?book collection\b`)
+	lookupTitleSuffixPattern    = regexp.MustCompile(`\s*(\([^)]*\)|\[[^]]*\])\s*$`)
 )
 
 var blockedSearchTitleSnippets = []string{
@@ -119,6 +120,100 @@ func norm(s string) string {
 	s = strings.ToLower(strings.TrimSpace(s))
 	s = strings.Join(strings.Fields(s), " ")
 	return s
+}
+
+func lookupBookAuthor(book providers.LookupBook) map[string]any {
+	if book.Author != nil {
+		return book.Author
+	}
+	if len(book.Authors) > 0 {
+		return book.Authors[0]
+	}
+	if book.AuthorId > 0 {
+		return map[string]any{"id": book.AuthorId}
+	}
+	if book.AuthorTitle != "" {
+		return map[string]any{"name": parseAuthorNameFromTitle(book.AuthorTitle)}
+	}
+	return nil
+}
+
+func lookupBookAuthorName(book providers.LookupBook) string {
+	author := lookupBookAuthor(book)
+	if author == nil {
+		return ""
+	}
+	for _, key := range []string{"name", "authorName"} {
+		if value, ok := author[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+// lookupTitleScore recognizes the common metadata-server shape where a work's
+// canonical title has a trailing series marker (for example, "The Lost Metal
+// (Mistborn, #7)"). It deliberately does not use arbitrary substring matching:
+// that would make summaries, study guides, and collections look like the book.
+func lookupTitleScore(want, candidate string) int {
+	want = norm(want)
+	candidate = norm(candidate)
+	if want == "" || candidate == "" {
+		return 0
+	}
+	if want == candidate {
+		return 3
+	}
+	for previous := ""; candidate != previous; {
+		previous = candidate
+		candidate = norm(lookupTitleSuffixPattern.ReplaceAllString(candidate, ""))
+		if candidate == want {
+			return 2
+		}
+	}
+	return 0
+}
+
+// bestLookupBookMatch returns only a safe identity match. When the request has
+// an author, the backend result must have the same author; never fall back to
+// the first text-search hit, which can be a summary or study guide.
+func bestLookupBookMatch(list []providers.LookupBook, title string, authors []string) (providers.LookupBook, bool) {
+	wantAuthor := ""
+	if len(authors) > 0 {
+		wantAuthor = norm(authors[0])
+	}
+	bestScore := 0
+	var best providers.LookupBook
+	for _, book := range list {
+		if wantAuthor != "" && norm(lookupBookAuthorName(book)) != wantAuthor {
+			continue
+		}
+		score := lookupTitleScore(title, book.Title)
+		if score > bestScore {
+			best, bestScore = book, score
+		}
+	}
+	return best, bestScore > 0
+}
+
+// lookupBookCandidate keeps the metadata server's complete edition objects.
+// Chaptarr rejects ID-only edition stubs, but it accepts hydrated editions and
+// needs them when it cannot hydrate a work from foreignBookId by itself.
+func lookupBookCandidate(book providers.LookupBook) map[string]any {
+	editions := book.Editions
+	if editions == nil {
+		editions = []any{}
+	}
+	return map[string]any{
+		"title":             book.Title,
+		"titleSlug":         book.TitleSlug,
+		"author":            lookupBookAuthor(book),
+		"editions":          editions,
+		"foreignBookId":     book.ForeignBookId,
+		"foreignEditionId":  book.ForeignEditionId,
+		"monitored":         true,
+		"metadataProfileId": 1,
+	}
 }
 
 func isRenderableSearchBook(title string, extras ...string) bool {

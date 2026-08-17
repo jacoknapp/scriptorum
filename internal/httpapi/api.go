@@ -252,15 +252,19 @@ func (s *Server) apiBookDetails(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pick := list[0]
-	// prefer exact title match; skip entirely when the request carried no title
-	// (an unguarded type assertion here panics on bodies like {"asin":"..."})
+	// When title identity is available, do not show details from an arbitrary
+	// first text-search result. Accept canonical series suffixes and require the
+	// requested author, using the same safe matcher as request creation.
 	if titleStr, ok := in["title"].(string); ok && strings.TrimSpace(titleStr) != "" {
-		for _, b := range list {
-			if strings.EqualFold(strings.TrimSpace(b.Title), strings.TrimSpace(titleStr)) && strings.TrimSpace(b.Title) != "" {
-				pick = b
-				break
-			}
+		matched, found := bestLookupBookMatch(list, titleStr, inputStringSlice(in, "authors"))
+		if !found {
+			writeNormalized(map[string]any{
+				"title": titleStr, "authors": inputStringSlice(in, "authors"),
+				"isbn13": in["isbn13"], "isbn10": in["isbn10"], "asin": in["asin"],
+			})
+			return
 		}
+		pick = matched
 	}
 	out := map[string]any{}
 	out["title"] = pick.Title
@@ -429,15 +433,20 @@ func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find best match - prefer exact title match
+	// Find a safe identity match. The metadata server commonly appends a series
+	// marker to canonical titles, so exact string equality alone is too strict.
 	pick := list[0]
 	if titleStr, ok := in["title"].(string); ok && titleStr != "" {
-		for _, b := range list {
-			if strings.EqualFold(strings.TrimSpace(b.Title), strings.TrimSpace(titleStr)) {
-				pick = b
-				break
+		matched, found := bestLookupBookMatch(list, titleStr, inputStringSlice(in, "authors"))
+		if !found {
+			if fallback := s.openLibraryEnrichedData(ctx, in); fallback != nil {
+				writeJSON(w, fallback, 200)
+				return
 			}
+			writeJSON(w, map[string]any{"error": "no safe title and author match from Readarr"}, 404)
+			return
 		}
+		pick = matched
 	}
 
 	// Convert Readarr book to map and return directly
@@ -1052,59 +1061,13 @@ func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 				ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 				defer cancel()
 				if list, err := ra.LookupByTerm(ctx, term); err == nil && len(list) > 0 {
-					pick := list[0]
-					for _, b := range list {
-						titleOK := strings.EqualFold(strings.TrimSpace(b.Title), strings.TrimSpace(p.Title)) && strings.TrimSpace(b.Title) != ""
-						authorOK := false
-						if len(p.Authors) > 0 {
-							want := strings.TrimSpace(p.Authors[0])
-							if b.Author != nil {
-								if n, _ := b.Author["name"].(string); n != "" && strings.EqualFold(strings.TrimSpace(n), want) {
-									authorOK = true
-								}
-							} else if len(b.Authors) > 0 {
-								if n, _ := b.Authors[0]["name"].(string); n != "" && strings.EqualFold(strings.TrimSpace(n), want) {
-									authorOK = true
-								}
-							} else if b.AuthorTitle != "" {
-								if strings.Contains(strings.ToLower(b.AuthorTitle), strings.ToLower(strings.ReplaceAll(want, " ", ""))) {
-									authorOK = true
-								}
-							}
+					pick, matched := bestLookupBookMatch(list, p.Title, p.Authors)
+					if matched {
+						cand := lookupBookCandidate(pick)
+						if b, err := json.Marshal(cand); err == nil {
+							req.ReadarrReq = json.RawMessage(b)
+							req.CoverURL = s.requestCoverFromPayload(format, req.ReadarrReq)
 						}
-						if titleOK && authorOK {
-							pick = b
-							break
-						}
-					}
-					var author map[string]any
-					if pick.Author != nil {
-						author = pick.Author
-					}
-					if author == nil && len(pick.Authors) > 0 {
-						author = pick.Authors[0]
-					}
-					if author == nil && pick.AuthorId > 0 {
-						author = map[string]any{"id": pick.AuthorId}
-					}
-					if author == nil && pick.AuthorTitle != "" {
-						author = map[string]any{"name": parseAuthorNameFromTitle(pick.AuthorTitle)}
-					}
-					cand := map[string]any{
-						"title":     pick.Title,
-						"titleSlug": pick.TitleSlug,
-						"author":    author,
-						// include one monitored edition to pin selection
-						"editions":         []any{map[string]any{"foreignEditionId": pick.ForeignEditionId, "monitored": true}},
-						"foreignBookId":    pick.ForeignBookId,
-						"foreignEditionId": pick.ForeignEditionId,
-						// provider will backfill remaining defaults if missing
-						"monitored":         true,
-						"metadataProfileId": 1,
-					}
-					if b, err := json.Marshal(cand); err == nil {
-						req.ReadarrReq = json.RawMessage(b)
-						req.CoverURL = s.requestCoverFromPayload(format, req.ReadarrReq)
 					}
 				}
 			}
@@ -1796,52 +1759,12 @@ func (s *Server) apiHydrateRequest(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no matches from Readarr", http.StatusBadRequest)
 		return
 	}
-	// Choose best match: prefer title match and author match, else first
-	pick := list[0]
-	for _, b := range list {
-		titleOK := strings.EqualFold(strings.TrimSpace(b.Title), strings.TrimSpace(req.Title)) && strings.TrimSpace(b.Title) != ""
-		authorOK := false
-		if len(req.Authors) > 0 {
-			want := strings.TrimSpace(req.Authors[0])
-			if b.Author != nil {
-				if n, _ := b.Author["name"].(string); n != "" && strings.EqualFold(strings.TrimSpace(n), want) {
-					authorOK = true
-				}
-			} else if len(b.Authors) > 0 {
-				if n, _ := b.Authors[0]["name"].(string); n != "" && strings.EqualFold(strings.TrimSpace(n), want) {
-					authorOK = true
-				}
-			} else if b.AuthorTitle != "" {
-				if strings.Contains(strings.ToLower(b.AuthorTitle), strings.ToLower(strings.ReplaceAll(want, " ", ""))) {
-					authorOK = true
-				}
-			}
-		}
-		if titleOK && authorOK {
-			pick = b
-			break
-		}
+	pick, matched := bestLookupBookMatch(list, req.Title, req.Authors)
+	if !matched {
+		http.Error(w, "no safe title and author match from Readarr", http.StatusBadRequest)
+		return
 	}
-
-	// Build candidate payload similar to search.go
-	var author map[string]any
-	if pick.Author != nil {
-		author = pick.Author
-	} else if len(pick.Authors) > 0 {
-		author = pick.Authors[0]
-	} else if pick.AuthorId > 0 {
-		author = map[string]any{"id": pick.AuthorId}
-	} else if pick.AuthorTitle != "" {
-		author = map[string]any{"name": parseAuthorNameFromTitle(pick.AuthorTitle)}
-	}
-	cand := map[string]any{
-		"title":            pick.Title,
-		"titleSlug":        pick.TitleSlug,
-		"author":           author,
-		"editions":         []any{},
-		"foreignBookId":    pick.ForeignBookId,
-		"foreignEditionId": pick.ForeignEditionId,
-	}
+	cand := lookupBookCandidate(pick)
 	cjson, _ := json.Marshal(cand)
 
 	// Save to DB

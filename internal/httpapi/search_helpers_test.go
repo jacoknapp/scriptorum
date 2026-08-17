@@ -43,6 +43,49 @@ func TestAuthorsTextAndTruncateChars(t *testing.T) {
 	}
 }
 
+func TestBestLookupBookMatchRejectsSummaryAndAcceptsSeriesSuffix(t *testing.T) {
+	list := []providers.LookupBook{
+		{
+			Title:         "Summary Of The Lost Metal By Brandon Sanderson",
+			Author:        map[string]any{"authorName": "Dagg Forson"},
+			ForeignBookId: "gr:spam",
+		},
+		{
+			Title:            "The Lost Metal (Mistborn, #7)",
+			Author:           map[string]any{"authorName": "Brandon Sanderson"},
+			ForeignBookId:    "gr:work",
+			ForeignEditionId: "gr:edition",
+			Editions: []any{map[string]any{
+				"title": "The Lost Metal (Mistborn, #7)", "foreignEditionId": "gr:edition",
+			}},
+		},
+	}
+
+	got, ok := bestLookupBookMatch(list, "The Lost Metal", []string{"Brandon Sanderson"})
+	if !ok || got.ForeignBookId != "gr:work" {
+		t.Fatalf("picked unsafe lookup result: ok=%v book=%+v", ok, got)
+	}
+	candidate := lookupBookCandidate(got)
+	editions, _ := candidate["editions"].([]any)
+	if len(editions) != 1 {
+		t.Fatalf("hydrated editions were not preserved: %#v", candidate["editions"])
+	}
+	edition, _ := editions[0].(map[string]any)
+	if edition["title"] != "The Lost Metal (Mistborn, #7)" {
+		t.Fatalf("edition title was lost: %#v", edition)
+	}
+}
+
+func TestBestLookupBookMatchHasNoArbitraryFirstFallback(t *testing.T) {
+	list := []providers.LookupBook{{
+		Title:  "Summary Of The Lost Metal By Brandon Sanderson",
+		Author: map[string]any{"authorName": "Dagg Forson"},
+	}}
+	if got, ok := bestLookupBookMatch(list, "The Lost Metal", []string{"Brandon Sanderson"}); ok {
+		t.Fatalf("unexpected unsafe match: %+v", got)
+	}
+}
+
 func TestPickDiscoveryBooksEnforcesMinYearStrictly(t *testing.T) {
 	books := []providers.BookItem{
 		{Title: "Recent", Authors: []string{"A"}, FirstPublishYear: 2024},

@@ -257,28 +257,10 @@ func (u *searchUI) handleSearch(s *Server) http.HandlerFunc {
 				if !isRenderableSearchBook(b.Title, b.Disambiguation) {
 					continue
 				}
-				var author map[string]any
-				if b.Author != nil {
-					author = b.Author
-				} else if len(b.Authors) > 0 {
-					author = b.Authors[0]
-				} else if b.AuthorId > 0 {
-					author = map[string]any{"id": b.AuthorId}
-				} else if b.AuthorTitle != "" {
-					author = map[string]any{"name": parseAuthorNameFromTitle(b.AuthorTitle)}
-				}
-				// Build canonical Readarr Book schema candidate. Include a single monitored edition to pin to this foreignEditionId.
-				cand := map[string]any{
-					"title":            b.Title,
-					"titleSlug":        b.TitleSlug,
-					"author":           author,
-					"editions":         []any{map[string]any{"foreignEditionId": b.ForeignEditionId, "monitored": true}},
-					"foreignBookId":    b.ForeignBookId,
-					"foreignEditionId": b.ForeignEditionId,
-					// provider will backfill these defaults if missing
-					"monitored":         true,
-					"metadataProfileId": 1,
-				}
+				author := lookupBookAuthor(b)
+				// Preserve hydrated editions from lookup. Chaptarr rejects the old
+				// foreignEditionId-only stubs and cannot hydrate every work itself.
+				cand := lookupBookCandidate(b)
 				cjson, _ := json.Marshal(cand)
 				dispAuthor := ""
 				if author != nil {
