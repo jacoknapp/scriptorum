@@ -307,10 +307,12 @@ func (r *Readarr) findChaptarrAuthor(ctx context.Context, selected map[string]an
 		}
 		actualForeignID := stringFromMap(author, "foreignAuthorId")
 		actualName := normalizeBookTitle(stringFromMap(author, "authorName", "name"))
-		if foreignID != "" && !strings.EqualFold(actualForeignID, foreignID) {
-			return nil, fmt.Errorf("chaptarr author id %d does not match foreign author %q", id, foreignID)
-		}
-		if name != "" && actualName != name {
+		foreignMatches := foreignID != "" && strings.EqualFold(actualForeignID, foreignID)
+		nameMatches := name != "" && actualName == name
+		// Chaptarr canonicalizes provider ids (for example Goodreads to
+		// Hardcover) during metadata sync. The stable local id plus either the
+		// same author name or the same provider id is sufficient identity.
+		if !foreignMatches && !nameMatches {
 			return nil, fmt.Errorf("chaptarr author id %d is %q, not %q", id, stringFromMap(author, "authorName", "name"), stringFromMap(a, "authorName", "name"))
 		}
 		return author, nil

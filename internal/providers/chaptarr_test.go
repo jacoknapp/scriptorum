@@ -182,7 +182,9 @@ func TestFindChaptarrAuthorUsesSelectedLocalID(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/v1/author/273":
-			_, _ = w.Write([]byte(`{"id":273,"authorName":"Brandon Sanderson","foreignAuthorId":"gr:38550"}`))
+			// Chaptarr may canonicalize the selected Goodreads identity to a
+			// different provider while retaining the same local id and name.
+			_, _ = w.Write([]byte(`{"id":273,"authorName":"Brandon Sanderson","foreignAuthorId":"hc:6360"}`))
 		case "/api/v1/author":
 			listedAll = true
 			_, _ = w.Write([]byte(`[]`))
