@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -226,6 +227,20 @@ func normalizeBookTitle(s string) string {
 	return strings.Join(strings.Fields(strings.ToLower(strings.TrimSpace(s))), " ")
 }
 
+// Only strip parenthetical series markers containing a comma or '#'. Broader
+// stripping would collapse distinct works such as "The Lost Metal (1 of 2)",
+// causing a dramatized adaptation to match the canonical novel.
+var chaptarrTitleSuffixPattern = regexp.MustCompile(`\s*\([^)]*(#|,)[^)]*\)\s*$`)
+
+func canonicalChaptarrTitle(s string) string {
+	title := normalizeBookTitle(s)
+	for previous := ""; title != previous; {
+		previous = title
+		title = normalizeBookTitle(chaptarrTitleSuffixPattern.ReplaceAllString(title, ""))
+	}
+	return title
+}
+
 func (r *Readarr) buildChaptarrAddPayload(raw json.RawMessage, author map[string]any) (map[string]any, error) {
 	var selected map[string]any
 	if err := json.Unmarshal(raw, &selected); err != nil {
@@ -358,7 +373,7 @@ func (r *Readarr) chaptarrBooksForAuthor(ctx context.Context, authorID int) ([]m
 func (r *Readarr) findChaptarrBook(books []map[string]any, title, foreignID, format string) map[string]any {
 	var candidates []map[string]any
 	for _, book := range books {
-		if normalizeBookTitle(stringFromMap(book, "title")) != normalizeBookTitle(title) {
+		if canonicalChaptarrTitle(stringFromMap(book, "title")) != canonicalChaptarrTitle(title) {
 			continue
 		}
 		candidates = append(candidates, book)

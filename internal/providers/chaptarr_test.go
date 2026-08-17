@@ -223,3 +223,17 @@ func TestNormalizeBookTitle(t *testing.T) {
 		}
 	}
 }
+
+func TestFindChaptarrBookMatchesCanonicalSeriesSuffix(t *testing.T) {
+	client := &Readarr{}
+	books := []map[string]any{
+		{"id": 26992, "title": "The Lost Metal (1 of 2) [Dramatized Adaptation]", "mediaType": "audiobook"},
+		{"id": 26998, "title": "The Lost Metal (2 of 2) [Dramatized Adaptation]", "mediaType": "audiobook"},
+		{"id": 26812, "title": "The Lost Metal", "mediaType": "audiobook"},
+		{"id": 32442, "title": "The Lost Metal", "mediaType": "ebook"},
+	}
+	got := client.findChaptarrBook(books, "The Lost Metal (Mistborn, #7)", "gr:43551632", "audiobook")
+	if positiveInt(got["id"]) != 26812 {
+		t.Fatalf("matched wrong Lost Metal rendition: %+v", got)
+	}
+}
