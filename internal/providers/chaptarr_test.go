@@ -176,6 +176,37 @@ func TestPositiveInt(t *testing.T) {
 	}
 }
 
+func TestFindChaptarrAuthorUsesSelectedLocalID(t *testing.T) {
+	listedAll := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/author/273":
+			_, _ = w.Write([]byte(`{"id":273,"authorName":"Brandon Sanderson","foreignAuthorId":"gr:38550"}`))
+		case "/api/v1/author":
+			listedAll = true
+			_, _ = w.Write([]byte(`[]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewReadarrWithDB(ReadarrInstance{BaseURL: server.URL, APIKey: "secret", Backend: "chaptarr"}, nil)
+	got, err := client.findChaptarrAuthor(context.Background(), map[string]any{
+		"author": map[string]any{"id": 273, "authorName": "Brandon Sanderson", "foreignAuthorId": "gr:38550"},
+	})
+	if err != nil {
+		t.Fatalf("find author by id: %v", err)
+	}
+	if listedAll {
+		t.Fatal("downloaded the full author catalog despite a selected local id")
+	}
+	if positiveInt(got["id"]) != 273 {
+		t.Fatalf("author=%+v", got)
+	}
+}
+
 func TestNormalizeBookTitle(t *testing.T) {
 	tests := []struct{ in, want string }{
 		{"The Hobbit", "the hobbit"},

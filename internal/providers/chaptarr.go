@@ -297,6 +297,24 @@ func (r *Readarr) findChaptarrAuthor(ctx context.Context, selected map[string]an
 	a, _ := selected["author"].(map[string]any)
 	foreignID := stringFromMap(a, "foreignAuthorId")
 	name := normalizeBookTitle(stringFromMap(a, "authorName", "name"))
+	// Chaptarr lookup results carry the local author id. Validate that specific
+	// author directly instead of downloading the entire author catalog, which
+	// can consume the request's three-minute deadline on large libraries.
+	if id := positiveInt(a["id"]); id > 0 {
+		var author map[string]any
+		if _, err := r.chaptarrJSON(ctx, http.MethodGet, fmt.Sprintf("/api/v1/author/%d", id), nil, nil, &author); err != nil {
+			return nil, err
+		}
+		actualForeignID := stringFromMap(author, "foreignAuthorId")
+		actualName := normalizeBookTitle(stringFromMap(author, "authorName", "name"))
+		if foreignID != "" && !strings.EqualFold(actualForeignID, foreignID) {
+			return nil, fmt.Errorf("chaptarr author id %d does not match foreign author %q", id, foreignID)
+		}
+		if name != "" && actualName != name {
+			return nil, fmt.Errorf("chaptarr author id %d is %q, not %q", id, stringFromMap(author, "authorName", "name"), stringFromMap(a, "authorName", "name"))
+		}
+		return author, nil
+	}
 	var authors []map[string]any
 	if _, err := r.chaptarrJSON(ctx, http.MethodGet, "/api/v1/author", nil, nil, &authors); err != nil {
 		return nil, err
