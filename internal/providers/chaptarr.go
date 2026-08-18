@@ -461,6 +461,67 @@ func (r *Readarr) enableChaptarrAuthorFormat(ctx context.Context, authorID int) 
 	return nil
 }
 
+// pickChaptarrEdition ranks the format-matching editions and returns the index
+// of the best one (-1 when no edition of the format exists). Chaptarr's edition
+// list is in no useful order — a popular work can expose dozens of editions
+// with translations and low-vote variants listed before the canonical one — so
+// taking the first format match risks pinning a German narration of an English
+// book. Rank: preferred language first (from discovery.languages; "und" beats
+// a wrong language but loses to a right one), then rating votes as a
+// popularity proxy, then a real duration as a tiebreak for hydrated metadata.
+func pickChaptarrEdition(editions []map[string]any, format string, preferredLanguages []string) int {
+	preferred := make(map[string]bool, len(preferredLanguages))
+	for _, lang := range preferredLanguages {
+		if lang = strings.ToLower(strings.TrimSpace(lang)); lang != "" {
+			preferred[lang] = true
+		}
+	}
+	if len(preferred) == 0 {
+		preferred["eng"] = true
+	}
+	langRank := func(e map[string]any) int {
+		lang := strings.ToLower(stringFromMap(e, "language"))
+		switch {
+		case preferred[lang]:
+			return 2
+		case lang == "" || lang == "und":
+			return 1
+		default:
+			return 0
+		}
+	}
+	votes := func(e map[string]any) int {
+		ratings, _ := e["ratings"].(map[string]any)
+		return positiveInt(ratings["votes"])
+	}
+	best := -1
+	for i, edition := range editions {
+		if !strings.EqualFold(stringFromMap(edition, "format"), format) {
+			continue
+		}
+		if best < 0 {
+			best = i
+			continue
+		}
+		if lr, br := langRank(edition), langRank(editions[best]); lr != br {
+			if lr > br {
+				best = i
+			}
+			continue
+		}
+		if ev, bv := votes(edition), votes(editions[best]); ev != bv {
+			if ev > bv {
+				best = i
+			}
+			continue
+		}
+		if positiveInt(edition["durationSeconds"]) > positiveInt(editions[best]["durationSeconds"]) {
+			best = i
+		}
+	}
+	return best
+}
+
 // prepareChaptarrBook pins the single edition of the requested format so
 // Chaptarr searches for exactly that. Its second return value reports whether a
 // format-specific edition was pinned. When Chaptarr's metadata exposes no
@@ -486,13 +547,7 @@ func (r *Readarr) prepareChaptarrBook(ctx context.Context, bookID int) (map[stri
 		return nil, false, err
 	}
 	format := r.chaptarrFormat()
-	chosen := -1
-	for i, edition := range editions {
-		if strings.EqualFold(stringFromMap(edition, "format"), format) {
-			chosen = i
-			break
-		}
-	}
+	chosen := pickChaptarrEdition(editions, format, r.inst.PreferredLanguages)
 	if chosen < 0 {
 		// No edition of the requested format exists. Monitor the book at book
 		// level with anyEditionOk so Chaptarr can grab whatever edition it can

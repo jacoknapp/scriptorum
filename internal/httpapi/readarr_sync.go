@@ -624,6 +624,7 @@ func (s *Server) readarrInstanceForFormat(format string) (providers.ReadarrInsta
 			InsecureSkipVerify:         cfg.Chaptarr.InsecureSkipVerify || s.outboundTLSInsecure(),
 			Backend:                    "chaptarr",
 			MediaType:                  kind,
+			PreferredLanguages:         config.NormalizeDiscoveryLanguages(cfg.Discovery.Languages),
 			EbookQualityProfileID:      cfg.Chaptarr.Ebooks.QualityProfileID,
 			AudiobookQualityProfileID:  cfg.Chaptarr.Audiobooks.QualityProfileID,
 			EbookMetadataProfileID:     cfg.Chaptarr.Ebooks.MetadataProfileID,

@@ -267,6 +267,50 @@ func TestFindChaptarrBookMatchesByRetainedGoodreadsID(t *testing.T) {
 	}
 }
 
+// Chaptarr's edition list is unordered: on real data (The Way of Kings, 50
+// editions) the first audiobook match can be a German narration while the
+// canonical English edition (113k votes, real duration) sits mid-list.
+// Selection must rank preferred language, then votes, then duration — not
+// take the first format match.
+func TestPickChaptarrEditionPrefersLanguageThenVotes(t *testing.T) {
+	editions := []map[string]any{
+		{"id": 1, "format": "ebook", "language": "eng", "ratings": map[string]any{"votes": 87470}},
+		{"id": 2, "format": "audiobook", "language": "deu", "ratings": map[string]any{"votes": float64(8297)}, "durationSeconds": float64(100620)},
+		{"id": 3, "format": "audiobook", "language": "eng", "ratings": map[string]any{"votes": float64(3869)}},
+		{"id": 4, "format": "audiobook", "language": "eng", "ratings": map[string]any{"votes": float64(113979)}, "durationSeconds": float64(163800)},
+		{"id": 5, "format": "audiobook", "language": "spa", "ratings": map[string]any{"votes": float64(6691)}},
+	}
+	got := pickChaptarrEdition(editions, "audiobook", []string{"eng"})
+	if got != 3 {
+		t.Fatalf("expected canonical English edition (index 3), got %d", got)
+	}
+
+	// No preferred-language edition: "und" beats a concrete wrong language.
+	und := []map[string]any{
+		{"id": 1, "format": "audiobook", "language": "deu", "ratings": map[string]any{"votes": float64(9000)}},
+		{"id": 2, "format": "audiobook", "language": "und", "ratings": map[string]any{"votes": float64(3)}},
+	}
+	if got := pickChaptarrEdition(und, "audiobook", []string{"eng"}); got != 1 {
+		t.Fatalf("expected und edition over wrong language, got %d", got)
+	}
+
+	// Equal language rank: votes decide; equal votes: duration decides.
+	tie := []map[string]any{
+		{"id": 1, "format": "audiobook", "language": "eng", "ratings": map[string]any{"votes": float64(3869)}},
+		{"id": 2, "format": "audiobook", "language": "eng", "ratings": map[string]any{"votes": float64(3869)}, "durationSeconds": float64(163740)},
+	}
+	if got := pickChaptarrEdition(tie, "audiobook", []string{"eng"}); got != 1 {
+		t.Fatalf("expected duration tiebreak, got %d", got)
+	}
+
+	if got := pickChaptarrEdition(editions, "audiobook", nil); got != 3 {
+		t.Fatalf("expected eng default when no preference configured, got %d", got)
+	}
+	if got := pickChaptarrEdition([]map[string]any{{"format": "ebook"}}, "audiobook", nil); got != -1 {
+		t.Fatalf("expected -1 with no format match, got %d", got)
+	}
+}
+
 // An identifier match must outrank a title-only match on a different row.
 func TestFindChaptarrBookPrefersIdentifierOverTitle(t *testing.T) {
 	client := &Readarr{}

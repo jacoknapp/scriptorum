@@ -133,8 +133,11 @@ type ReadarrInstance struct {
 	BasicAuthPass string
 	// Backend is "chaptarr" for the shared dual-format Chaptarr API. It is
 	// intentionally optional so existing Readarr callers remain compatible.
-	Backend                    string
-	MediaType                  string
+	Backend   string
+	MediaType string
+	// PreferredLanguages (ISO 639-3, from discovery.languages) steers which
+	// edition gets pinned when a work exposes several of the requested format.
+	PreferredLanguages         []string
 	EbookQualityProfileID      int
 	AudiobookQualityProfileID  int
 	EbookMetadataProfileID     int
