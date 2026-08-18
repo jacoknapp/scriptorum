@@ -531,6 +531,23 @@
 			btn.classList.add('bg-royal-600', 'hover:bg-royal-500');
 			btn.disabled = false;
 		}
+		// Coerce whatever author shape the enriched payload carries (string array,
+		// bare string, or an array/object of Readarr/Chaptarr author records) into
+		// a flat array of name strings. Sending a raw author object as an "authors"
+		// entry makes the server reject the whole request as malformed.
+		function scriptorumAuthorNames(data){
+			if (!data) return [];
+			var pickName = function(v){
+				if (typeof v === 'string') return v.trim();
+				if (v && typeof v === 'object') { return (v.name || v.authorName || v.authorTitle || '').toString().trim(); }
+				return '';
+			};
+			var src = Array.isArray(data.authors) ? data.authors
+				: (data.authors ? [data.authors] : (data.author ? [data.author] : []));
+			var out = [];
+			for (var i=0;i<src.length;i++){ var n = pickName(src[i]); if (n) out.push(n); }
+			return out;
+		}
 		function setModalRequestButton(btn, format, state, data){
 			if (!btn) return;
 			var normalized = normalizeRequestState(state);
@@ -1262,7 +1279,7 @@
 
 				var payload = {
 					title: (data.title||'').toString(),
-					authors: Array.isArray(data.authors) ? data.authors : (data.author ? [data.author] : []),
+					authors: scriptorumAuthorNames(data),
 					isbn10: (data.isbn10||'').toString(),
 					isbn13: (data.isbn13||'').toString(),
 					asin: (data.asin||'').toString(),

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -494,13 +495,17 @@ func (s *Server) apiBookEnriched(w http.ResponseWriter, r *http.Request) {
 	// Try multiple author sources: Author object, Authors array, or AuthorTitle string
 	var authorNames []string
 	if pick.Author != nil {
-		if name, ok := pick.Author["name"].(string); ok && name != "" {
+		// Readarr exposes the author name under "name"; Chaptarr uses
+		// "authorName". Check both so the normalized string/array fields are
+		// always populated and the UI never falls back to sending the raw
+		// author object as a request "authors" entry.
+		if name := mapStringValue(pick.Author, "name", "authorName"); name != "" {
 			authorNames = append(authorNames, name)
 		}
 	}
 	if len(authorNames) == 0 && len(pick.Authors) > 0 {
 		for _, a := range pick.Authors {
-			if name, ok := a["name"].(string); ok && name != "" {
+			if name := mapStringValue(a, "name", "authorName"); name != "" {
 				authorNames = append(authorNames, name)
 			}
 		}
@@ -913,12 +918,75 @@ func inputIntValue(in map[string]any, key string) int {
 	return 0
 }
 
+// normalizeAuthorsJSON coerces the request payload's "authors" field into a
+// clean []string. It accepts a JSON string array, a bare string, or an array
+// that mixes strings and author objects (as returned by Readarr/Chaptarr, whose
+// name lives under "name" or "authorName"). Anything unrecognized is skipped
+// rather than failing the request.
+func normalizeAuthorsJSON(raw json.RawMessage) []string {
+	if len(raw) == 0 {
+		return nil
+	}
+	var out []string
+	add := func(name string) {
+		if name = strings.TrimSpace(name); name != "" {
+			out = append(out, name)
+		}
+	}
+	if ss := []string(nil); json.Unmarshal(raw, &ss) == nil {
+		for _, s := range ss {
+			add(s)
+		}
+		return out
+	}
+	if s := ""; json.Unmarshal(raw, &s) == nil {
+		add(s)
+		return out
+	}
+	var items []any
+	if json.Unmarshal(raw, &items) == nil {
+		for _, item := range items {
+			switch v := item.(type) {
+			case string:
+				add(v)
+			case map[string]any:
+				add(mapStringValue(v, "name", "authorName", "authorTitle"))
+			}
+		}
+	}
+	return out
+}
+
 func (s *Server) apiCreateRequest(w http.ResponseWriter, r *http.Request) {
 	var p RequestPayload
 	ct := r.Header.Get("Content-Type")
 	if strings.Contains(ct, "application/json") {
-		if err := json.NewDecoder(r.Body).Decode(&p); err == nil {
-			// ok
+		// Decode tolerantly: the "authors" field can legitimately arrive as a
+		// string array, a bare string, or -- from the search-result modal, whose
+		// enriched payload may still carry a raw author object -- an array of
+		// objects. A strict decode into []string would fail on the object form
+		// and silently drop the whole request, so parse authors separately and
+		// normalize. Only genuinely non-JSON bodies fall through to form parsing.
+		body, _ := io.ReadAll(r.Body)
+		var wire struct {
+			Title           string          `json:"title"`
+			Authors         json.RawMessage `json:"authors"`
+			ISBN10          string          `json:"isbn10"`
+			ISBN13          string          `json:"isbn13"`
+			ASIN            string          `json:"asin"`
+			Format          string          `json:"format"`
+			Provider        string          `json:"provider"`
+			ProviderPayload string          `json:"provider_payload"`
+		}
+		if err := json.Unmarshal(body, &wire); err == nil {
+			p.Title = wire.Title
+			p.Authors = normalizeAuthorsJSON(wire.Authors)
+			p.ISBN10 = wire.ISBN10
+			p.ISBN13 = wire.ISBN13
+			p.ASIN = wire.ASIN
+			p.Format = wire.Format
+			p.Provider = wire.Provider
+			p.ProviderPayload = wire.ProviderPayload
 		} else {
 			// Fall back to form parsing if body isn't actually JSON
 			_ = r.ParseForm()

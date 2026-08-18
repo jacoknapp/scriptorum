@@ -300,20 +300,22 @@ func payloadImageURL(payload map[string]any) string {
 	return ""
 }
 
-func mapStringValue(payload map[string]any, key string) string {
+func mapStringValue(payload map[string]any, keys ...string) string {
 	if payload == nil {
 		return ""
 	}
-	value, ok := payload[key]
-	if !ok {
-		return ""
+	for _, key := range keys {
+		value, ok := payload[key]
+		if !ok {
+			continue
+		}
+		if v, ok := value.(string); ok {
+			if trimmed := strings.TrimSpace(v); trimmed != "" {
+				return trimmed
+			}
+		}
 	}
-	switch v := value.(type) {
-	case string:
-		return strings.TrimSpace(v)
-	default:
-		return ""
-	}
+	return ""
 }
 
 func (s *Server) normalizeRequestCover(format, cover string) string {
