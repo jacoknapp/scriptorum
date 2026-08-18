@@ -318,6 +318,42 @@ func TestReadarrCatalogRepositoryFlows(t *testing.T) {
 		t.Fatalf("FindReadarrBookMatch by title: book=%+v err=%v", byTitle, err)
 	}
 
+	// Chaptarr canonicalizes foreign_book_id (e.g. Goodreads -> Hardcover) but
+	// retains the Goodreads ids; a request still carrying the Goodreads id must
+	// match through goodreads_work_id / goodreads_book_id.
+	grBooks := []ReadarrBook{
+		{
+			SourceKind:      "audiobook",
+			ReadarrID:       37324,
+			Title:           "Mage Tank: A LitRPG Adventure",
+			AuthorName:      "cornman",
+			ForeignBookID:   "hc:1820138",
+			GoodreadsWorkID: "gr:225978920",
+			GoodreadsBookID: "gr:219062651",
+			Monitored:       true,
+		},
+	}
+	if err := db.ReplaceReadarrBooks(ctx, "audiobook", grBooks); err != nil {
+		t.Fatalf("ReplaceReadarrBooks audiobook: %v", err)
+	}
+	byWorkID, err := db.FindReadarrBookMatch(ctx, ReadarrMatchQuery{
+		SourceKind:    "audiobook",
+		ForeignBookID: "gr:225978920",
+	})
+	if err != nil || byWorkID.ReadarrID != 37324 {
+		t.Fatalf("FindReadarrBookMatch by goodreads work id: book=%+v err=%v", byWorkID, err)
+	}
+	if byWorkID.GoodreadsWorkID != "gr:225978920" || byWorkID.GoodreadsBookID != "gr:219062651" {
+		t.Fatalf("goodreads ids not round-tripped: %+v", byWorkID)
+	}
+	byGrBookID, err := db.FindReadarrBookMatch(ctx, ReadarrMatchQuery{
+		SourceKind:    "audiobook",
+		ForeignBookID: "gr:219062651",
+	})
+	if err != nil || byGrBookID.ReadarrID != 37324 {
+		t.Fatalf("FindReadarrBookMatch by goodreads book id: book=%+v err=%v", byGrBookID, err)
+	}
+
 	ids, err := db.ListReadarrBooksByIDs(ctx, "ebook", []int64{103, 0, 101, 103, -1})
 	if err != nil {
 		t.Fatalf("ListReadarrBooksByIDs: %v", err)

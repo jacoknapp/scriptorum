@@ -436,6 +436,8 @@ func (s *Server) syncReadarrCatalog(ctx context.Context, requestedKind, actor st
 				ASIN:             asin,
 				ForeignBookID:    strings.TrimSpace(book.ForeignBookId),
 				ForeignEditionID: strings.TrimSpace(book.ForeignEditionId),
+				GoodreadsWorkID:  strings.TrimSpace(book.GoodreadsWorkId),
+				GoodreadsBookID:  strings.TrimSpace(book.GoodreadsBookId),
 				Monitored:        book.Monitored,
 				Grabbed:          book.Grabbed,
 				BookFileCount:    book.Statistics.BookFileCount,

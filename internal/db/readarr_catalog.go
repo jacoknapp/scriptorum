@@ -10,22 +10,27 @@ import (
 )
 
 type ReadarrBook struct {
-	ID               int64           `json:"id"`
-	SourceKind       string          `json:"sourceKind"`
-	ReadarrID        int64           `json:"readarrId"`
-	Title            string          `json:"title"`
-	AuthorName       string          `json:"authorName"`
-	ISBN10           string          `json:"isbn10"`
-	ISBN13           string          `json:"isbn13"`
-	ASIN             string          `json:"asin"`
-	ForeignBookID    string          `json:"foreignBookId"`
-	ForeignEditionID string          `json:"foreignEditionId"`
-	Monitored        bool            `json:"monitored"`
-	Grabbed          bool            `json:"grabbed"`
-	BookFileCount    int             `json:"bookFileCount"`
-	ReadarrData      json.RawMessage `json:"readarrData,omitempty"`
-	CreatedAt        time.Time       `json:"createdAt"`
-	UpdatedAt        time.Time       `json:"updatedAt"`
+	ID               int64  `json:"id"`
+	SourceKind       string `json:"sourceKind"`
+	ReadarrID        int64  `json:"readarrId"`
+	Title            string `json:"title"`
+	AuthorName       string `json:"authorName"`
+	ISBN10           string `json:"isbn10"`
+	ISBN13           string `json:"isbn13"`
+	ASIN             string `json:"asin"`
+	ForeignBookID    string `json:"foreignBookId"`
+	ForeignEditionID string `json:"foreignEditionId"`
+	// Chaptarr canonicalizes ForeignBookID to its preferred metadata source but
+	// retains the original Goodreads ids; keep them so requests created from
+	// Goodreads-sourced search results still match the catalog row.
+	GoodreadsWorkID string          `json:"goodreadsWorkId,omitempty"`
+	GoodreadsBookID string          `json:"goodreadsBookId,omitempty"`
+	Monitored       bool            `json:"monitored"`
+	Grabbed         bool            `json:"grabbed"`
+	BookFileCount   int             `json:"bookFileCount"`
+	ReadarrData     json.RawMessage `json:"readarrData,omitempty"`
+	CreatedAt       time.Time       `json:"createdAt"`
+	UpdatedAt       time.Time       `json:"updatedAt"`
 }
 
 type ReadarrMatchQuery struct {
@@ -89,8 +94,8 @@ func (d *DB) ReplaceReadarrBooks(ctx context.Context, sourceKind string, books [
 
 	stmt, err := tx.PrepareContext(ctx, `
 INSERT INTO readarr_books
-(source_kind, readarr_id, title, author_name, isbn13, isbn10, asin, foreign_book_id, foreign_edition_id, monitored, grabbed, book_file_count, readarr_data, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+(source_kind, readarr_id, title, author_name, isbn13, isbn10, asin, foreign_book_id, foreign_edition_id, goodreads_work_id, goodreads_book_id, monitored, grabbed, book_file_count, readarr_data, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `)
 	if err != nil {
 		return err
@@ -110,6 +115,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			book.ASIN,
 			book.ForeignBookID,
 			book.ForeignEditionID,
+			book.GoodreadsWorkID,
+			book.GoodreadsBookID,
 			boolToInt(book.Monitored),
 			boolToInt(book.Grabbed),
 			book.BookFileCount,
@@ -135,24 +142,28 @@ func (d *DB) CountReadarrBooks(ctx context.Context, sourceKind string) (int, err
 
 func (d *DB) FindReadarrBookMatch(ctx context.Context, q ReadarrMatchQuery) (*ReadarrBook, error) {
 	kind := strings.ToLower(strings.TrimSpace(q.SourceKind))
+	// A book-level provider id must be compared against the retained Goodreads
+	// ids too: Chaptarr canonicalizes foreign_book_id to its preferred source
+	// (often Hardcover), so a Goodreads id from search only matches via
+	// goodreads_work_id/goodreads_book_id after the bibliography syncs.
 	lookups := []struct {
-		field string
-		value string
+		clause string
+		value  string
 	}{
-		{"foreign_edition_id", strings.TrimSpace(q.ForeignEditionID)},
-		{"foreign_book_id", strings.TrimSpace(q.ForeignBookID)},
-		{"isbn13", strings.TrimSpace(q.ISBN13)},
-		{"isbn10", strings.TrimSpace(q.ISBN10)},
-		{"asin", strings.TrimSpace(q.ASIN)},
+		{"foreign_edition_id=?", strings.TrimSpace(q.ForeignEditionID)},
+		{"(foreign_book_id=?2 OR goodreads_work_id=?2 OR goodreads_book_id=?2)", strings.TrimSpace(q.ForeignBookID)},
+		{"isbn13=?", strings.TrimSpace(q.ISBN13)},
+		{"isbn10=?", strings.TrimSpace(q.ISBN10)},
+		{"asin=?", strings.TrimSpace(q.ASIN)},
 	}
 	for _, lookup := range lookups {
 		if lookup.value == "" {
 			continue
 		}
 		row := d.sql.QueryRowContext(ctx, `
-SELECT id, source_kind, readarr_id, title, author_name, isbn10, isbn13, asin, foreign_book_id, foreign_edition_id, monitored, grabbed, book_file_count, readarr_data, created_at, updated_at
+SELECT id, source_kind, readarr_id, title, author_name, isbn10, isbn13, asin, foreign_book_id, foreign_edition_id, COALESCE(goodreads_work_id,''), COALESCE(goodreads_book_id,''), monitored, grabbed, book_file_count, readarr_data, created_at, updated_at
 FROM readarr_books
-WHERE source_kind=? AND `+lookup.field+`=?
+WHERE source_kind=? AND `+lookup.clause+`
 ORDER BY book_file_count DESC, monitored DESC, grabbed DESC, readarr_id DESC
 LIMIT 1`, kind, lookup.value)
 		if book, err := scanReadarrBook(row); err == nil {
@@ -169,7 +180,7 @@ LIMIT 1`, kind, lookup.value)
 	}
 	if title != "" {
 		row := d.sql.QueryRowContext(ctx, `
-SELECT id, source_kind, readarr_id, title, author_name, isbn10, isbn13, asin, foreign_book_id, foreign_edition_id, monitored, grabbed, book_file_count, readarr_data, created_at, updated_at
+SELECT id, source_kind, readarr_id, title, author_name, isbn10, isbn13, asin, foreign_book_id, foreign_edition_id, COALESCE(goodreads_work_id,''), COALESCE(goodreads_book_id,''), monitored, grabbed, book_file_count, readarr_data, created_at, updated_at
 FROM readarr_books
 WHERE source_kind=? AND title=? COLLATE NOCASE AND (?='' OR author_name=?)
 ORDER BY book_file_count DESC, monitored DESC, grabbed DESC, readarr_id DESC
@@ -215,7 +226,7 @@ func (d *DB) ListReadarrBooksByIDs(ctx context.Context, sourceKind string, ids [
 	}
 
 	rows, err := d.sql.QueryContext(ctx, `
-SELECT id, source_kind, readarr_id, title, author_name, isbn10, isbn13, asin, foreign_book_id, foreign_edition_id, monitored, grabbed, book_file_count, readarr_data, created_at, updated_at
+SELECT id, source_kind, readarr_id, title, author_name, isbn10, isbn13, asin, foreign_book_id, foreign_edition_id, COALESCE(goodreads_work_id,''), COALESCE(goodreads_book_id,''), monitored, grabbed, book_file_count, readarr_data, created_at, updated_at
 FROM readarr_books
 WHERE source_kind=? AND readarr_id IN (`+strings.Join(placeholders, ",")+`)`,
 		args...,
@@ -278,6 +289,8 @@ func scanReadarrBook(scanner interface{ Scan(dest ...any) error }) (*ReadarrBook
 		&book.ASIN,
 		&book.ForeignBookID,
 		&book.ForeignEditionID,
+		&book.GoodreadsWorkID,
+		&book.GoodreadsBookID,
 		&monitored,
 		&grabbed,
 		&book.BookFileCount,

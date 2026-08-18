@@ -147,6 +147,12 @@ CREATE TABLE IF NOT EXISTS readarr_books (
 	if err := d.ensureReadarrBooksColumn(ctx, "foreign_edition_id", "TEXT"); err != nil {
 		return err
 	}
+	if err := d.ensureReadarrBooksColumn(ctx, "goodreads_work_id", "TEXT"); err != nil {
+		return err
+	}
+	if err := d.ensureReadarrBooksColumn(ctx, "goodreads_book_id", "TEXT"); err != nil {
+		return err
+	}
 	if err := d.ensureReadarrBooksColumn(ctx, "monitored", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
@@ -174,6 +180,8 @@ func (d *DB) ensureIndexes(ctx context.Context) error {
 		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_readarr_id ON readarr_books(source_kind, readarr_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_foreign_edition_id ON readarr_books(source_kind, foreign_edition_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_foreign_book_id ON readarr_books(source_kind, foreign_book_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_goodreads_work_id ON readarr_books(source_kind, goodreads_work_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_goodreads_book_id ON readarr_books(source_kind, goodreads_book_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_isbn13 ON readarr_books(source_kind, isbn13)`,
 		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_isbn10 ON readarr_books(source_kind, isbn10)`,
 		`CREATE INDEX IF NOT EXISTS idx_readarr_books_source_kind_asin ON readarr_books(source_kind, asin)`,

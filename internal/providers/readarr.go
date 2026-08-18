@@ -72,16 +72,21 @@ type LookupBook struct {
 	// Decode both so we can find an author id in either location.
 	Authors []map[string]any `json:"authors"`
 	// Readarr lookup may include authorId and authorTitle instead of author object
-	AuthorId         int              `json:"authorId"`
-	AuthorTitle      string           `json:"authorTitle"`
-	ForeignBookId    string           `json:"foreignBookId"`
-	ForeignEditionId string           `json:"foreignEditionId"`
-	Identifiers      []map[string]any `json:"identifiers"`
-	Editions         []any            `json:"editions"`
-	RemoteCover      string           `json:"remoteCover"`
-	RemotePoster     string           `json:"remotePoster"`
-	CoverUrl         string           `json:"coverUrl"`
-	Images           []struct {
+	AuthorId         int    `json:"authorId"`
+	AuthorTitle      string `json:"authorTitle"`
+	ForeignBookId    string `json:"foreignBookId"`
+	ForeignEditionId string `json:"foreignEditionId"`
+	// Chaptarr canonicalizes foreignBookId to its preferred metadata source
+	// (often Hardcover) but keeps the original Goodreads ids alongside; retain
+	// them so catalog matching can still recognize Goodreads-sourced requests.
+	GoodreadsWorkId string           `json:"goodreadsWorkId"`
+	GoodreadsBookId string           `json:"goodreadsBookId"`
+	Identifiers     []map[string]any `json:"identifiers"`
+	Editions        []any            `json:"editions"`
+	RemoteCover     string           `json:"remoteCover"`
+	RemotePoster    string           `json:"remotePoster"`
+	CoverUrl        string           `json:"coverUrl"`
+	Images          []struct {
 		CoverType string `json:"coverType"`
 		Url       string `json:"url"`
 		RemoteUrl string `json:"remoteUrl"`
