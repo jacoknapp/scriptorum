@@ -248,3 +248,34 @@ func TestFindChaptarrBookRejectsEqualConfidenceDuplicates(t *testing.T) {
 		t.Fatalf("picked an ambiguous local row: %+v", got)
 	}
 }
+
+// Regression for the live "Mage Tank" failure: after Chaptarr's bibliography
+// sync the canonical (Hardcover) title shares no words beyond the series name
+// with the Goodreads search title, so a title-only matcher scores every row 0
+// and the request errors at the deadline with the book left unmonitored. The
+// retained goodreadsWorkId must qualify the row on its own.
+func TestFindChaptarrBookMatchesByRetainedGoodreadsID(t *testing.T) {
+	client := &Readarr{}
+	books := []map[string]any{
+		{"id": 37325, "title": "Mage Tank 3", "mediaType": "audiobook", "foreignBookId": "hc:2089985", "goodreadsWorkId": "gr:250903517"},
+		{"id": 37324, "title": "Mage Tank: A LitRPG Adventure", "mediaType": "audiobook", "foreignBookId": "hc:1820138", "goodreadsWorkId": "gr:225978920"},
+		{"id": 37326, "title": "Mage Tank 2", "mediaType": "audiobook", "foreignBookId": "hc:1891675", "goodreadsWorkId": "gr:237304734"},
+	}
+	got := client.findChaptarrBook(books, "Mage Tank: Book One (Mage Tank, #1)", "gr:225978920", "audiobook")
+	if positiveInt(got["id"]) != 37324 {
+		t.Fatalf("expected goodreadsWorkId match to book 37324, got %+v", got)
+	}
+}
+
+// An identifier match must outrank a title-only match on a different row.
+func TestFindChaptarrBookPrefersIdentifierOverTitle(t *testing.T) {
+	client := &Readarr{}
+	books := []map[string]any{
+		{"id": 1, "title": "Mage Tank: Book One", "mediaType": "audiobook", "foreignBookId": "hc:9999"},
+		{"id": 2, "title": "Mage Tank: A LitRPG Adventure", "mediaType": "audiobook", "foreignBookId": "hc:1820138", "goodreadsWorkId": "gr:225978920"},
+	}
+	got := client.findChaptarrBook(books, "Mage Tank: Book One", "gr:225978920", "audiobook")
+	if positiveInt(got["id"]) != 2 {
+		t.Fatalf("identifier match should win, got %+v", got)
+	}
+}

@@ -343,31 +343,50 @@ func (r *Readarr) chaptarrBooksForAuthor(ctx context.Context, authorID int) ([]m
 	return books, err
 }
 
-// findChaptarrBook matches by normalized title, then prefers (but does not
-// require) the requested media type and a foreignBookId match.
+// chaptarrBookIDMatches reports whether the requested provider id identifies
+// this local book row. Chaptarr's metadata pipeline canonicalizes
+// foreignBookId to whichever source (Goodreads, Hardcover, ...) it trusts most
+// once the full author bibliography syncs, but it keeps the original Goodreads
+// work/book ids alongside -- so a Goodreads id from search must be compared
+// against all three.
+func chaptarrBookIDMatches(book map[string]any, foreignID string) bool {
+	if foreignID == "" {
+		return false
+	}
+	for _, key := range []string{"foreignBookId", "goodreadsWorkId", "goodreadsBookId"} {
+		if strings.EqualFold(stringFromMap(book, key), foreignID) {
+			return true
+		}
+	}
+	return false
+}
+
+// findChaptarrBook matches by provider identifier or normalized title, then
+// prefers (but does not require) the requested media type.
 //
-// Two things forced this to be lenient. First, Chaptarr's metadata pipeline
-// canonicalizes a book's foreignBookId to whichever source (Goodreads,
-// Hardcover, ...) it trusts most once the full author bibliography syncs,
-// which frequently differs from the id the original search result carried.
-// Second, Chaptarr's metadata models most titles as ebook/physical editions
-// only -- audiobook rows usually do not exist at all. Requiring mediaType to
-// equal the requested format meant every audiobook request found no match and
-// waitForChaptarrBook polled until the deadline, erroring the request and
-// leaving the book unmonitored (the user then had to toggle it by hand). So
-// mediaType is now a preference used only to rank otherwise-equal candidates.
+// Identifier equality alone qualifies a candidate and outranks any title-only
+// match: after Chaptarr's bibliography sync, the canonical title can differ
+// completely from the one the search result carried (e.g. Goodreads "Mage
+// Tank: Book One (Mage Tank, #1)" vs Hardcover "Mage Tank: A LitRPG
+// Adventure"), so requiring a title match meant the request polled until the
+// deadline and the book stayed unmonitored.
+//
+// mediaType is a preference used only to rank otherwise-equal candidates:
+// Chaptarr's metadata models most titles as ebook/physical editions only, and
+// requiring mediaType equality made every audiobook request fail the same way.
 func (r *Readarr) findChaptarrBook(books []map[string]any, title, foreignID, format string) map[string]any {
 	bestRank := 0
 	var best map[string]any
 	ambiguous := false
 	for _, book := range books {
 		titleScore := bookidentity.TitleScore(title, stringFromMap(book, "title"))
-		if titleScore == 0 {
+		idMatch := chaptarrBookIDMatches(book, foreignID)
+		if titleScore == 0 && !idMatch {
 			continue
 		}
 		rank := titleScore * 10
-		if foreignID != "" && strings.EqualFold(stringFromMap(book, "foreignBookId"), foreignID) {
-			rank += 4
+		if idMatch {
+			rank += 40
 		}
 		if strings.EqualFold(stringFromMap(book, "mediaType"), format) {
 			rank += 2
